@@ -9,16 +9,16 @@ begin
 context HOL_To_IMP_Minus
 begin
 
+
+
 fun prod_decode_aux1 :: "nat \<Rightarrow> nat \<Rightarrow> nat"
   where "prod_decode_aux1 k m =
-    (if m \<le> k then m else prod_decode_aux1 (Suc k) (m - Suc k))
-    \<comment>\<open> (if m \<le> k then m else let k_loc = k in prod_decode_aux1 (Suc k_loc) (m - Suc k_loc)) \<close>"
+    (if m \<le> k then m else prod_decode_aux1 (Suc k) (m - Suc k))"
 declare prod_decode_aux1.simps[simp del]  (* NOTE: prevents simplifier loop *)
 
 fun prod_decode_aux2 :: "nat \<Rightarrow> nat \<Rightarrow> nat"
   where "prod_decode_aux2 k m =
-    \<comment>\<open> (if m \<le> k then k - m else prod_decode_aux2 (Suc k) (m - Suc k)) \<close>
-    (if m \<le> k then k - m else let k_loc = k in prod_decode_aux2 (Suc k_loc) (m - Suc k_loc))"
+    (if m \<le> k then k - m else prod_decode_aux2 (Suc k) (m - Suc k))"
 declare prod_decode_aux2.simps[simp del]
 
 definition prod_decode1 :: "nat \<Rightarrow> nat"
