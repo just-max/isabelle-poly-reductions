@@ -101,6 +101,26 @@ lemma prod_encode_inverse2[simp]: "prod_decode2 (prod_encode m n) = n"
 lemma prod_decode_inverse[simp]: "prod_encode (prod_decode1 x) (prod_decode2 x) = x"
   using prod_decode prod_encode prod_decode_inverse by force
 
+(*
+
+fun prod_encode' :: "(nat * nat) \<Rightarrow> nat" where
+  "prod_encode' (m, n) = (m + n) * (Suc (m + n)) div 2 + m"
+
+
+declare_compiled_const Product_Type.Pair
+  return_register "prod_encode.ret"
+  argument_registers "prod_encode.args.m" "prod_encode.args.k"
+  compiled "tailcall_to_IMP_Minus prod_encode_IMP_tailcall"
+
+
+definition pairup :: "nat \<Rightarrow> (nat * nat)" where "pairup n = (n, 3)"
+
+compile_nat pairup_def
+theorem "terminates_with_res_IMP_Minus (tailcall_to_IMP_Minus pairup_IMP_tailcall) s ''pairup.ret'' (prod_encode' (pairup (s ''pairup.args.n'')))"
+  sorry
+
+*)
+
 subsection \<open>Options\<close>
 
 (* encode/decode *)
