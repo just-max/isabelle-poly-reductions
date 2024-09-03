@@ -116,6 +116,8 @@ fun register_def eq = Specification.definition NONE [] [] (Binding.empty_atts, e
 
 fun register_fun binding_name lhs rhs lthy =
   let
+    val l = Syntax.pretty_term lthy #> Pretty.writeln
+    val _ = (@{print} (binding_name, lhs, rhs); l lhs; l rhs)
     val fixes = [(binding_name, NONE, NoSyn)]
     val specs = [((Binding.empty_atts, BU.mk_Trueprop_eq (lhs, rhs)), [], [])]
   in Function_Fun.add_fun fixes specs Function_Fun.fun_config lthy end
