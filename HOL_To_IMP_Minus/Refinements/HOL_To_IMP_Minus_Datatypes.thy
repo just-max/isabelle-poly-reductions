@@ -55,9 +55,13 @@ fun compare_lengths :: "'a list \<Rightarrow> 'b list \<Rightarrow> cmp_val" whe
   "compare_lengths _ [] = GT" |
   "compare_lengths (_ # xs) (_ # ys) = compare_lengths xs ys"
 
+lemma "compare_lengths xs ys = cmp (length xs) (length ys)"
+  unfolding cmp_def by (induction xs ys rule: compare_lengths.induct) auto
+
 case_of_simps compare_lengths_eq : compare_lengths.simps
 
 function_compile_nat compare_lengths_eq
+print_theorems
 
 paragraph \<open>rev\<close>
 
@@ -126,8 +130,7 @@ thm HOL_To_HOL_Nat.size_nat_eq_unfolded
 lemmas size_nat_eq = HOL_To_HOL_Nat.size_nat_eq_unfolded[simplified case_list_nat_def]
 unconditional_nat size_nat_eq basename length_nat
 declare length_nat_unconditional.simps [simp del]
-compile_nat length_nat_unconditional.simps
-print_theorems
+(* compile_nat length_nat_unconditional.simps *)
 (* TODO: also the proof doesn't work *)
 (* HOL_To_IMP_Minus_correct length_nat_unconditional by (cook mode = tailcall) *)
 
@@ -147,12 +150,137 @@ declare rev_aux_nat_unconditional.simps [simp del]
 compile_nat rev_aux_nat_unconditional.simps
 HOL_To_IMP_Minus_correct rev_aux_nat_unconditional by (cook mode = tailcall)
 
+
+(* TODO: can't do functions with helpers! *)
+
+(* prove simp rules per-constructor *)
+
+lemma natify_list_simps_Nil: "natify [] = Nil_nat"
+  apply (subst natify_list.simps)
+  apply (subst list.case)
+  apply (rule refl)
+  done
+
+lemma natify_list_simps_Cons: "natify (x # xs) = Cons_nat (natify x) (natify xs)"
+  apply (subst natify_list.simps)
+  apply (subst list.case)
+  apply (rule refl)
+  done
+
+lemmas natify_list_simps = natify_list_simps_Nil natify_list_simps_Cons
+
+
+(* prove elimination rules per-constructor *)
+
+lemma Rel_nat_NilE:
+  assumes rel: "Rel_nat xs []"
+  obtains "xs = Nil_nat"
+  apply standard
+  apply (subst rel[simplified Rel_nat_iff_eq_natify])
+    apply (subst natify_list_simps)
+    apply (rule refl)
+   apply ((rule Rel_nat_natify_self)+)?
+  done
+
 (*
-TODO: can't do functions with helpers!
-thm HOL_To_HOL_Nat.rev_nat_eq_unfolded
-lemmas rev_nat_eq = HOL_To_HOL_Nat.rev_nat_eq_unfolded[simplified case_list_nat_def]
-unconditional_nat rev_nat_eq
+lemma Rel_nat_ConsE_isar:
+  assumes rel: "Rel_nat xs (y # ys)"
+  obtains z zs where "xs = Cons_nat z zs" "Rel_nat z y" "Rel_nat zs ys"
+proof
+  have "xs = natify (y # ys)" by (rule rel[simplified Rel_nat_iff_eq_natify])
+  also have "... = Cons_nat (natify y) (natify ys)" by (rule natify_list_simps)
+  finally show "xs = Cons_nat (natify y) (natify ys)" .
+  show "Rel_nat (natify y) y" "Rel_nat (natify ys) ys" using Rel_nat_iff_eq_natify by auto
+qed
 *)
+
+lemma Rel_nat_ConsE:
+  assumes rel: "Rel_nat xs (y # ys)"
+  obtains z zs where "xs = Cons_nat z zs" "Rel_nat z y" "Rel_nat zs ys"
+  apply standard
+  apply (subst rel[simplified Rel_nat_iff_eq_natify])
+    apply (subst natify_list_simps)
+    apply (rule refl)
+   apply ((rule Rel_nat_natify_self)+)?
+  done
+
+thm rev_aux_nat_unconditional.simps
+thm HOL_To_HOL_Nat.rev_aux_nat_eq_unfolded [simplified case_list_nat_def]
+
+lemma rev_aux_nat_unrelate:
+  fixes acc xs :: nat and acc_dt xs_dt :: "('a :: compile_nat) list"
+  assumes "Rel_nat acc acc_dt" "Rel_nat xs xs_dt"
+  shows "HOL_To_HOL_Nat.rev_aux_nat TYPE('a) acc xs = rev_aux_nat_unconditional acc xs"
+using assms proof (induction acc xs arbitrary: acc_dt xs_dt rule: rev_aux_nat_unconditional.induct)
+  case (1 acc xs)
+  consider "fst_nat xs = 0" | "fst_nat xs \<noteq> 0" by blast
+  then show ?case
+  proof cases
+    assume "fst_nat xs = 0"
+    then show ?thesis
+      apply (subst HOL_To_HOL_Nat.rev_aux_nat_eq_unfolded[OF "1.prems"])
+      apply (subst case_list_nat_def)
+      apply (subst rev_aux_nat_unconditional.simps)
+      apply simp
+      done
+  next
+    assume cons: "fst_nat xs \<noteq> 0"
+
+    from cons obtain xs_dt1 xs_dt2 where xs_cons_dt: "xs_dt = xs_dt1 # xs_dt2"
+      by (metis "1.prems"(2) Rel_nat_def compile_nat_type_def.Rep_inverse denatify_list.simps) (* :< *)
+    then have "Rel_nat xs (xs_dt1 # xs_dt2)" using "1.prems"(2) by simp
+    then obtain xs1 xs2
+      where xs_cons: "xs = Cons_nat xs1 xs2" "Rel_nat xs1 xs_dt1" "Rel_nat xs2 xs_dt2"
+      by (rule Rel_nat_ConsE)
+
+    have xs1_cons1: "xs1 = (fst_nat (snd_nat xs))" using xs_cons(1) Cons_nat_def by simp
+
+    from xs1_cons1 have rel_rec1: "Rel_nat (Cons_nat (fst_nat (snd_nat xs)) acc) (xs_dt1 # acc_dt)"
+      by (metis "1.prems"(1) Rel_nat_def natify_list_simps_Cons xs_cons(2))
+    from xs1_cons1 have rel_rec2: "Rel_nat (snd_nat (snd_nat xs)) xs_dt2"
+      using xs_cons(1,3) Cons_nat_def by simp
+
+    have "HOL_To_HOL_Nat.rev_aux_nat TYPE('a) acc xs
+      = case_list_nat acc (\<lambda>x. HOL_To_HOL_Nat.rev_aux_nat TYPE('a) (Cons_nat x acc)) xs"
+      by (rule HOL_To_HOL_Nat.rev_aux_nat_eq_unfolded[OF "1.prems"])
+    also have "...
+      = (if fst_nat xs = 0 then acc else HOL_To_HOL_Nat.rev_aux_nat TYPE('a) (Cons_nat (fst_nat (snd_nat xs)) acc) (snd_nat (snd_nat xs)))"
+      by (subst case_list_nat_def) (rule refl)
+    also have "...
+      = HOL_To_HOL_Nat.rev_aux_nat TYPE('a) (Cons_nat (fst_nat (snd_nat xs)) acc) (snd_nat (snd_nat xs))"
+      by (rule if_not_P[OF cons])
+    also have "...
+      = rev_aux_nat_unconditional (Cons_nat (fst_nat (snd_nat xs)) acc) (snd_nat (snd_nat xs))"
+      by (rule "1.IH"[OF cons rel_rec1 rel_rec2])
+    also have "...
+      = rev_aux_nat_unconditional acc xs"
+      apply (subst (2) rev_aux_nat_unconditional.simps)
+      apply (subst if_not_P[OF cons])
+      apply (rule refl)
+      done
+    finally show ?thesis .
+  qed
+qed 
+
+thm Rel_nat_natify_self[where x = "[]"]
+
+thm HOL_To_HOL_Nat.rev_nat_eq_unfolded[simplified case_list_nat_def]
+thm case_list_nat_def
+lemma rev_nat_eq:
+  fixes acc xs :: nat and acc_dt xs_dt :: "('a :: compile_nat) list"
+  assumes rel: "Rel_nat xs xs_dt"
+  shows "HOL_To_HOL_Nat.rev_nat TYPE('a) xs =
+    (if fst_nat xs = 0 then Nil_nat else rev_aux_nat_unconditional (Cons_nat (fst_nat (snd_nat xs)) Nil_nat) (snd_nat (snd_nat xs)))"
+  apply (subst HOL_To_HOL_Nat.rev_nat_eq_unfolded[OF rel])
+  apply (subst case_list_nat_def)
+  using rev_aux_nat_unrelate[OF _ rel] rel
+  by (metis HOL_To_IMP_Minus.rev_aux_nat_unconditional.simps Rel_nat_Nil_nat rev_aux_nat_eq)
+  
+unconditional_nat rev_nat_eq
+print_theorems
+declare rev_aux_nat_unconditional.simps [simp del]
+compile_nat rev_nat_unconditional.simps
+HOL_To_IMP_Minus_correct rev_nat_unconditional by cook
 
 paragraph \<open>zip\<close>
 
