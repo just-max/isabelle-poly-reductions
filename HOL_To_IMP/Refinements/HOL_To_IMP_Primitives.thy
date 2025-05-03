@@ -2,6 +2,7 @@
 theory HOL_To_IMP_Primitives
   imports
     "HOL_Nat_To_IMP.HOL_Nat_To_IMP_Tactics"
+    "HOL-Data_Structures.Define_Time_Function"
 begin
 
 context HOL_To_HOL_Nat
@@ -120,6 +121,706 @@ HOL_To_IMP_correct Groups.minus
 
 end
 
+
+
+
+context HOL_Nat_To_IMP
+begin
+
+
+(* TODO: tcom \<rightarrow> com step as in correctness proof *)
+
+(* this should probably be \<le> t ... *)
+definition "terminates_with_time_IMP_Tailcall tp p s s' t \<equiv>
+  terminates_with_pred_time_IMP_Tailcall tp p s s' ((=) t)"
+
+definition "terminates_with_res_time_IMP p s r val t \<equiv>
+  terminates_with_res_pred_time_IMP p s r val ((=) t)"
+(* TODO: write corresponding elim/intro rules *)
+
+(*
+lemma terminates_with_time_IMP_TailcallI_0:
+  assumes "terminates_with_pred_time_IMP_Tailcall tp p s s' ((=) t)"
+  shows "terminates_with_time_IMP_Tailcall tp p s s' t"
+  using assms terminates_with_pred_time_IMP_TailcallI
+  unfolding terminates_with_time_IMP_Tailcall_def
+  by blast
+
+lemma terminates_with_time_IMP_TailcallE_0:
+  assumes "terminates_with_time_IMP_Tailcall tp p s s' t"
+  shows "terminates_with_pred_time_IMP_Tailcall tp p s s' ((=) t)"
+  using assms terminates_with_pred_time_IMP_TailcallE
+  unfolding terminates_with_time_IMP_Tailcall_def
+  by blast *)
+
+(* it might be "nicer" to write these in terms of terminates_with_pred_time_IMP_TailcallI/E,
+    but the resulting higher-order unification trips up the automation *)
+lemma terminates_with_time_IMP_TailcallI:
+  assumes "tp \<turnstile> (p, s) \<Rightarrow>\<^bsup>t'\<^esup> s'"
+  assumes "t = t'"
+  shows "terminates_with_time_IMP_Tailcall tp p s s' t"
+  using assms terminates_with_pred_time_IMP_TailcallI
+  unfolding terminates_with_time_IMP_Tailcall_def
+  by blast
+
+lemma terminates_with_time_IMP_TailcallE:
+  assumes "terminates_with_time_IMP_Tailcall tp p s s' t"
+  obtains t' where "tp \<turnstile> (p, s) \<Rightarrow>\<^bsup>t\<^esup> s'" "t = t'"
+  using assms terminates_with_pred_time_IMP_TailcallE
+  unfolding terminates_with_time_IMP_Tailcall_def
+  by blast
+
+lemma terminates_with_res_time_IMPI:
+  assumes "(p, s) \<Rightarrow>\<^bsup>t'\<^esup> s'"
+  assumes "s' r = val"
+  assumes "t = t'"
+  shows "terminates_with_res_time_IMP p s r val t"
+  using assms terminates_with_res_pred_time_IMPI terminates_with_pred_time_IMPI
+  unfolding terminates_with_res_time_IMP_def
+  by fastforce
+
+lemma terminates_with_res_time_IMPE:
+  assumes "terminates_with_res_time_IMP p s r val t"
+  obtains s' t' where "(p, s) \<Rightarrow>\<^bsup>t'\<^esup> s'" "s' r = val" "t = t'"
+  using assms terminates_with_res_pred_time_IMPE terminates_with_pred_time_IMPE
+  unfolding terminates_with_res_time_IMP_def
+  by metis
+
+(*
+definition "terminates_with_res_time_IMP_Tailcall tp p s r val t \<equiv>
+  terminates_with_res_pred_time_IMP_Tailcall tp p s r val ((=) t)" *)
+
+context
+  notes
+    terminates_with_time_IMP_TailcallI[intro] terminates_with_time_IMP_TailcallE[elim]
+    terminates_with_res_time_IMPI[intro] terminates_with_res_time_IMPE[elim]
+    (* terminates_with_pred_time_IMP_TailcallI[intro] terminates_with_pred_time_IMP_TailcallE[elim] *)
+begin
+
+
+lemma terminates_with_time_tSeqI:
+  assumes "terminates_with_time_IMP_Tailcall tp p1 s s' t1"
+  assumes "terminates_with_time_IMP_Tailcall tp p2 s' s'' t2"
+  assumes "t = t1 + t2"
+  shows "terminates_with_time_IMP_Tailcall tp (tSeq p1 p2) s s'' t"
+  using assms by fastforce
+
+lemma terminates_with_time_tAssignI:
+  assumes "s' = s(k := aval aexp s)"
+  assumes "t = 2"
+  shows "terminates_with_time_IMP_Tailcall p (tAssign k aexp) s s' t"
+  using assms by fastforce
+
+(*
+lemma terminates_with_time_tIfI:
+  assumes "s vb \<noteq> 0 \<Longrightarrow> terminates_with_time_IMP_Tailcall p p1 s s' t1"
+  assumes "s vb = 0 \<Longrightarrow> terminates_with_time_IMP_Tailcall p p2 s s' t2"
+  assumes "t = (if s vb \<noteq> 0 then t1 else t2) + 1" (* ? *)
+  shows "terminates_with_time_IMP_Tailcall p (tIf vb p1 p2) s s' t"
+  using assms by fastforce *)
+
+(*
+lemma terminates_with_time_tIfI:
+  assumes "cond \<Longrightarrow> terminates_with_time_IMP_Tailcall p p1 s1 s1' t1"
+  assumes "cond \<Longrightarrow> s1 = s"
+  assumes "cond \<Longrightarrow> s' = s1'"
+  assumes "\<not>cond \<Longrightarrow> terminates_with_time_IMP_Tailcall p p2 s2 s2' t2"
+  assumes "\<not>cond \<Longrightarrow> s2 = s"
+  assumes "\<not>cond \<Longrightarrow> s' = s2'"
+  assumes "t = (if cond then t1 else t2) + 1"
+  assumes "cond = (s vb \<noteq> 0)"
+  shows "terminates_with_time_IMP_Tailcall p (tIf vb p1 p2) s s' t"
+  using assms by fastforce *)
+
+
+
+lemma terminates_with_time_tIfI:
+  assumes "cond \<Longrightarrow> terminates_with_time_IMP_Tailcall p p1 s1 s1' t1"
+  assumes "cond \<Longrightarrow> s1 = s"
+  assumes "\<not>cond \<Longrightarrow> terminates_with_time_IMP_Tailcall p p2 s2 s2' t2"
+  assumes "\<not>cond \<Longrightarrow> s2 = s"
+  assumes "s' = (if cond then s1' else s2')"
+  assumes "t = (if cond then t1 else t2) + 1"
+  assumes "cond = (s vb \<noteq> 0)"
+  shows "terminates_with_time_IMP_Tailcall p (tIf vb p1 p2) s s' t"
+  using assms by fastforce
+
+lemma terminates_with_time_tCallI:
+  assumes "terminates_with_res_time_IMP p s r val t'"
+  assumes "s' = s(r := val)"
+  assumes "t = t'"
+  shows "terminates_with_time_IMP_Tailcall tp (tCall p r) s s' t"
+  using assms by blast
+
+lemma terminates_with_time_tTailI:
+  assumes "terminates_with_time_IMP_Tailcall tp tp s s' t'"
+  assumes "t = t' + 5"
+  shows "terminates_with_time_IMP_Tailcall tp tTAIL s s' t"
+  using assms by fastforce
+
+end
+
+
+lemma big_step_ifI:
+  assumes "s b \<noteq> 0 \<Longrightarrow> (c1,s) \<Rightarrow>\<^bsup> x1 \<^esup> t1"
+  assumes "s b = 0 \<Longrightarrow> (c2,s) \<Rightarrow>\<^bsup> x2 \<^esup> t2"
+  assumes "t = (if s b \<noteq> 0 then t1 else t2)"
+  assumes "y = (if s b \<noteq> 0 then x1 else x2) + 1"
+  shows "(com.If b c1 c2,s) \<Rightarrow>\<^bsup> y \<^esup> t"
+  using assms big_step_t.intros(4,5) by simp
+
+lemma tbig_step_ifI:
+  assumes "s b \<noteq> 0 \<Longrightarrow> c \<turnstile> (c1,s) \<Rightarrow>\<^bsup> x1 \<^esup> t1"
+  assumes "s b = 0 \<Longrightarrow> c \<turnstile> (c2,s) \<Rightarrow>\<^bsup> x2 \<^esup> t2"
+  assumes "t = (if s b \<noteq> 0 then t1 else t2)"
+  assumes "y = (if s b \<noteq> 0 then x1 else x2) + 1"
+  shows "c \<turnstile> (IF b\<noteq>0 THEN c1 ELSE c2,s) \<Rightarrow>\<^bsup> y \<^esup> t"
+  using assms tbig_step_t.intros(4,5) by simp
+
+method repeat methods m = (m; repeat \<open>m\<close>)?
+lemmas tbig_stepI = tbig_step_t.tSkip tbig_step_t.tAssign tbig_step_t.tSeq tbig_step_t.tCall tbig_step_ifI
+method tbig_step_time = rule tbig_stepI
+method tbig_step_unfold_time = repeat \<open>tbig_step_time\<close>
+lemmas big_stepI = big_step_t.Skip big_step_t.Assign big_step_t.Seq big_step_ifI
+method big_step_time = rule big_stepI
+method big_step_unfold_time = repeat \<open>big_step_time\<close>
+
+declare [[unify_search_bound = 500]] (* ?? *)
+declare [[goals_limit=100]]
+
+definition "terminates_with_res_bound_time_IMP_Tailcall tp p r val T \<equiv>
+  \<exists>c. \<forall>s. terminates_with_res_pred_time_IMP_Tailcall tp p s r (val s) (\<lambda>t. t \<le> c * T s)"
+
+lemma terminates_with_res_bound_time_IMP_TailcallI:
+  assumes "\<exists>c. \<forall>s. terminates_with_res_pred_time_IMP_Tailcall tp p s r (val s) (\<lambda>t. t \<le> c * T s)"
+  shows "terminates_with_res_bound_time_IMP_Tailcall tp p r val T"
+  using assms unfolding terminates_with_res_bound_time_IMP_Tailcall_def by blast
+
+lemma bound_fix_time: "terminates_with_res_bound_time_IMP_Tailcall tp p r val T =
+  (\<exists>c. \<forall>s. \<exists>s' t. terminates_with_time_IMP_Tailcall tp p s s' t \<and> s' r = val s \<and> t \<le> c * T s)"
+  unfolding terminates_with_res_bound_time_IMP_Tailcall_def terminates_with_res_pred_time_IMP_Tailcall_def
+    terminates_with_pred_time_IMP_Tailcall_def terminates_with_time_IMP_Tailcall_def
+  (* by (rule eq_reflection) blast *)
+  by blast
+
+fun foo :: "nat \<Rightarrow> nat \<Rightarrow> nat" where
+  "foo x y = x + x + y"
+declare foo.simps[simp del]
+
+time_fun foo
+compile_nat foo.simps
+
+schematic_goal add_IMP_twrt: "terminates_with_res_time_IMP add_IMP s ''add.ret'' (s ''add.arg.x'' + s ''add.arg.y'') ?t"
+  (* will we be able to get away with res_time or do we need the quantified version?
+    \<rightarrow> as soon as we start looking at more complex functions we will probably need the quantified version *)
+  apply (rule terminates_with_res_time_IMPI)
+    apply (subst add_IMP_def)
+    apply (rule big_step_t.Assign)
+   apply auto
+  done
+
+schematic_goal sub_IMP_twrt: "terminates_with_res_time_IMP sub_IMP s ''sub.ret'' (s ''sub.arg.x'' - s ''sub.arg.y'') ?t"
+  apply (rule terminates_with_res_time_IMPI)
+    apply (subst sub_IMP_def)
+    apply (rule big_step_t.Assign)
+   apply auto
+  done
+
+schematic_goal eq_IMP_twrt: "terminates_with_res_time_IMP eq_IMP s ''eq.ret'' (HTHN.eq_nat (s ''eq.arg.x'') (s ''eq.arg.y'')) ?t"
+  apply (rule terminates_with_res_time_IMPI)
+    apply (subst eq_IMP_def)
+    apply big_step_unfold_time
+        defer 3
+        defer 5
+        apply simp
+       apply simp
+      apply simp
+     apply simp
+    apply simp
+   apply simp
+  using HTHN.eq_nat_def by simp
+
+lemma start_time:
+  assumes "s0 = s"
+  assumes "terminates_with_time_IMP_Tailcall tp p s0 s' t"
+  shows "terminates_with_time_IMP_Tailcall tp p s s' t"
+  using assms by blast
+
+method start_time uses f_def =
+  subst (2) f_def, rule start_time
+
+lemma "terminates_with_res_bound_time_IMP_Tailcall
+    foo_IMP_tailcall foo_IMP_tailcall ''foo.ret''
+    (\<lambda>s. foo (s ''foo.arg.x'') (s ''foo.arg.y''))
+    (\<lambda>s. T_foo (s ''foo.arg.x'') (s ''foo.arg.y'') + 1)"
+  apply (subst bound_fix_time)
+  apply (rule exI)
+  apply (rule allI)
+  apply (rule exI)
+  apply (rule exI)
+  apply (repeat \<open>rule conjI\<close>)
+  apply (start_time f_def: foo_IMP_tailcall_def)
+
+     prefer 2
+     apply (rule terminates_with_time_tSeqI)
+      prefer 3 apply (simp only: arith_simps)
+     apply (rule terminates_with_time_tAssignI)
+       prefer 2 apply (simp only: arith_simps)
+      prefer 3 apply (simp only:)
+
+     prefer 2
+     apply (rule terminates_with_time_tSeqI)
+       prefer 3 apply (simp only: arith_simps)
+      apply (rule terminates_with_time_tAssignI)
+       prefer 2 apply (simp only: arith_simps)
+      prefer 3 apply (simp only:)
+
+     prefer 2
+     apply (rule terminates_with_time_tSeqI)
+       prefer 3 apply (simp only: arith_simps)
+      apply (rule terminates_with_time_tCallI)
+        apply (rule add_IMP_twrt)
+       prefer 2 apply (simp only: arith_simps)
+      prefer 3 apply (simp only:)
+
+     prefer 2
+     apply (rule terminates_with_time_tSeqI)
+       prefer 3 apply (simp only: arith_simps)
+      apply (rule terminates_with_time_tAssignI)
+       prefer 2 apply (simp only: arith_simps)
+      prefer 3 apply (simp only:)
+
+     prefer 2
+     apply (rule terminates_with_time_tSeqI)
+       prefer 3 apply (simp only: arith_simps)
+      apply (rule terminates_with_time_tAssignI)
+       prefer 2 apply (simp only: arith_simps)
+      prefer 3 apply (simp only:)
+
+     prefer 2
+     apply (rule terminates_with_time_tSeqI)
+       prefer 3 apply (simp only: arith_simps)
+      apply (rule terminates_with_time_tCallI)
+        apply (rule add_IMP_twrt)
+       prefer 2 apply (simp only: arith_simps)
+      prefer 3 apply (simp only:)
+
+     prefer 2
+      apply (rule terminates_with_time_tAssignI)
+      prefer 2 apply (simp only: arith_simps)
+     prefer 2 apply (simp only:)
+
+    prefer 2
+    prefer 2 apply (simp only:)
+   apply simp
+   apply (simp add: foo.simps)
+
+  apply simp
+  apply (rule le_refl)
+  done
+
+
+
+(*
+
+(* first approach: kind of works, very messy *)
+
+lemma "terminates_with_res_bound_time_IMP_Tailcall
+    foo_IMP_tailcall foo_IMP_tailcall ''foo.ret''
+    (\<lambda>s. foo (s ''foo.arg.x'') (s ''foo.arg.y''))
+    (\<lambda>s. T_foo (s ''foo.arg.x'') (s ''foo.arg.y'') + 1)"
+  apply (rule terminates_with_res_bound_time_IMP_TailcallI)
+  apply (rule exI)
+
+(* schematic_goal "\<forall>s.
+  terminates_with_res_pred_time_IMP_Tailcall
+    foo_IMP_tailcall foo_IMP_tailcall s ''foo.ret''
+    (foo (s ''foo.arg.x'') (s ''foo.arg.y''))
+    (\<lambda>t. t \<le> ?c * (1 + T_foo (s ''foo.arg.x'') (s ''foo.arg.y'')))" *)
+  (* TODO here: 1 + ... only because T_foo may be 0 ???? *)
+
+  apply (rule allI)
+  apply (rule terminates_with_res_pred_time_IMP_TailcallI)
+   apply (rule terminates_with_pred_time_IMP_TailcallI)
+    apply (subst (2) foo_IMP_tailcall_def)
+    apply tbig_step_time
+      prefer 3
+      apply (simp only: arith_simps)
+     apply tbig_step_time
+    apply tbig_step_time
+      prefer 3
+      apply (simp only: arith_simps)
+     apply tbig_step_time
+    apply tbig_step_time
+      prefer 3
+      apply (simp only: arith_simps)
+     apply tbig_step_time
+     apply (subst add_IMP_def)
+     apply big_step_time
+    apply tbig_step_time
+      prefer 3
+      apply (simp only: arith_simps)
+     apply tbig_step_time
+    apply tbig_step_time
+      prefer 3
+      apply (simp only: arith_simps)
+     apply tbig_step_time
+    apply tbig_step_time
+      prefer 3
+      apply (simp only: arith_simps)
+     apply tbig_step_time
+     apply (subst add_IMP_def)
+     apply big_step_time
+    apply tbig_step_time
+   apply simp
+   apply (rule le_refl)
+  apply (simp add: foo.simps)
+  done
+
+*)
+
+
+
+
+
+fun bar :: "nat \<Rightarrow> nat" where
+  "bar 0 = 0" |
+  "bar (Suc n) = bar n"
+time_fun bar
+
+case_of_simps bar_eq_case : bar.simps
+lemmas bar_eq = bar_eq_case[unfolded case_nat_eq_if]
+compile_nat bar_eq
+
+lemma aa: assumes P Q shows "P \<and> Q" using assms by blast
+
+method cond_false = rule not_TrueE FalseE, assumption
+
+lemma simps_to_eq_r: assumes "PROP SIMPS_TO y y'" "x = y'" shows "x = y"
+  using SIMPS_TOD[OF assms(1)] assms(2) by simp
+
+schematic_goal h: "\<exists>s' t.
+  terminates_with_time_IMP_Tailcall bar_IMP_tailcall bar_IMP_tailcall s s' t \<and>
+  s' ''bar.ret'' = bar (s ''bar.arg.xa'') \<and> t \<le> ?c * T_bar (s ''bar.arg.xa'')"
+  (* apply (subst bar_IMP_tailcall_def) *)
+  apply (induction "s ''bar.arg.xa''" arbitrary: s) (* what is the induction rule??? *)
+
+(* base case *)
+
+   apply (rule exI, rule exI)
+
+  apply (repeat \<open>rule conjI\<close>)
+    apply (start_time f_def: bar_IMP_tailcall_def)
+
+     prefer 2
+     apply (rule terminates_with_time_tSeqI)
+       prefer 3 apply (urule refl)
+      apply (rule terminates_with_time_tAssignI)
+       prefer 4 apply (urule refl)
+      prefer 2 apply (urule refl)
+
+     prefer 2
+     apply (rule terminates_with_time_tSeqI)
+       prefer 3 apply (urule refl)
+      apply (rule terminates_with_time_tAssignI)
+       prefer 4 apply (urule refl)
+      prefer 2 apply (urule refl)
+
+     prefer 2
+     apply (rule terminates_with_time_tSeqI)
+       prefer 3 apply (urule refl)
+      apply (rule terminates_with_time_tCallI)
+        apply (rule eq_IMP_twrt)
+       prefer 4 apply (urule refl)
+      prefer 2 apply (urule refl)
+
+     prefer 2
+     apply (rule terminates_with_time_tIfI)
+           prefer 6 apply (urule refl) (* not anymore! ~~~ eek! flex-flex pair without urule *)
+
+          prefer 1
+          apply (rule terminates_with_time_tAssignI)
+          prefer 3 apply (urule refl)
+         prefer 2 apply (urule refl)
+
+         prefer 2
+         apply (rule terminates_with_time_tSeqI)
+           prefer 3 apply (urule refl)
+          apply (rule terminates_with_time_tAssignI)
+           prefer 5 apply (urule refl)
+          prefer 2 apply (urule refl)
+
+         prefer 2
+         apply (rule terminates_with_time_tSeqI)
+           prefer 3 apply (urule refl)
+          apply (rule terminates_with_time_tAssignI)
+           prefer 4 apply (urule refl)
+          prefer 2 apply (urule refl)
+
+         prefer 2
+         apply (rule terminates_with_time_tSeqI)
+           prefer 3 apply (urule refl)
+          apply (rule terminates_with_time_tCallI)
+            apply (rule sub_IMP_twrt)
+           prefer 4 apply (urule refl)
+          prefer 2 apply (urule refl)
+
+         prefer 2
+         apply (rule terminates_with_time_tSeqI)
+           prefer 3 apply (urule refl)
+          apply (rule terminates_with_time_tAssignI)
+           prefer 4 apply (urule refl)
+          prefer 2 apply (urule refl)
+
+         prefer 2
+         apply (rule terminates_with_time_tTailI)
+           prefer 2 apply (urule refl)
+
+        (* finishing is not so pretty... *)
+          prefer 6 apply (urule refl) (* subst state *)
+         prefer 5 apply (rule simps_to_eq_r) apply (simp add: HTHN.eq_nat_def True_nat_def) apply (rule SIMPS_TOI) apply (rule refl)
+        apply cond_false
+       apply cond_false
+      apply (urule refl)
+     apply (rule simps_to_eq_r) apply (simp add: HTHN.eq_nat_def True_nat_def) apply (rule SIMPS_TOI) apply (rule refl)
+    apply simp
+   apply simp
+   defer 1
+
+(* induction step *)
+
+   apply (rule exI, rule exI)
+
+  apply (repeat \<open>rule conjI\<close>)
+    apply (start_time f_def: bar_IMP_tailcall_def)
+
+     prefer 2
+     apply (rule terminates_with_time_tSeqI)
+       prefer 3 apply (urule refl)
+      apply (rule terminates_with_time_tAssignI)
+       prefer 4 apply (urule refl)
+      prefer 2 apply (urule refl)
+
+     prefer 2
+     apply (rule terminates_with_time_tSeqI)
+       prefer 3 apply (urule refl)
+      apply (rule terminates_with_time_tAssignI)
+       prefer 4 apply (urule refl)
+      prefer 2 apply (urule refl)
+
+     prefer 2
+     apply (rule terminates_with_time_tSeqI)
+       prefer 3 apply (urule refl)
+      apply (rule terminates_with_time_tCallI)
+        apply (rule eq_IMP_twrt)
+       prefer 4 apply (urule refl)
+      prefer 2 apply (urule refl)
+
+     prefer 2
+     apply (rule terminates_with_time_tIfI)
+           prefer 6 apply (urule refl)
+
+          prefer 1
+          apply (rule terminates_with_time_tAssignI)
+          prefer 3 apply (urule refl)
+         prefer 2 apply (urule refl)
+
+         prefer 2
+         apply (rule terminates_with_time_tSeqI)
+           prefer 3 apply (urule refl)
+          apply (rule terminates_with_time_tAssignI)
+           prefer 5 apply (urule refl)
+          prefer 2 apply (urule refl)
+
+         prefer 2
+         apply (rule terminates_with_time_tSeqI)
+           prefer 3 apply (urule refl)
+          apply (rule terminates_with_time_tAssignI)
+           prefer 4 apply (urule refl)
+          prefer 2 apply (urule refl)
+
+         prefer 2
+         apply (rule terminates_with_time_tSeqI)
+           prefer 3 apply (urule refl)
+          apply (rule terminates_with_time_tCallI)
+            apply (rule sub_IMP_twrt)
+           prefer 4 apply (urule refl)
+          prefer 2 apply (urule refl)
+
+         prefer 2
+         apply (rule terminates_with_time_tSeqI)
+           prefer 3 apply (urule refl)
+          apply (rule terminates_with_time_tAssignI)
+           prefer 4 apply (urule refl)
+          prefer 2 apply (urule refl)
+
+         prefer 2
+         apply (rule terminates_with_time_tTailI)
+           prefer 2 apply (urule refl)
+
+          defer 1
+          prefer 5 apply (urule refl) (* subst state *)
+         prefer 4 apply (rule simps_to_eq_r) apply (simp add: HTHN.eq_nat_def False_nat_def) apply (rule SIMPS_TOI) apply (rule refl) (* evaluate conditional *)
+        apply (urule refl) (* subst cond. state *)
+       apply cond_false
+      apply (rule simps_to_eq_r) apply (simp only: if_False) apply (rule SIMPS_TOI) apply (rule refl)
+     prefer 4
+
+
+
+
+
+
+
+
+  sorry
+
+
+
+
+lemma "terminates_with_res_bound_time_IMP_Tailcall
+    bar_IMP_tailcall bar_IMP_tailcall ''bar.ret''
+    (\<lambda>s. bar (s ''bar.arg.xa''))
+    (\<lambda>s. T_bar (s ''bar.arg.xa''))"
+  apply (subst bound_fix_time)
+  apply (rule exI)
+  apply (rule allI)
+  apply (rule exI)
+  apply (rule exI)
+
+  apply (repeat \<open>rule conjI\<close>)
+    apply (start_time f_def: bar_IMP_tailcall_def)
+
+     prefer 2
+     apply (rule terminates_with_time_tSeqI)
+       prefer 3 apply (urule refl)
+      apply (rule terminates_with_time_tAssignI)
+       prefer 4 apply (urule refl)
+      prefer 2 apply (urule refl)
+
+     prefer 2
+     apply (rule terminates_with_time_tSeqI)
+       prefer 3 apply (urule refl)
+      apply (rule terminates_with_time_tAssignI)
+       prefer 4 apply (urule refl)
+      prefer 2 apply (urule refl)
+
+     prefer 2
+     apply (rule terminates_with_time_tSeqI)
+       prefer 3 apply (urule refl)
+      apply (rule terminates_with_time_tCallI)
+        apply (rule eq_IMP_twrt)
+       prefer 4 apply (urule refl)
+      prefer 2 apply (urule refl)
+
+     prefer 2
+     apply (rule terminates_with_time_tIfI)
+           prefer 6 apply (urule refl) (* not anymore! ~~~ eek! flex-flex pair without urule *)
+
+          prefer 1
+          apply (rule terminates_with_time_tAssignI)
+          prefer 3 apply (urule refl)
+         prefer 2 apply (urule refl)
+
+         prefer 2
+         apply (rule terminates_with_time_tSeqI)
+           prefer 3 apply (urule refl)
+          apply (rule terminates_with_time_tAssignI)
+           prefer 5 apply (urule refl)
+          prefer 2 apply (urule refl)
+
+         prefer 2
+         apply (rule terminates_with_time_tSeqI)
+           prefer 3 apply (urule refl)
+          apply (rule terminates_with_time_tAssignI)
+           prefer 4 apply (urule refl)
+          prefer 2 apply (urule refl)
+
+         prefer 2
+         apply (rule terminates_with_time_tSeqI)
+           prefer 3 apply (urule refl)
+          apply (rule terminates_with_time_tCallI)
+            apply (rule sub_IMP_twrt)
+           prefer 4 apply (urule refl)
+          prefer 2 apply (urule refl)
+
+         prefer 2
+         apply (rule terminates_with_time_tSeqI)
+           prefer 3 apply (urule refl)
+          apply (rule terminates_with_time_tAssignI)
+           prefer 4 apply (urule refl)
+          prefer 2 apply (urule refl)
+
+         prefer 2
+         apply (rule terminates_with_time_tTailI)
+          prefer 2 apply (urule refl)
+  sorry
+
+
+
+
+
+(*
+lemma "terminates_with_res_bound_time_IMP_Tailcall
+  bar_IMP_tailcall bar_IMP_tailcall ''bar.ret''
+    (\<lambda>s. bar (s ''bar.arg.xa''))
+    (\<lambda>s. T_bar (s ''bar.arg.xa''))"
+  apply (rule terminates_with_res_bound_time_IMP_TailcallI)
+  apply (rule exI, rule allI)
+  apply (rule terminates_with_res_pred_time_IMP_TailcallI)
+   apply (rule terminates_with_pred_time_IMP_TailcallI)
+    apply (subst (2) bar_IMP_tailcall_def)
+    apply tbig_step_time
+      prefer 3
+      apply (simp only: arith_simps)
+     apply tbig_step_time
+    apply tbig_step_time
+      prefer 3
+      apply (simp only: arith_simps)
+     apply tbig_step_time
+    apply tbig_step_time
+      prefer 3
+      apply (simp only: arith_simps)
+     apply tbig_step_time
+     apply (subst eq_IMP_def)
+     apply big_step_time
+       prefer 3
+       apply (simp only: arith_simps)
+      apply (big_step_unfold_time; simp only: arith_simps)
+     apply big_step_time
+     apply big_step_time
+      apply big_step_time
+
+*)
+
+
+
+
+
+HOL_To_IMP_correct bar by cook
+
+
+
+(* lemma bar0: "bar n = 0" by (induction n) auto *)
+(* lemma T_bar_lin: "T_bar n = n + 1" by (induction n) auto *)
+
+
+
+
+
+
+fun baz :: "nat \<Rightarrow> nat" where
+  "baz n = foo n n + bar n"
+
+time_fun baz
+
+lemma "T_bar x = x + 1" by (induction x) auto
+
+end
+
+
+
+
 paragraph \<open>Multiplication\<close>
 
 context HOL_To_HOL_Nat
@@ -130,6 +831,8 @@ fun mul_acc_nat :: "nat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> nat" w
 "mul_acc_nat (Suc x) y z = mul_acc_nat x y (y + z)"
 declare mul_acc_nat.simps[simp del]
 
+time_fun mul_acc_nat
+
 lemma mul_acc_nat_eq_mul_add: "mul_acc_nat x y z = x * y + z"
   by (induction x y z arbitrary: z rule: mul_acc_nat.induct)
   (auto simp: mul_acc_nat.simps mult_eq_if)
@@ -139,6 +842,8 @@ function_compile_nat mul_acc_nat_eq
 
 lemma mul_eq_mul_acc_nat_zero: "x * y = mul_acc_nat x y 0"
   using mul_acc_nat_eq_mul_add by simp
+
+(* TODO: time_fun mul_eq_mul_acc_nat_zero *)
 
 function_compile_nat mul_eq_mul_acc_nat_zero
 
@@ -154,6 +859,36 @@ and Rel_nat_selector_Suc[Rel_nat]
 lemmas mul_acc_nat_nat_eq = HTHN.mul_acc_nat_nat_eq_unfolded[unfolded case_nat_eq_if]
 compile_nat mul_acc_nat_nat_eq
 HOL_To_IMP_correct HTHN.mul_acc_nat_nat by cook
+
+lemma "\<exists>c. \<forall>s.
+  Rel_nat (s ''mul_acc_nat_nat.arg.x'') y \<longrightarrow>
+  Rel_nat (s ''mul_acc_nat_nat.arg.xa'') ya \<longrightarrow>
+  Rel_nat (s ''mul_acc_nat_nat.arg.xb'') yb \<longrightarrow>
+  terminates_with_res_pred_time_IMP_Tailcall mul_acc_nat_nat_IMP_tailcall mul_acc_nat_nat_IMP_tailcall
+    s ''mul_acc_nat_nat.ret''
+    (HTHN.mul_acc_nat_nat (s ''mul_acc_nat_nat.arg.x'') (s ''mul_acc_nat_nat.arg.xa'') (s ''mul_acc_nat_nat.arg.xb''))
+    (\<lambda>t. t \<le> c * HTHN.T_mul_acc_nat (s ''mul_acc_nat_nat.arg.x'') (s ''mul_acc_nat_nat.arg.xa'') (s ''mul_acc_nat_nat.arg.xb''))"
+  (*apply (rule exI)
+  apply (rule impI)+
+  apply (rule terminates_with_res_pred_time_IMP_TailcallI)
+   apply (rule terminates_with_pred_time_IMP_TailcallI)
+
+    apply (subst (2) mul_acc_nat_nat_IMP_tailcall_def)
+    apply (repeat \<open>subst eq_IMP_def add_IMP_def sub_IMP_def\<close>)
+
+    apply tbig_step_unfold_time
+        apply big_step_unfold_time
+  apply (rule refl, rule refl)
+  defer *)
+
+  sorry
+
+(* TODO: we now hit an if-else, and the true-branch is always taken *)
+(* somwhere we need to do an induction *)
+
+
+
+
 
 compile_nat HTHN.times_nat_eq_unfolded
 HOL_To_IMP_correct HTHN.times_nat by cook

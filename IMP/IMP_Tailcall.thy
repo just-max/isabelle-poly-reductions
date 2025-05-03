@@ -34,12 +34,14 @@ tCall: "(C,s) \<Rightarrow>\<^bsup>z \<^esup> t \<Longrightarrow> c \<turnstile>
 \<comment> \<open>New rule\<close>
 tTail: "c \<turnstile> (c,s) \<Rightarrow>\<^bsup>z \<^esup> t \<Longrightarrow> c \<turnstile> (tTAIL,s) \<Rightarrow>\<^bsup>5 + z \<^esup> t"
 
+print_theorems
+
 bundle tbig_step_syntax
 begin
 notation tbig_step_t ("_ \<turnstile> _ \<Rightarrow>\<^bsup>_\<^esup>  _" 55)
 end
 
-code_pred tbig_step_t .
+code_pred [show_modes] tbig_step_t .
 
 declare tbig_step_t.intros[intro]
 
@@ -82,6 +84,47 @@ fun invar :: "tcom \<Rightarrow> bool" where
 
 lemma no_tails_invar[simp]: "\<not>tails c \<Longrightarrow> invar c"
   by (induction c) auto
+
+method repeat methods m = (m; repeat \<open>m\<close>)?
+
+(*
+lemma a: "tbig_step_t c (tSKIP,s) 1 s" using tbig_step_t.intros by fastforce
+lemma b:
+  assumes "tbig_step_t c (c1,s1) x s2" and "tbig_step_t c (c2,s2) y s3" and "z=x+y"
+  shows "tbig_step_t c (c1;;c2,s1) z s3"*)
+
+(*
+thm tbig_step_t.intros(1)
+schematic_goal meow: "tbig_step_t (tSKIP;; (tSKIP;; tTAIL)) ((tSKIP;;tTAIL),null_state) ?z ?s"
+  apply (repeat \<open>rule tbig_step_t.intros(1-6)\<close>)
+  apply auto
+  
+  apply simp_all
+  done
+thm meow *)
+
+(*
+fun ttime :: "tcom \<Rightarrow> tcom \<times> state \<Rightarrow> nat" where
+  "ttime _ (tSKIP,_) = 1" |
+  "ttime _ (_ ::= _,_) = 2" |
+  "ttime c (IF b \<noteq>0 THEN c1 ELSE c2,s) =
+    (if s b \<noteq> 0 then ttime c (c1,s) else ttime c (c2,s))" |
+  "ttime c (CALL C RETURN r,s) = 0" |
+  "ttime c (tTAIL,s) = ttime c (c,s)" *)
+
+(* tcom \<Rightarrow> tcom \<times> state \<Rightarrow> nat \<Rightarrow> state \<Rightarrow> bool *)
+
+(* 
+
+tSkip: "c \<turnstile> (tSKIP,s) \<Rightarrow>\<^bsup>Suc (0::nat) \<^esup> s" |
+tAssign: "c \<turnstile>(x ::= a,s) \<Rightarrow>\<^bsup>Suc (Suc 0) \<^esup> s(x := aval a s)" |
+tSeq: "\<lbrakk>c \<turnstile> (c1,s1) \<Rightarrow>\<^bsup>x \<^esup> s2; c \<turnstile> (c2,s2) \<Rightarrow>\<^bsup>y \<^esup> s3 ; z=x+y \<rbrakk> \<Longrightarrow> c \<turnstile> (c1;;c2, s1) \<Rightarrow>\<^bsup>z \<^esup> s3" |
+tIfTrue: "\<lbrakk> s b \<noteq> 0;  c \<turnstile> (c1,s) \<Rightarrow>\<^bsup>x \<^esup> t; y=x+1 \<rbrakk> \<Longrightarrow> c \<turnstile> (IF b \<noteq>0 THEN c1 ELSE c2, s) \<Rightarrow>\<^bsup>y \<^esup> t" |
+tIfFalse: "\<lbrakk> s b = 0; c \<turnstile> (c2,s) \<Rightarrow>\<^bsup>x \<^esup> t; y=x+1  \<rbrakk> \<Longrightarrow> c \<turnstile> (IF b \<noteq>0 THEN c1 ELSE c2, s) \<Rightarrow>\<^bsup>y \<^esup> t" |
+tCall: "(C,s) \<Rightarrow>\<^bsup>z \<^esup> t \<Longrightarrow> c \<turnstile> (CALL C RETURN r,s) \<Rightarrow>\<^bsup>z \<^esup> (s(r:=t r))" |
+\<comment> \<open>New rule\<close>
+tTail: "c \<turnstile> (c,s) \<Rightarrow>\<^bsup>z \<^esup> t \<Longrightarrow> c \<turnstile> (tTAIL,s) \<Rightarrow>\<^bsup>5 + z \<^esup> t"
+*)
 
 
 section \<open>Semantics for small-step-ish reasoning (loops)\<close>
