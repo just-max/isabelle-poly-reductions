@@ -155,6 +155,12 @@ definition "terminates_with_res_bound_time_IMP_Tailcall tp p r val t \<equiv>
 definition "terminates_with_res_bound_time_IMP p r val t \<equiv>
   \<exists>c. \<forall>s. terminates_with_res_time_IMP p s r (val s) (c * t s)"
 
+definition "bound_time s (t :: state \<Rightarrow> nat) \<equiv> (\<lambda>t'. \<exists>c. t' \<le> c * t s)"
+
+(*
+lemma
+  assumes "terminates_with_res_bound_time_IMP_Tailcall tp p r val t"
+  shows "\<And>s. bound_time s *)
 
 (*
 lemma terminates_with_time_IMP_TailcallI_0:
@@ -316,6 +322,52 @@ lemma terminates_with_time_tCallI_b:
   obtains c where "terminates_with_time_IMP_Tailcall tp (tCall p r) s s' (c * t)"
   using assms
   by (meson mult_le_mono2 terminates_with_res_bound_time_IMPE terminates_with_time_tCallI) (* TODO *)
+
+
+
+schematic_goal "terminates_with_time_IMP_Tailcall tp p s s' t \<equiv> ?P"
+  apply (rule SIMPS_TOD)
+  apply (simp add:
+      terminates_with_time_IMP_Tailcall_def
+      terminates_with_pred_time_IMP_Tailcall_def
+      bounded_by_def)
+  oops
+
+
+schematic_goal "terminates_with_res_bound_time_IMP p r val t' \<equiv> ?P"
+  apply (rule SIMPS_TOD)
+  apply (simp add:
+      terminates_with_res_bound_time_IMP_def
+      terminates_with_res_time_IMP_def
+      terminates_with_res_pred_time_IMP_def
+      terminates_with_pred_time_IMP_def
+      bounded_by_def)
+  oops
+
+(*
+lemma a:
+  assumes "Q \<equiv> P"
+  and P
+  shows Q
+  using assms by blast *)
+
+lemma terminates_with_time_tCallI_delay:
+  assumes "terminates_with_res_bound_time_IMP p r val t'"
+  assumes "s' = s(r := val s)"
+  (* assumes "\<exists>c. t \<ge> c * t' s" *)
+  shows "terminates_with_time_IMP_Tailcall tp (tCall p r) s s' (t' s)"
+  using assms try0
+  (* apply (rule a)
+   apply (rule SIMPS_TOD)
+  apply (simp add:
+      terminates_with_time_IMP_Tailcall_def
+      terminates_with_pred_time_IMP_Tailcall_def
+      bounded_by_def)
+   apply (rule SIMPS_TOI)
+  using assms
+  by (meson dual_order.refl terminates_with_res_bound_time_IMPE terminates_with_time_tCallI) *)
+  sorry
+
 
 lemma terminates_with_time_tTailI:
   assumes "terminates_with_time_IMP_Tailcall tp tp s s' t'"
