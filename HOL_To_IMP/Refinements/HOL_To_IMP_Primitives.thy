@@ -134,6 +134,8 @@ lemma bounded_byI[intro]: assumes "t \<le> u" shows "bounded_by u t" using assms
 lemma bounded_byE[elim]: assumes "bounded_by u t" shows "t \<le> u" using assms unfolding bounded_by_def .
 
 definition constant_time :: "state \<Rightarrow> nat" where "constant_time \<equiv> (\<lambda>_. 1)"
+lemma constant_time1: "constant_time s = 1" unfolding constant_time_def by simp
+
 definition linear_time_in :: "vname \<Rightarrow> state \<Rightarrow> nat" where "linear_time_in x \<equiv> (\<lambda>s. s x)"
 
 (* TODO: tcom \<rightarrow> com step as in correctness proof *)
@@ -142,86 +144,11 @@ definition linear_time_in :: "vname \<Rightarrow> state \<Rightarrow> nat" where
 definition "terminates_with_time_IMP_Tailcall tp p s s' t \<equiv>
   terminates_with_pred_time_IMP_Tailcall tp p s s' (bounded_by t)"
 
+definition "terminates_with_time_IMP p s s' t \<equiv>
+  terminates_with_pred_time_IMP p s s' (bounded_by t)"
+
 definition "terminates_with_res_time_IMP_Tailcall tp p s r val t \<equiv>
-  \<exists>s'. terminates_with_time_IMP_Tailcall tp p s s' t \<and> s' r = val"
-
-(*
-inductive constrained_byi where
-  "constrained_byi [] 0" |
-  "\<exists>c. z1 \<le> c * r \<Longrightarrow> constrained_byi rs z2 \<Longrightarrow> constrained_byi (r # rs) (z1 + z2)"
-*)
-
-fun constrained_by :: "nat \<Rightarrow> nat list \<Rightarrow> nat \<Rightarrow> bool"  where
-  "constrained_by t [] = (\<lambda>z. z \<le> t)" |
-  "constrained_by t (r # rs) = (\<lambda>z. \<exists>c. constrained_by (t + c * r) rs z)"
-
-schematic_goal constrained_by_example:
-    "constrained_by 5 (s1 ''x'' # s2 ''y'' # (s3 ''a'' + s3 ''b'') # []) (s3 ''a'') \<equiv> ?P"
-  apply (rule SIMPS_TOD)
-  apply simp
-  apply (rule SIMPS_TOI)
-  oops
-
-thm constrained_by.induct
-(*
-lemma jdf:
-  assumes "constrained_by t [] z"
-  shows "constrained_by (t + t') [] (z + t')"
-  using assms by simp
-
-schematic_goal jjj:
-  assumes "\<exists>c. z' \<le> c * r"
-  assumes "constrained_by t rs z"
-  shows "constrained_by t (r # rs) (z + z')"
-  apply simp
-
-
-lemma jdf:
-  assumes "constrained_by t rs z"
-  shows "constrained_by (t + t') rs (z + t')"
-  using assms apply (induction rs arbitrary: t rule: constrained_by.induct)
-  apply auto
-  case Nil
-  then show ?case by simp
-next
-  case (Cons a rs)
-  then show ?case sorry
-qed
-  apply
-  using assms apply (cases rs)
-  using assms apply (cases rs)
-  apply simp
-
-lemma constrained_plus:
-  assumes "constrained_by t1 rs1 z1"
-  assumes "constrained_by t2 rs2 z2"
-  shows "constrained_by (t1 + t2) (rs1 @ rs2) (z1 + z2)"
-using assms proof (induction rs1)
-  case Nil
-  assume 1: "constrained_by t1 [] t"
-  then have "t \<le> t1" by simp
-  assume 2: "constrained_by t2 rs2 t"
-  show ?case
-next
-  case (Cons a rs1)
-  then show ?case sorry
-qed
-  apply (induction rs1)
-  (* apply (induction "t1 + t2" rs1 rule: constrained_by.induct) *)
-   apply simp
-   apply (cases rs2)
-    apply simp
-  apply simp
-  using assms apply (induction t1 rs1 rule: constrained_by.induct)
-   apply auto
-  sorry
-
-definition "terminates_with_ctraint_time_IMP_Tailcall tp p s s' t rs \<equiv>
-  terminates_with_pred_time_IMP_Tailcall tp p s s' (constrained_by t rs)"
-
-definition "terminates_with_res_ctraint_time_IMP_Tailcall tp p s r val t rs \<equiv>
-  \<exists>s'. terminates_with_ctraint_time_IMP_Tailcall tp p s s' t rs \<and> s r = val"
-*)
+  terminates_with_res_pred_time_IMP_Tailcall tp p s r val (bounded_by t)"
 
 definition "terminates_with_res_time_IMP p s r val t \<equiv>
   terminates_with_res_pred_time_IMP p s r val (bounded_by t)"
@@ -234,16 +161,33 @@ definition "terminates_with_res_bound_time_IMP p r val t \<equiv>
   \<exists>c. \<forall>s. terminates_with_res_time_IMP p s r (val s) (c * t s)"
 
 
-
-(* TODO: can/should we get rid of r, val ? *)
-(* terminates_with_res_... *)
-definition "least_bound_time_IMP p s r val t \<equiv>
-  (LEAST c. terminates_with_res_time_IMP p s r (val s) (c * t s))"
-(* should be least c. exists s'. terminates_with_time_IMP if/once that predicate exists *)
-(* should be least_bound_time_IMP p t, no need to reference starting state! *)
-(* so: least c. \forall s. \exists s' terminates_with_time_IMP p s s' t *)
+(* remove or complete *)
+definition "terminates_with_bound_time_IMP p s' t \<equiv>
+  \<exists>c. \<forall>s. terminates_with_time_IMP p s (s' s) (c * t s)"
 
 
+definition "least_bound_time_IMP p t \<equiv>
+  (LEAST c. \<forall>s. \<exists>s'. terminates_with_time_IMP p s s' (c * t s))"
+
+definition "least_bound_time_IMP_res p r val t \<equiv>
+  (LEAST c. \<forall>s. terminates_with_res_time_IMP p s r (val s) (c * t s))"
+
+lemma
+  assumes "\<exists>t. terminates_with_res_time_IMP p s r (val s) t"
+  shows "least_bound_time_IMP p t = least_bound_time_IMP_res p r val t"
+  using assms oops
+(* something like this *must* hold, due to the determinism of IMP... find the correct lemma! *)
+
+(*
+lemma
+  assumes "terminates_with_time_IMP p s s' t1"
+  assumes "terminates_with_res_time_IMP p s r val t2"
+  shows "t1 = t2"
+  oops *)
+
+(* \<exists>c. \<forall>s. terminates_with_res_time_IMP p s r (val s) (c * t s) *)
+
+find_theorems Least
 
 (* lemma plpl: *)
   (* assumes " *)
@@ -290,21 +234,36 @@ lemma terminates_with_time_IMP_TailcallE:
   unfolding terminates_with_time_IMP_Tailcall_def
   by metis
 
+lemma terminates_with_time_IMPI:
+  assumes "(p, s) \<Rightarrow>\<^bsup>t'\<^esup> s'"
+  assumes "t' \<le> t"
+  shows "terminates_with_time_IMP p s s' t"
+  using assms terminates_with_pred_time_IMPI bounded_byI
+  unfolding terminates_with_time_IMP_def
+  by fastforce
+
+lemma terminates_with_time_IMPE:
+  assumes "terminates_with_time_IMP p s s' t"
+  obtains t' where "(p, s) \<Rightarrow>\<^bsup>t'\<^esup> s'" "t' \<le> t"
+  using assms terminates_with_pred_time_IMPE bounded_byE
+  unfolding terminates_with_time_IMP_def
+  by metis
+
 lemma terminates_with_res_time_IMP_TailcallI:
   assumes "tp \<turnstile> (p, s) \<Rightarrow>\<^bsup>t'\<^esup> s'"
   assumes "s' r = val"
   assumes "t' \<le> t"
   shows "terminates_with_res_time_IMP_Tailcall tp p s r val t"
-  using assms terminates_with_time_IMP_TailcallI
+  using assms terminates_with_res_pred_time_IMP_TailcallI terminates_with_pred_time_IMP_TailcallI
   unfolding terminates_with_res_time_IMP_Tailcall_def
-  by blast
+  by (meson bounded_by_def) (* TODO *)
 
 lemma terminates_with_res_time_IMP_TailcallE:
   assumes "terminates_with_res_time_IMP_Tailcall tp p s r val t"
   obtains s' t' where "tp \<turnstile> (p, s) \<Rightarrow>\<^bsup>t'\<^esup> s'" "s' r = val" "t' \<le> t"
-  using assms terminates_with_time_IMP_TailcallE
+  using assms terminates_with_res_pred_time_IMP_TailcallE terminates_with_pred_time_IMP_TailcallE
   unfolding terminates_with_res_time_IMP_Tailcall_def
-  by blast
+  by (metis bounded_by_def)
 
 lemma terminates_with_res_time_IMPI:
   assumes "(p, s) \<Rightarrow>\<^bsup>t'\<^esup> s'"
@@ -343,22 +302,28 @@ lemma terminates_with_res_bound_time_IMPE:
   using assms unfolding terminates_with_res_bound_time_IMP_def by blast
 
 lemmas terminates_with_intros =
+  terminates_with_pred_time_IMP_TailcallI
   terminates_with_res_pred_time_IMP_TailcallI
   terminates_with_time_IMP_TailcallI
   terminates_with_res_time_IMP_TailcallI
   terminates_with_res_bound_time_IMP_TailcallI
 
+  terminates_with_pred_time_IMPI
   terminates_with_res_pred_time_IMPI
+  terminates_with_time_IMPI
   terminates_with_res_time_IMPI
   terminates_with_res_bound_time_IMPI
 
 lemmas terminates_with_elims =
+  terminates_with_pred_time_IMP_TailcallE
   terminates_with_res_pred_time_IMP_TailcallE
   terminates_with_time_IMP_TailcallE
   terminates_with_res_time_IMP_TailcallE
   terminates_with_res_bound_time_IMP_TailcallE
 
+  terminates_with_pred_time_IMPE
   terminates_with_res_pred_time_IMPE
+  terminates_with_time_IMPE
   terminates_with_res_time_IMPE
   terminates_with_res_bound_time_IMPE
 
@@ -384,13 +349,115 @@ lemma bound_fix_state:
   shows "\<And>s. \<exists>c. terminates_with_res_time_IMP p s r (val s) (c * t s)"
   using assms by blast
 
+thm exE[OF bound_fix_state]
+
+lemma nores_from_res:
+  assumes "terminates_with_res_time_IMP p s r val t"
+  shows "\<exists>s'. terminates_with_time_IMP p s s' t"
+  using assms terminates_with_res_time_IMP_def terminates_with_time_IMP_def by auto
+
+lemma terminates_with_time_res_equiv:
+  "terminates_with_res_time_IMP p s r val t \<equiv>
+    \<exists>s'. terminates_with_time_IMP p s s' t \<and> s' r = val"
+  by (simp add: terminates_with_res_pred_time_IMP_def terminates_with_res_time_IMP_def
+      terminates_with_time_IMP_def) (* meh *)
+
+lemma "\<forall>s. \<exists>s'. terminates_with_time_IMP p s s' (t s) \<equiv>
+  \<forall>s. terminates_with_res_time_IMP p s r (val s) (t s)"
+  oops
+
+lemma 1:
+  assumes "terminates_with_time_IMP p s s' (x * t s)"
+  shows "terminates_with_time_IMP p s s' ((LEAST x. terminates_with_time_IMP p s s' (x * t s)) * t s)"
+  using assms LeastI by metis
+
+(*
+lemma
+  assumes "\<And>x. P x \<Longrightarrow> Q x"
+  shows "(LEAST x. Q x) \<le> (LEAST x. P x)"
+  using assms sledgehammer *)
+
+
+lemma "(LEAST (x :: nat). P x) \<le> (LEAST x. P x \<and> Q x)"
+  oops
+
+thm LeastI_ex
+
+lemma
+  assumes "\<exists>x. P (x :: nat)"
+  assumes "\<And>x y. y \<le> x \<Longrightarrow> P x \<Longrightarrow> Q y"
+  shows "P (Least Q)"
+  oops
+
 
 lemma obtain_least_bound:
-  assumes "terminates_with_res_bound_time_IMP p r val t"
-  shows "terminates_with_res_time_IMP p s r (val s) (least_bound_time_IMP p s r val t * t s)"
-  using assms least_bound_time_IMP_def bound_fix_state
-  by (metis LeastI_ex) (* TODO cleanup proof *)
+  assumes has_res_bound: "terminates_with_bound_time_IMP p s' t"
+  shows "terminates_with_time_IMP p s (s' s) (least_bound_time_IMP p t * t s)"
+  using assms
+  by (smt (verit, ccfv_threshold) LeastI_ex big_step_t_determ2 least_bound_time_IMP_def
+      terminates_with_bound_time_IMP_def terminates_with_time_IMPE) (* tidy *)
 
+
+lemma obtain_least_bound_res:
+  assumes has_res_bound: "terminates_with_res_bound_time_IMP p r val t"
+  shows "terminates_with_res_time_IMP p s r (val s) (least_bound_time_IMP_res p r val t * t s)"
+  using assms
+  by (smt (verit) least_bound_time_IMP_res_def terminates_with_res_bound_time_IMP_def
+      wellorder_Least_lemma(1)) (* tidy *)
+
+(*
+lemma obtain_least_bound:
+  assumes has_res_bound: "terminates_with_res_bound_time_IMP p r val t"
+  shows "terminates_with_res_time_IMP p s r (val s) (least_bound_time_IMP p t * t s)"
+proof-
+  from has_res_bound
+  have "\<exists>c. \<forall>s. terminates_with_res_time_IMP p s r (val s) (c * t s)" by fastforce
+  then have "\<exists>c. \<forall>s. \<exists>s'. terminates_with_time_IMP p s s' (c * t s) \<and> s' r = val s" by blast *)
+
+
+(* definition "terminates_with_bound_time_IMP p s' t \<equiv> *)
+  (* \<exists>c. \<forall>s. terminates_with_time_IMP p s (s' s) (c * t s)" *)
+(*
+  have "\<exists>s'. terminates_with_bound_time_IMP p s' t" sorry
+
+  then have "\<exists>c. \<forall>s. \<exists>s'. terminates_with_time_IMP p s s' (c * t s)" by blast
+  then have "\<forall>s. \<exists>s'. terminates_with_time_IMP p s s' (least_bound_time_IMP p t * t s)"
+    unfolding least_bound_time_IMP_def using LeastI_ex
+    by (smt (verit, ccfv_threshold)) (* ? *)
+
+  then have "\<forall>s. \<exists>s'. (\<exists>c. terminates_with_time_IMP p s s' (c * t s)) \<and> s' r = val s" by blast
+  then have "\<forall>s. \<exists>s'.
+    terminates_with_time_IMP p s s' ((LEAST c. terminates_with_time_IMP p s s' (c * t s)) * t s)
+    \<and> s' r = val s"
+    using LeastI_ex by metis
+  then have "\<forall>s. \<exists>s'.
+    terminates_with_time_IMP p s s' (least_bound_time_IMP p t * t s)
+    \<and> s' r = val s"
+  thm terminates_with_time_res_equiv
+  then have "\<forall>s. terminates_with_res_time_IMP p s r (val s)
+      ((LEAST c. terminates_with_time_IMP p s s' (c * t s)) * t s)"
+    using terminates_with_time_res_equiv 
+
+  using has_res_bound[simplified terminates_with_res_bound_time_IMP_def, simplified nores_from_res]
+  using has_res_bound apply (rule terminates_with_res_bound_time_IMPE)
+  using has_res_bound apply (rule exE[OF bound_fix_state, where s1 = s])
+  apply (drule nores_from_res)
+  apply (drule LeastI)
+  thm LeastI
+  thm bound_fix_state[OF has_res_bound]
+  thm LeastI_ex
+  using res_from_nores LeastI_ex[OF bound_fix_state[OF has_res_bound], where s1 = s]
+
+proof-
+  from has_res_bound have
+    "\<exists>c. terminates_with_res_time_IMP p s r (val s) (c * t s)"
+    by blast
+qed sorry
+
+  using assms least_bound_time_IMP_def bound_fix_state
+  sorry
+  (* by (metis LeastI_ex) (* TODO cleanup proof *) *)
+*)
 
 lemma terminates_with_time_tSeqI:
   assumes "terminates_with_time_IMP_Tailcall tp p1 s s' t1"
@@ -426,9 +493,9 @@ lemma terminates_with_time_tIfI:
 lemma terminates_with_res_time_IMPI_bound:
   assumes "terminates_with_res_bound_time_IMP p r val' t'"
   assumes "val = val' s"
-  assumes "t \<ge> least_bound_time_IMP p s r val' t' * t' s"
+  assumes "t \<ge> least_bound_time_IMP_res p r val' t' * t' s"
   shows "terminates_with_res_time_IMP p s r val t"
-  using obtain_least_bound[OF assms(1), where s = s] using assms by fastforce
+  using obtain_least_bound_res[OF assms(1), where s = s] using assms by fastforce
 
 lemma terminates_with_time_tCallI:
   assumes "terminates_with_res_time_IMP p s r val t'"
@@ -771,7 +838,10 @@ schematic_goal h1: "
             ''bar.ret'' (bar (v ''bar.arg.xa'')) (?t'52 y v)"
   by simp
 
-lemma cc: "(16 :: nat) \<le> 27" by simp
+lemma pick:
+  assumes "t \<le> u"
+  shows "t \<le> u"
+  using assms .
 
 schematic_goal h: "
     terminates_with_res_time_IMP_Tailcall bar_IMP_tailcall bar_IMP_tailcall s
@@ -975,15 +1045,32 @@ schematic_goal h: "
      apply assumption
     apply assumption
     apply simp
-   apply (simp_all add: constant_time_def)
-   prefer 2
-   apply (rule cc) (* can isabelle solve this automatically? *)
-  apply simp
+   apply (simp_all add: constant_time1)
+  (* what we have here is really just the constraint system:
+      16 + C_eq + C_sub + c * T_bar x \<le> c * (T_bar x + 1)
+      7  + C_eq \<le> c
+     which has a solution c := max (7 + C_eq) (16 + C_eq + C_sub) *)
+  (* this would be nicer if we could prove the least_bound_time_IMP equality, but it works as is... *)
+   prefer 2 apply (rule pick[where u =
+        "max
+          (7
+            + least_bound_time_IMP_res eq_IMP ''eq.ret''
+                (\<lambda>s. HTHN.eq_nat (s ''eq.arg.x'') (s ''eq.arg.y'')) constant_time)
+          (16
+            + least_bound_time_IMP_res eq_IMP ''eq.ret''
+                (\<lambda>s. HTHN.eq_nat (s ''eq.arg.x'') (s ''eq.arg.y'')) constant_time
+            + least_bound_time_IMP_res sub_IMP ''sub.ret''
+                (\<lambda>s. s ''sub.arg.x'' - s ''sub.arg.y'') constant_time)"
+        ])
+(* can isabelle solve this automatically? *)
+   apply (auto simp add: algebra_simps)
   done
 
-
-
-
+lemma bar_IMP_Tailcall_twrbt:
+  "terminates_with_res_bound_time_IMP_Tailcall bar_IMP_tailcall bar_IMP_tailcall
+      ''bar.ret'' (\<lambda>s. bar (s ''bar.arg.xa'')) (\<lambda>s. T_bar (s ''bar.arg.xa''))"
+  apply (rule terminates_with_res_bound_time_IMP_TailcallI)
+  using h by blast
 
 
 
@@ -1050,31 +1137,6 @@ lemmas mul_acc_nat_nat_eq = HTHN.mul_acc_nat_nat_eq_unfolded[unfolded case_nat_e
 compile_nat mul_acc_nat_nat_eq
 HOL_To_IMP_correct HTHN.mul_acc_nat_nat by cook
 
-lemma "\<exists>c. \<forall>s.
-  Rel_nat (s ''mul_acc_nat_nat.arg.x'') y \<longrightarrow>
-  Rel_nat (s ''mul_acc_nat_nat.arg.xa'') ya \<longrightarrow>
-  Rel_nat (s ''mul_acc_nat_nat.arg.xb'') yb \<longrightarrow>
-  terminates_with_res_pred_time_IMP_Tailcall mul_acc_nat_nat_IMP_tailcall mul_acc_nat_nat_IMP_tailcall
-    s ''mul_acc_nat_nat.ret''
-    (HTHN.mul_acc_nat_nat (s ''mul_acc_nat_nat.arg.x'') (s ''mul_acc_nat_nat.arg.xa'') (s ''mul_acc_nat_nat.arg.xb''))
-    (\<lambda>t. t \<le> c * HTHN.T_mul_acc_nat (s ''mul_acc_nat_nat.arg.x'') (s ''mul_acc_nat_nat.arg.xa'') (s ''mul_acc_nat_nat.arg.xb''))"
-  (*apply (rule exI)
-  apply (rule impI)+
-  apply (rule terminates_with_res_pred_time_IMP_TailcallI)
-   apply (rule terminates_with_pred_time_IMP_TailcallI)
-
-    apply (subst (2) mul_acc_nat_nat_IMP_tailcall_def)
-    apply (repeat \<open>subst eq_IMP_def add_IMP_def sub_IMP_def\<close>)
-
-    apply tbig_step_unfold_time
-        apply big_step_unfold_time
-  apply (rule refl, rule refl)
-  defer *)
-
-  sorry
-
-(* TODO: we now hit an if-else, and the true-branch is always taken *)
-(* somwhere we need to do an induction *)
 
 
 
