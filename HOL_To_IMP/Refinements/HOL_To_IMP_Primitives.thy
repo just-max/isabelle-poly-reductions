@@ -849,7 +849,7 @@ schematic_goal h: "
 
   (* apply (rule terminates_with_time_tCallI_b[OF eq_IMP_twrbt]) *)
 
-  apply (induction "s ''bar.arg.xa''" arbitrary: s) (* what is the induction rule??? *)
+  apply (induction "s ''bar.arg.xa''" arbitrary: s rule: bar.induct) (* what is the induction rule??? *)
 
   (* base case *)
 
@@ -877,6 +877,7 @@ schematic_goal h: "
         prefer 5 apply (urule refl)
        prefer 3 apply (urule le_refl)
       apply (rule terminates_with_res_time_IMPI_bound)
+        thm eq_IMP_twrbt
         apply (rule eq_IMP_twrbt)
        apply (urule refl) (* do we want this here? in general we may want to take a close look at state management on a call, e.g. preserve a sNN? = ... constraint to avoid blowing things up? *)
       (* apply (simp add: constant_time_def) *)
@@ -1070,6 +1071,8 @@ lemma bar_IMP_Tailcall_twrbt:
   "terminates_with_res_bound_time_IMP_Tailcall bar_IMP_tailcall bar_IMP_tailcall
       ''bar.ret'' (\<lambda>s. bar (s ''bar.arg.xa'')) (\<lambda>s. T_bar (s ''bar.arg.xa''))"
   apply (rule terminates_with_res_bound_time_IMP_TailcallI)
+  apply (rule exI)
+  apply (rule allI)
   using h by blast
 
 
