@@ -140,7 +140,6 @@ definition linear_time_in :: "vname \<Rightarrow> state \<Rightarrow> nat" where
 
 (* TODO: tcom \<rightarrow> com step as in correctness proof *)
 
-
 definition "terminates_with_time_IMP_Tailcall tp p s s' t \<equiv>
   terminates_with_pred_time_IMP_Tailcall tp p s s' (bounded_by t)"
 
@@ -162,8 +161,8 @@ definition "terminates_with_res_bound_time_IMP p r f T_f \<equiv>
 
 
 (* remove or complete *)
-definition "terminates_with_bound_time_IMP p s' T_f \<equiv>
-  \<exists>c. \<forall>s. terminates_with_time_IMP p s (s' s) (c * T_f s)"
+(* definition "terminates_with_bound_time_IMP p s' T_f \<equiv>
+  \<exists>c. \<forall>s. terminates_with_time_IMP p s (s' s) (c * T_f s)" *)
 
 
 definition "least_bound_time_IMP p T_f \<equiv>
@@ -172,53 +171,16 @@ definition "least_bound_time_IMP p T_f \<equiv>
 definition "least_bound_time_IMP_res p r f T_f \<equiv>
   (LEAST c. \<forall>s. terminates_with_res_time_IMP p s r (f s) (c * T_f s))"
 
+(* TODO: we may need to add a predicate on states where they are hidden by a definition *)
+
 lemma
   assumes "\<exists>t. terminates_with_res_time_IMP p s r (val s) t"
-  shows "least_bound_time_IMP p t = least_bound_time_IMP_res p r val t"
+  shows "least_bound_time_IMP p T_f = least_bound_time_IMP_res p r f T_f"
   using assms oops
 (* something like this *must* hold, due to the determinism of IMP... find the correct lemma! *)
 
-(*
-lemma
-  assumes "terminates_with_time_IMP p s s' t1"
-  assumes "terminates_with_res_time_IMP p s r val t2"
-  shows "t1 = t2"
-  oops *)
-
-(* \<exists>c. \<forall>s. terminates_with_res_time_IMP p s r (val s) (c * t s) *)
-
-find_theorems Least
-
-(* lemma plpl: *)
-  (* assumes " *)
-(* lemma show asdfjlsajf semantic of running p in time t \<le> LEAD_ *)
-
-(* definition "bound_time s (t :: state \<Rightarrow> nat) \<equiv> (\<lambda>t'. \<exists>c. t' \<le> c * t s)" *)
-
-(*
-lemma
-  assumes "terminates_with_res_bound_time_IMP_Tailcall tp p r val t"
-  shows "\<And>s. bound_time s *)
-
-(*
-lemma terminates_with_time_IMP_TailcallI_0:
-  assumes "terminates_with_pred_time_IMP_Tailcall tp p s s' ((=) t)"
-  shows "terminates_with_time_IMP_Tailcall tp p s s' t"
-  using assms terminates_with_pred_time_IMP_TailcallI
-  unfolding terminates_with_time_IMP_Tailcall_def
-  by blast
-
-lemma terminates_with_time_IMP_TailcallE_0:
-  assumes "terminates_with_time_IMP_Tailcall tp p s s' t"
-  shows "terminates_with_pred_time_IMP_Tailcall tp p s s' ((=) t)"
-  using assms terminates_with_pred_time_IMP_TailcallE
-  unfolding terminates_with_time_IMP_Tailcall_def
-  by blast *)
-
 (* it might be "nicer" to write these in terms of terminates_with_pred_time_IMP_TailcallI/E,
-    but the resulting higher-order unification trips up the automation
-
-TODO: what are these even written in terms of *)
+    but the resulting higher-order unification seems to trip up the automation *)
 lemma terminates_with_time_IMP_TailcallI:
   assumes "tp \<turnstile> (p, s) \<Rightarrow>\<^bsup>t'\<^esup> s'"
   assumes "t' \<le> t"
@@ -349,8 +311,6 @@ lemma bound_fix_state:
   shows "\<And>s. \<exists>c. terminates_with_res_time_IMP p s r (f s) (c * T_f s)"
   using assms by blast
 
-thm exE[OF bound_fix_state]
-
 lemma nores_from_res:
   assumes "terminates_with_res_time_IMP p s r val t"
   shows "\<exists>s'. terminates_with_time_IMP p s s' t"
@@ -362,40 +322,13 @@ lemma terminates_with_time_res_equiv:
   by (simp add: terminates_with_res_pred_time_IMP_def terminates_with_res_time_IMP_def
       terminates_with_time_IMP_def) (* meh *)
 
-lemma "\<forall>s. \<exists>s'. terminates_with_time_IMP p s s' (t s) \<equiv>
-  \<forall>s. terminates_with_res_time_IMP p s r (val s) (t s)"
-  oops
-
-lemma 1:
-  assumes "terminates_with_time_IMP p s s' (x * t s)"
-  shows "terminates_with_time_IMP p s s' ((LEAST x. terminates_with_time_IMP p s s' (x * t s)) * t s)"
-  using assms LeastI by metis
-
 (*
-lemma
-  assumes "\<And>x. P x \<Longrightarrow> Q x"
-  shows "(LEAST x. Q x) \<le> (LEAST x. P x)"
-  using assms sledgehammer *)
-
-
-lemma "(LEAST (x :: nat). P x) \<le> (LEAST x. P x \<and> Q x)"
-  oops
-
-thm LeastI_ex
-
-lemma
-  assumes "\<exists>x. P (x :: nat)"
-  assumes "\<And>x y. y \<le> x \<Longrightarrow> P x \<Longrightarrow> Q y"
-  shows "P (Least Q)"
-  oops
-
-
 lemma obtain_least_bound:
   assumes has_res_bound: "terminates_with_bound_time_IMP p s' t"
   shows "terminates_with_time_IMP p s (s' s) (least_bound_time_IMP p t * t s)"
   using assms
   by (smt (verit, ccfv_threshold) LeastI_ex big_step_t_determ2 least_bound_time_IMP_def
-      terminates_with_bound_time_IMP_def terminates_with_time_IMPE) (* tidy *)
+      terminates_with_bound_time_IMP_def terminates_with_time_IMPE) (* tidy *) *)
 
 
 lemma obtain_least_bound_res:
@@ -405,73 +338,18 @@ lemma obtain_least_bound_res:
   by (smt (verit) least_bound_time_IMP_res_def terminates_with_res_bound_time_IMP_def
       wellorder_Least_lemma(1)) (* tidy *)
 
-(*
-lemma obtain_least_bound:
-  assumes has_res_bound: "terminates_with_res_bound_time_IMP p r val t"
-  shows "terminates_with_res_time_IMP p s r (val s) (least_bound_time_IMP p t * t s)"
-proof-
-  from has_res_bound
-  have "\<exists>c. \<forall>s. terminates_with_res_time_IMP p s r (val s) (c * t s)" by fastforce
-  then have "\<exists>c. \<forall>s. \<exists>s'. terminates_with_time_IMP p s s' (c * t s) \<and> s' r = val s" by blast *)
-
-
-(* definition "terminates_with_bound_time_IMP p s' t \<equiv> *)
-  (* \<exists>c. \<forall>s. terminates_with_time_IMP p s (s' s) (c * t s)" *)
-(*
-  have "\<exists>s'. terminates_with_bound_time_IMP p s' t" sorry
-
-  then have "\<exists>c. \<forall>s. \<exists>s'. terminates_with_time_IMP p s s' (c * t s)" by blast
-  then have "\<forall>s. \<exists>s'. terminates_with_time_IMP p s s' (least_bound_time_IMP p t * t s)"
-    unfolding least_bound_time_IMP_def using LeastI_ex
-    by (smt (verit, ccfv_threshold)) (* ? *)
-
-  then have "\<forall>s. \<exists>s'. (\<exists>c. terminates_with_time_IMP p s s' (c * t s)) \<and> s' r = val s" by blast
-  then have "\<forall>s. \<exists>s'.
-    terminates_with_time_IMP p s s' ((LEAST c. terminates_with_time_IMP p s s' (c * t s)) * t s)
-    \<and> s' r = val s"
-    using LeastI_ex by metis
-  then have "\<forall>s. \<exists>s'.
-    terminates_with_time_IMP p s s' (least_bound_time_IMP p t * t s)
-    \<and> s' r = val s"
-  thm terminates_with_time_res_equiv
-  then have "\<forall>s. terminates_with_res_time_IMP p s r (val s)
-      ((LEAST c. terminates_with_time_IMP p s s' (c * t s)) * t s)"
-    using terminates_with_time_res_equiv 
-
-  using has_res_bound[simplified terminates_with_res_bound_time_IMP_def, simplified nores_from_res]
-  using has_res_bound apply (rule terminates_with_res_bound_time_IMPE)
-  using has_res_bound apply (rule exE[OF bound_fix_state, where s1 = s])
-  apply (drule nores_from_res)
-  apply (drule LeastI)
-  thm LeastI
-  thm bound_fix_state[OF has_res_bound]
-  thm LeastI_ex
-  using res_from_nores LeastI_ex[OF bound_fix_state[OF has_res_bound], where s1 = s]
-
-proof-
-  from has_res_bound have
-    "\<exists>c. terminates_with_res_time_IMP p s r (val s) (c * t s)"
-    by blast
-qed sorry
-
-  using assms least_bound_time_IMP_def bound_fix_state
-  sorry
-  (* by (metis LeastI_ex) (* TODO cleanup proof *) *)
-*)
-
 lemma terminates_with_time_tSeqI:
   assumes "terminates_with_time_IMP_Tailcall tp p1 s s' t1"
   assumes "terminates_with_time_IMP_Tailcall tp p2 s' s'' t2"
-  (* assumes "t \<ge> t1 + t2" *)
   shows "terminates_with_time_IMP_Tailcall tp (tSeq p1 p2) s s'' (t1 + t2)"
   using assms by fastforce
 
 lemma terminates_with_time_tAssignI:
   assumes "s' = s(k := aval aexp s)"
-  (* assumes "t \<ge> 2" *)
   shows "terminates_with_time_IMP_Tailcall p (tAssign k aexp) s s' 2"
   using assms by fastforce
 
+(* TODO: do we need a non-res version?? \<rightarrow> if so, fix *)
 lemma terminates_with_time_tIfI:
   assumes "cond \<Longrightarrow> terminates_with_time_IMP_Tailcall p p1 s1 s1' t1"
   assumes "cond \<Longrightarrow> s1 = s"
@@ -483,17 +361,8 @@ lemma terminates_with_time_tIfI:
   shows "terminates_with_time_IMP_Tailcall p (tIf vb p1 p2) s s' t"
   using assms by fastforce
 
-(* lemma terminates_with_time_tCallI:
-  assumes "terminates_with_res_time_IMP p s r val t'"
-  assumes "s' = s(r := val)"
-  assumes "t \<ge> t'"
-  shows "terminates_with_time_IMP_Tailcall tp (tCall p r) s s' t"
-  using assms by fastforce *)
-
 lemma terminates_with_res_time_IMPI_bound:
   assumes "terminates_with_res_bound_time_IMP p r f T_f"
-  (* assumes "val = val' s" *)
-  (* assumes "t \<ge> least_bound_time_IMP_res p r val' t' * t' s" *)
   shows "terminates_with_res_time_IMP p s r (f s) (least_bound_time_IMP_res p r f T_f * T_f s)"
   using obtain_least_bound_res[OF assms(1), where s = s] using assms by fastforce
   (* note this is just obtain_least_bound_res *)
@@ -501,77 +370,17 @@ lemma terminates_with_res_time_IMPI_bound:
 lemma terminates_with_time_tCallI:
   assumes "s' = s(r := val)"
   assumes "terminates_with_res_time_IMP p s r val t"
-  (* assumes "t \<ge> t'" *)
   shows "terminates_with_time_IMP_Tailcall tp (tCall p r) s s' t"
   using assms by fastforce
 
-
-(*
-lemma terminates_with_time_tCallI_b:
-  assumes "terminates_with_res_bound_time_IMP p r val t'"
-  assumes "s' = s(r := val s)"
-  assumes "t \<ge> t' s"
-  obtains c where "terminates_with_time_IMP_Tailcall tp (tCall p r) s s' (c * t)"
-  using assms
-  by (meson mult_le_mono2 terminates_with_res_bound_time_IMPE terminates_with_time_tCallI) (* TODO *)
-
-
-
-schematic_goal "terminates_with_time_IMP_Tailcall tp p s s' t \<equiv> ?P"
-  apply (rule SIMPS_TOD)
-  apply (simp add:
-      terminates_with_time_IMP_Tailcall_def
-      terminates_with_pred_time_IMP_Tailcall_def
-      bounded_by_def)
-  oops
-
-
-schematic_goal "terminates_with_res_bound_time_IMP p r val t' \<equiv> ?P"
-  apply (rule SIMPS_TOD)
-  apply (simp add:
-      terminates_with_res_bound_time_IMP_def
-      terminates_with_res_time_IMP_def
-      terminates_with_res_pred_time_IMP_def
-      terminates_with_pred_time_IMP_def
-      bounded_by_def)
-  oops
-
-(*
-lemma a:
-  assumes "Q \<equiv> P"
-  and P
-  shows Q
-  using assms by blast *)
-
-lemma terminates_with_time_tCallI_delay:
-  assumes "terminates_with_res_bound_time_IMP p r val t'"
-  assumes "s' = s(r := val s)"
-  (* assumes "\<exists>c. t \<ge> c * t' s" *)
-  shows "terminates_with_time_IMP_Tailcall tp (tCall p r) s s' (t' s)"
-  using assms try0
-  (* apply (rule a)
-   apply (rule SIMPS_TOD)
-  apply (simp add:
-      terminates_with_time_IMP_Tailcall_def
-      terminates_with_pred_time_IMP_Tailcall_def
-      bounded_by_def)
-   apply (rule SIMPS_TOI)
-  using assms
-  by (meson dual_order.refl terminates_with_res_bound_time_IMPE terminates_with_time_tCallI) *)
-  oops
-*)
-
 lemma terminates_with_time_tTailI:
   assumes "terminates_with_time_IMP_Tailcall tp tp s s' t"
-  (* assumes "t \<ge> t' + 5" *)
   shows "terminates_with_time_IMP_Tailcall tp tTAIL s s' (t + 5)"
   using assms by fastforce
-
 
 lemma terminates_with_res_time_tSeqI:
   assumes "terminates_with_time_IMP_Tailcall tp p1 s s' t1"
   assumes "terminates_with_res_time_IMP_Tailcall tp p2 s' r val t2"
-  (* assumes "t \<ge> t1 + t2" *)
   shows "terminates_with_res_time_IMP_Tailcall tp (tSeq p1 p2) s r val (t1 + t2)"
   using assms by fastforce
 
@@ -583,58 +392,22 @@ lemma terminates_with_res_time_tIfI:
   assumes "cond \<Longrightarrow> t \<ge> t1 + 1"
   assumes "\<not>cond \<Longrightarrow> t \<ge> t2 + 1"
   assumes "cond = (s vb \<noteq> 0)"
-  (* assumes "\<not>cond \<Longrightarrow> s2 r = val" *)
-  (* assumes "s = (if cond then s1 else s2)" *)
-  (* assumes "t \<ge> (if cond then t1 else t2) + 1" *)
   shows "terminates_with_res_time_IMP_Tailcall p (tIf vb p1 p2) s r val t"
   using assms by fastforce
 
 lemma terminates_with_res_time_treturnI:
   assumes "aval a s = val"
-  (* assumes "t \<ge> 2" *)
   shows "terminates_with_res_time_IMP_Tailcall p (tAssign r a) s r val 2"
   using assms by fastforce
 
 lemma terminates_with_res_time_tTailI:
   assumes "terminates_with_res_time_IMP_Tailcall tp tp s r val t"
-  (* assumes "t \<ge> t' + 5" *)
   shows "terminates_with_res_time_IMP_Tailcall tp tTAIL s r val (t + 5)"
   using assms by fastforce
 
-(*
-lemma terminates_with_time_tAssignI:
-  assumes "s' = s(k := aval aexp s)"
-  assumes "t = 2"
-  shows "terminates_with_time_IMP_Tailcall p (tAssign k aexp) s s' t"
-  using assms by fastforce *)
-
-(*
-lemma terminates_with_time_tIfI:
-  assumes "cond \<Longrightarrow> terminates_with_time_IMP_Tailcall p p1 s1 s1' t1"
-  assumes "cond \<Longrightarrow> s1 = s"
-  assumes "\<not>cond \<Longrightarrow> terminates_with_time_IMP_Tailcall p p2 s2 s2' t2"
-  assumes "\<not>cond \<Longrightarrow> s2 = s"
-  assumes "s' = (if cond then s1' else s2')"
-  assumes "t = (if cond then t1 else t2) + 1"
-  assumes "cond = (s vb \<noteq> 0)"
-  shows "terminates_with_time_IMP_Tailcall p (tIf vb p1 p2) s s' t"
-  using assms by fastforce
-
-lemma terminates_with_time_tCallI:
-  assumes "terminates_with_res_time_IMP p s r val t'"
-  assumes "s' = s(r := val)"
-  assumes "t = t'"
-  shows "terminates_with_time_IMP_Tailcall tp (tCall p r) s s' t"
-  using assms by blast
-
-lemma terminates_with_time_tTailI:
-  assumes "terminates_with_time_IMP_Tailcall tp tp s s' t'"
-  assumes "t = t' + 5"
-  shows "terminates_with_time_IMP_Tailcall tp tTAIL s s' t"
-  using assms by fastforce *)
-
 end
 
+(* this stuff is just here for now for proving correctness/timing for IMP primitives *)
 
 lemma big_step_ifI:
   assumes "s b \<noteq> 0 \<Longrightarrow> (c1,s) \<Rightarrow>\<^bsup> x1 \<^esup> t1"
@@ -644,54 +417,13 @@ lemma big_step_ifI:
   shows "(com.If b c1 c2,s) \<Rightarrow>\<^bsup> y \<^esup> t"
   using assms big_step_t.intros(4,5) by simp
 
-(*
-lemma tbig_step_ifI:
-  assumes "s b \<noteq> 0 \<Longrightarrow> c \<turnstile> (c1,s) \<Rightarrow>\<^bsup> x1 \<^esup> t1"
-  assumes "s b = 0 \<Longrightarrow> c \<turnstile> (c2,s) \<Rightarrow>\<^bsup> x2 \<^esup> t2"
-  assumes "t = (if s b \<noteq> 0 then t1 else t2)"
-  assumes "y = (if s b \<noteq> 0 then x1 else x2) + 1"
-  shows "c \<turnstile> (IF b\<noteq>0 THEN c1 ELSE c2,s) \<Rightarrow>\<^bsup> y \<^esup> t"
-  using assms tbig_step_t.intros(4,5) by simp*)
-
 method repeat methods m = (m; repeat \<open>m\<close>)?
-(*
-lemmas tbig_stepI = tbig_step_t.tSkip tbig_step_t.tAssign tbig_step_t.tSeq tbig_step_t.tCall tbig_step_ifI
-method tbig_step_time = rule tbig_stepI
-method tbig_step_unfold_time = repeat \<open>tbig_step_time\<close>*)
 lemmas big_stepI = big_step_t.Skip big_step_t.Assign big_step_t.Seq big_step_ifI
 method big_step_time = rule big_stepI
 method big_step_unfold_time = repeat \<open>big_step_time\<close>
 
-declare [[unify_search_bound = 500]] (* ?? *)
-declare [[goals_limit=100]]
-
-(*
-definition "terminates_with_res_bound_time_IMP_Tailcall tp p r val T \<equiv>
-  \<exists>c. \<forall>s. terminates_with_res_pred_time_IMP_Tailcall tp p s r (val s) (\<lambda>t. t \<le> c * T s)"
-
-lemma terminates_with_res_bound_time_IMP_TailcallI:
-  assumes "\<exists>c. \<forall>s. terminates_with_res_pred_time_IMP_Tailcall tp p s r (val s) (\<lambda>t. t \<le> c * T s)"
-  shows "terminates_with_res_bound_time_IMP_Tailcall tp p r val T"
-  using assms unfolding terminates_with_res_bound_time_IMP_Tailcall_def by blast
-
-lemma bound_fix_time: "terminates_with_res_bound_time_IMP_Tailcall tp p r val T =
-  (\<exists>c. \<forall>s. \<exists>s' t. terminates_with_time_IMP_Tailcall tp p s s' t \<and> s' r = val s \<and> t \<le> c * T s)"
-  unfolding terminates_with_res_bound_time_IMP_Tailcall_def terminates_with_res_pred_time_IMP_Tailcall_def
-    terminates_with_pred_time_IMP_Tailcall_def terminates_with_time_IMP_Tailcall_def
-  (* by (rule eq_reflection) blast *)
-  by blast
-*)
-
-fun foo :: "nat \<Rightarrow> nat \<Rightarrow> nat" where
-  "foo x y = x + x + y"
-declare foo.simps[simp del]
-
-time_fun foo
-compile_nat foo.simps
-
+(* example: schematic goal to materialize the constant *)
 schematic_goal add_IMP_twrt: "terminates_with_res_time_IMP add_IMP s ''add.ret'' (s ''add.arg.x'' + s ''add.arg.y'') ?t"
-  (* will we be able to get away with res_time or do we need the quantified version?
-    \<rightarrow> as soon as we start looking at more complex functions we will probably need the quantified version *)
   apply (rule terminates_with_res_time_IMPI)
     apply (subst add_IMP_def)
     apply (rule big_step_t.Assign)
@@ -707,15 +439,6 @@ lemma add_IMP_twrbt:
   apply (rule terminates_with_res_time_IMP_bound[OF _ add_IMP_twrt])
   unfolding constant_time_def apply auto
   done
-  
-
-(*
-schematic_goal sub_IMP_twrt: "terminates_with_res_time_IMP sub_IMP s ''sub.ret'' (s ''sub.arg.x'' - s ''sub.arg.y'') ?t"
-  apply (rule terminates_with_res_time_IMPI)
-    apply (subst sub_IMP_def)
-    apply (rule big_step_t.Assign)
-   apply auto
-  done *)
 
 lemma sub_IMP_twrbt:
   "terminates_with_res_bound_time_IMP sub_IMP ''sub.ret''
@@ -750,6 +473,7 @@ lemma eq_IMP_twrbt:
   apply (auto simp add: constant_time_def)
   done
 
+
 lemma start_time:
   assumes "s0 = s"
   assumes "terminates_with_time_IMP_Tailcall tp p s0 s' t"
@@ -759,107 +483,19 @@ lemma start_time:
 method start_time uses f_def =
   subst (2) f_def, subst start_time
 
-
-fun bar :: "nat \<Rightarrow> nat" where
-  "bar 0 = 0" |
-  "bar (Suc n) = bar n"
-declare bar.simps[simp del]
-time_fun bar
-
-case_of_simps bar_eq_case : bar.simps
-lemmas bar_eq = bar_eq_case[unfolded case_nat_eq_if]
-compile_nat bar_eq
-
 method cond_false = rule not_TrueE FalseE, assumption
 
 lemma simps_to_eq_r: assumes "PROP SIMPS_TO y y'" "x = y'" shows "x = y"
   using SIMPS_TOD[OF assms(1)] assms(2) by simp
 
-lemma simps_to_case_end:
-  assumes "PROP SIMPS_TO s s'"
-  assumes "PROP SIMPS_TO v v'"
-  assumes "terminates_with_res_time_IMP_Tailcall tp p s' r v' t"
-  shows "terminates_with_res_time_IMP_Tailcall tp p s r v t"
-  using SIMPS_TOD[OF assms(1)] SIMPS_TOD[OF assms(2)] assms(3) by simp
-
-
-(*
-lemma ind_stepI:
-  assumes "twt = terminates_with_time_IMP_Tailcall p p s s' t"
-  assumes "twt \<and> s' r = x \<and> t \<le> c * z"
-  shows "terminates_with_time_IMP_Tailcall p p s s' t \<and>
-           s' r = x \<and> t \<le> c * z"
-  using assms by blast *)
-
 lemma flip_xsrD: assumes "x = s r" shows "s r = x" using assms by blast
-
-
-(*
-lemma mreow:
-  assumes "\<And>s. terminates_with_res_time_IMP_Tailcall p p s r (val s) (t s)"
-  obtains s where "terminates_with_res_time_IMP_Tailcall p p s r (val s) (t s)"
-  using assms by blast
-    *)
-  
-
-(*
-lemma mmm: (* exists c ? *)
-  fixes y
-  assumes "c * T_bar y \<le> t1"
-  assumes "terminates_with_res_time_IMP_Tailcall bar_IMP_tailcall bar_IMP_tailcall v' r val (c * T_bar y)"
-  shows "terminates_with_res_time_IMP_Tailcall bar_IMP_tailcall bar_IMP_tailcall v' r val t1"
-  using assms terminates_with_res_time_IMP_Tailcall_bound by blast
-*)
-(* lemma xsr_sym: *)
-  (* assumes "(\<And>s. s r = x \<Longrightarrow> P s)" *)
-  (* obtains s where "(x = s r \<Longrightarrow> P s)" *)
-  (* using assms by simp *)
-
-(*
-lemma xsr_sym: fixes s :: "string \<Rightarrow> nat" shows "(x = s r) \<equiv> (s r = x)" by linarith *)
-
-(*
-lemma nnn:
-  assumes "\<And>s. x = s r \<Longrightarrow> terminates_with_res_time_IMP_Tailcall p p s r (val s) (t s)"
-  shows "\<And>s. s r = x \<Longrightarrow> terminates_with_res_time_IMP_Tailcall p p s r (val s) (t s)"
-  using assms by simp *)
 
 lemma start_case:
   assumes "p \<equiv> e"
   assumes "terminates_with_res_time_IMP_Tailcall p e s r val t'"
-  (* assumes "s' = s" *)
   assumes "t' \<le> t"
   shows "terminates_with_res_time_IMP_Tailcall p p s r val t"
   using assms terminates_with_res_time_IMP_Tailcall_bound by blast
-
-schematic_goal h1: "
-  (y = (v(''eq.arg.x'' := Suc y, ''eq.arg.y'' := 0, ''eq.ret'' := 0, ''sub.arg.x'' := Suc y, ''sub.arg.y'' := 1, ''sub.ret'' := y,
-                 ''bar.arg.xa'' := y)) ''bar.arg.xa'' \<Longrightarrow>
-                terminates_with_res_time_IMP_Tailcall bar_IMP_tailcall bar_IMP_tailcall (v(''eq.arg.x'' := Suc y, ''eq.arg.y'' := 0, ''eq.ret'' := 0, ''sub.arg.x'' := Suc y, ''sub.arg.y'' := 1, ''sub.ret'' := y,
-                 ''bar.arg.xa'' := y)) ''bar.ret'' (bar ((v(''eq.arg.x'' := Suc y, ''eq.arg.y'' := 0, ''eq.ret'' := 0, ''sub.arg.x'' := Suc y, ''sub.arg.y'' := 1, ''sub.ret'' := y,
-                 ''bar.arg.xa'' := y)) ''bar.arg.xa''))
-                 (?c y * T_bar ((v(''eq.arg.x'' := Suc y, ''eq.arg.y'' := 0, ''eq.ret'' := 0, ''sub.arg.x'' := Suc y, ''sub.arg.y'' := 1, ''sub.ret'' := y,
-                 ''bar.arg.xa'' := y)) ''bar.arg.xa''))) \<Longrightarrow>
-           v ''bar.arg.xa'' = Suc y \<Longrightarrow>
-           terminates_with_res_time_IMP_Tailcall bar_IMP_tailcall bar_IMP_tailcall
-            (v(''eq.arg.x'' := Suc y, ''eq.arg.y'' := 0, ''eq.ret'' := 0, ''sub.arg.x'' := Suc y, ''sub.arg.y'' := 1, ''sub.ret'' := y,
-                 ''bar.arg.xa'' := y))
-            ''bar.ret'' (bar (v ''bar.arg.xa'')) (?t y v)"
-  by (simp add: bar.simps)
-
-schematic_goal h2:
-  assumes "(\<And>s. y = s ''bar.arg.xa'' \<Longrightarrow>
-                terminates_with_res_time_IMP_Tailcall bar_IMP_tailcall bar_IMP_tailcall s ''bar.ret'' (bar (s ''bar.arg.xa''))
-                 (c * T_bar (s ''bar.arg.xa'')))"
-  shows "y = (v(''eq.arg.x'' := Suc y, ''eq.arg.y'' := 0, ''eq.ret'' := 0, ''sub.arg.x'' := Suc y, ''sub.arg.y'' := 1, ''sub.ret'' := y, ''bar.arg.xa'' := y)) ''bar.arg.xa'' \<Longrightarrow>
-                terminates_with_res_time_IMP_Tailcall bar_IMP_tailcall bar_IMP_tailcall (v(''eq.arg.x'' := Suc y, ''eq.arg.y'' := 0, ''eq.ret'' := 0, ''sub.arg.x'' := Suc y, ''sub.arg.y'' := 1, ''sub.ret'' := y, ''bar.arg.xa'' := y)) ''bar.ret'' (bar ((v(''eq.arg.x'' := Suc y, ''eq.arg.y'' := 0, ''eq.ret'' := 0, ''sub.arg.x'' := Suc y, ''sub.arg.y'' := 1, ''sub.ret'' := y, ''bar.arg.xa'' := y)) ''bar.arg.xa''))
-                 (c * T_bar ((v(''eq.arg.x'' := Suc y, ''eq.arg.y'' := 0, ''eq.ret'' := 0, ''sub.arg.x'' := Suc y, ''sub.arg.y'' := 1, ''sub.ret'' := y, ''bar.arg.xa'' := y)) ''bar.arg.xa''))"
-  using assms by blast
-
-lemma pick:
-  assumes "t \<le> u"
-  shows "t \<le> u"
-  using assms .
 
 method start_case uses IMP_def =
    drule flip_xsrD, (* flip "x = s r" assumptions *)
@@ -876,7 +512,39 @@ method terminates_with_res_time_seq_call uses f_thm =
 
 method terminates_with_res_time_if = rule terminates_with_res_time_tIfI[OF refl _ refl _]
 
-schematic_goal h: "
+lemma simps_to_case_end:
+  assumes "PROP SIMPS_TO s s'"
+  assumes "PROP SIMPS_TO v v'"
+  assumes "terminates_with_res_time_IMP_Tailcall tp p s' r v' t"
+  shows "terminates_with_res_time_IMP_Tailcall tp p s r v t"
+  using SIMPS_TOD[OF assms(1)] SIMPS_TOD[OF assms(2)] assms(3) by simp
+
+lemma pick:
+  assumes "t \<le> u"
+  shows "t \<le> u"
+  using assms .
+
+
+fun bar :: "nat \<Rightarrow> nat" where
+  "bar 0 = 0" |
+  "bar (Suc n) = bar n"
+declare bar.simps[simp del]
+time_fun bar
+
+case_of_simps bar_eq_case : bar.simps
+lemmas bar_eq = bar_eq_case[unfolded case_nat_eq_if]
+compile_nat bar_eq
+
+lemma bar_IMP_Tailcall_ih:
+  assumes "(\<And>s. y = s ''bar.arg.xa'' \<Longrightarrow>
+                terminates_with_res_time_IMP_Tailcall bar_IMP_tailcall bar_IMP_tailcall s ''bar.ret'' (bar (s ''bar.arg.xa''))
+                 (c * T_bar (s ''bar.arg.xa'')))"
+  shows "y = (v(''eq.arg.x'' := Suc y, ''eq.arg.y'' := 0, ''eq.ret'' := 0, ''sub.arg.x'' := Suc y, ''sub.arg.y'' := 1, ''sub.ret'' := y, ''bar.arg.xa'' := y)) ''bar.arg.xa'' \<Longrightarrow>
+                terminates_with_res_time_IMP_Tailcall bar_IMP_tailcall bar_IMP_tailcall (v(''eq.arg.x'' := Suc y, ''eq.arg.y'' := 0, ''eq.ret'' := 0, ''sub.arg.x'' := Suc y, ''sub.arg.y'' := 1, ''sub.ret'' := y, ''bar.arg.xa'' := y)) ''bar.ret'' (bar ((v(''eq.arg.x'' := Suc y, ''eq.arg.y'' := 0, ''eq.ret'' := 0, ''sub.arg.x'' := Suc y, ''sub.arg.y'' := 1, ''sub.ret'' := y, ''bar.arg.xa'' := y)) ''bar.arg.xa''))
+                 (c * T_bar ((v(''eq.arg.x'' := Suc y, ''eq.arg.y'' := 0, ''eq.ret'' := 0, ''sub.arg.x'' := Suc y, ''sub.arg.y'' := 1, ''sub.ret'' := y, ''bar.arg.xa'' := y)) ''bar.arg.xa''))"
+  using assms by blast
+
+schematic_goal bar_IMP_Tailcall_twrt: "
     terminates_with_res_time_IMP_Tailcall bar_IMP_tailcall bar_IMP_tailcall s
       ''bar.ret'' (bar (s ''bar.arg.xa'')) (?c * T_bar (s ''bar.arg.xa''))"
 
@@ -935,7 +603,6 @@ schematic_goal h: "
         prefer 7 apply cond_false
        prefer 2 apply cond_false
 
-      
       apply (rule simps_to_case_end)
 
         (* simplify state *)
@@ -947,7 +614,7 @@ schematic_goal h: "
        apply (simp (no_asm_simp) add: bar.simps)
        apply (urule SIMPS_TOI)
 
-      apply (drule h2) (* instantiate IH *)
+      apply (drule bar_IMP_Tailcall_ih) (* instantiate IH *)
        apply simp (* solve IH assumption *)
       apply simp (* apply IH *)
 
@@ -983,33 +650,13 @@ lemma bar_IMP_Tailcall_twrbt:
   apply (rule terminates_with_res_bound_time_IMP_TailcallI)
   apply (rule exI)
   apply (rule allI)
-  apply (rule h)
+  apply (rule bar_IMP_Tailcall_twrt)
   done
-
 
 
 HOL_To_IMP_correct bar by cook
 
-
-
-(* lemma bar0: "bar n = 0" by (induction n) auto *)
-(* lemma T_bar_lin: "T_bar n = n + 1" by (induction n) auto *)
-
-
-
-
-
-
-fun baz :: "nat \<Rightarrow> nat" where
-  "baz n = foo n n + bar n"
-
-time_fun baz
-
-lemma "T_bar x = x + 1" by (induction x) auto
-
 end
-
-
 
 
 paragraph \<open>Multiplication\<close>
