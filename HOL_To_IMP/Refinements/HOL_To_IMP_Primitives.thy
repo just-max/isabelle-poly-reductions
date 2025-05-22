@@ -154,23 +154,23 @@ definition "terminates_with_res_time_IMP p s r val t \<equiv>
   terminates_with_res_pred_time_IMP p s r val (bounded_by t)"
 
 (* TODO: probably only care about IMP, not IMP_Tailcall ? *)
-definition "terminates_with_res_bound_time_IMP_Tailcall tp p r val t \<equiv>
-  \<exists>c. \<forall>s. terminates_with_res_time_IMP_Tailcall tp p s r (val s) (c * t s)"
+definition "terminates_with_res_bound_time_IMP_Tailcall tp p r f T_f \<equiv>
+  \<exists>c. \<forall>s. terminates_with_res_time_IMP_Tailcall tp p s r (f s) (c * T_f s)"
 
-definition "terminates_with_res_bound_time_IMP p r val t \<equiv>
-  \<exists>c. \<forall>s. terminates_with_res_time_IMP p s r (val s) (c * t s)"
+definition "terminates_with_res_bound_time_IMP p r f T_f \<equiv>
+  \<exists>c. \<forall>s. terminates_with_res_time_IMP p s r (f s) (c * T_f s)"
 
 
 (* remove or complete *)
-definition "terminates_with_bound_time_IMP p s' t \<equiv>
-  \<exists>c. \<forall>s. terminates_with_time_IMP p s (s' s) (c * t s)"
+definition "terminates_with_bound_time_IMP p s' T_f \<equiv>
+  \<exists>c. \<forall>s. terminates_with_time_IMP p s (s' s) (c * T_f s)"
 
 
-definition "least_bound_time_IMP p t \<equiv>
-  (LEAST c. \<forall>s. \<exists>s'. terminates_with_time_IMP p s s' (c * t s))"
+definition "least_bound_time_IMP p T_f \<equiv>
+  (LEAST c. \<forall>s. \<exists>s'. terminates_with_time_IMP p s s' (c * T_f s))"
 
-definition "least_bound_time_IMP_res p r val t \<equiv>
-  (LEAST c. \<forall>s. terminates_with_res_time_IMP p s r (val s) (c * t s))"
+definition "least_bound_time_IMP_res p r f T_f \<equiv>
+  (LEAST c. \<forall>s. terminates_with_res_time_IMP p s r (f s) (c * T_f s))"
 
 lemma
   assumes "\<exists>t. terminates_with_res_time_IMP p s r (val s) t"
@@ -345,8 +345,8 @@ lemma terminates_with_res_time_IMP_bound:
 
 
 lemma bound_fix_state:
-  assumes "terminates_with_res_bound_time_IMP p r val t"
-  shows "\<And>s. \<exists>c. terminates_with_res_time_IMP p s r (val s) (c * t s)"
+  assumes "terminates_with_res_bound_time_IMP p r f T_f"
+  shows "\<And>s. \<exists>c. terminates_with_res_time_IMP p s r (f s) (c * T_f s)"
   using assms by blast
 
 thm exE[OF bound_fix_state]
@@ -399,8 +399,8 @@ lemma obtain_least_bound:
 
 
 lemma obtain_least_bound_res:
-  assumes has_res_bound: "terminates_with_res_bound_time_IMP p r val t"
-  shows "terminates_with_res_time_IMP p s r (val s) (least_bound_time_IMP_res p r val t * t s)"
+  assumes has_res_bound: "terminates_with_res_bound_time_IMP p r f T_f"
+  shows "terminates_with_res_time_IMP p s r (f s) (least_bound_time_IMP_res p r f T_f * T_f s)"
   using assms
   by (smt (verit) least_bound_time_IMP_res_def terminates_with_res_bound_time_IMP_def
       wellorder_Least_lemma(1)) (* tidy *)
@@ -462,14 +462,14 @@ qed sorry
 lemma terminates_with_time_tSeqI:
   assumes "terminates_with_time_IMP_Tailcall tp p1 s s' t1"
   assumes "terminates_with_time_IMP_Tailcall tp p2 s' s'' t2"
-  assumes "t \<ge> t1 + t2"
-  shows "terminates_with_time_IMP_Tailcall tp (tSeq p1 p2) s s'' t"
+  (* assumes "t \<ge> t1 + t2" *)
+  shows "terminates_with_time_IMP_Tailcall tp (tSeq p1 p2) s s'' (t1 + t2)"
   using assms by fastforce
 
 lemma terminates_with_time_tAssignI:
   assumes "s' = s(k := aval aexp s)"
-  assumes "t \<ge> 2"
-  shows "terminates_with_time_IMP_Tailcall p (tAssign k aexp) s s' t"
+  (* assumes "t \<ge> 2" *)
+  shows "terminates_with_time_IMP_Tailcall p (tAssign k aexp) s s' 2"
   using assms by fastforce
 
 lemma terminates_with_time_tIfI:
@@ -491,16 +491,17 @@ lemma terminates_with_time_tIfI:
   using assms by fastforce *)
 
 lemma terminates_with_res_time_IMPI_bound:
-  assumes "terminates_with_res_bound_time_IMP p r val' t'"
-  assumes "val = val' s"
-  assumes "t \<ge> least_bound_time_IMP_res p r val' t' * t' s"
-  shows "terminates_with_res_time_IMP p s r val t"
+  assumes "terminates_with_res_bound_time_IMP p r f T_f"
+  (* assumes "val = val' s" *)
+  (* assumes "t \<ge> least_bound_time_IMP_res p r val' t' * t' s" *)
+  shows "terminates_with_res_time_IMP p s r (f s) (least_bound_time_IMP_res p r f T_f * T_f s)"
   using obtain_least_bound_res[OF assms(1), where s = s] using assms by fastforce
+  (* note this is just obtain_least_bound_res *)
 
 lemma terminates_with_time_tCallI:
-  assumes "terminates_with_res_time_IMP p s r val t'"
   assumes "s' = s(r := val)"
-  assumes "t \<ge> t'"
+  assumes "terminates_with_res_time_IMP p s r val t"
+  (* assumes "t \<ge> t'" *)
   shows "terminates_with_time_IMP_Tailcall tp (tCall p r) s s' t"
   using assms by fastforce
 
@@ -561,41 +562,43 @@ lemma terminates_with_time_tCallI_delay:
 *)
 
 lemma terminates_with_time_tTailI:
-  assumes "terminates_with_time_IMP_Tailcall tp tp s s' t'"
-  assumes "t \<ge> t' + 5"
-  shows "terminates_with_time_IMP_Tailcall tp tTAIL s s' t"
+  assumes "terminates_with_time_IMP_Tailcall tp tp s s' t"
+  (* assumes "t \<ge> t' + 5" *)
+  shows "terminates_with_time_IMP_Tailcall tp tTAIL s s' (t + 5)"
   using assms by fastforce
 
 
 lemma terminates_with_res_time_tSeqI:
   assumes "terminates_with_time_IMP_Tailcall tp p1 s s' t1"
   assumes "terminates_with_res_time_IMP_Tailcall tp p2 s' r val t2"
-  assumes "t \<ge> t1 + t2"
-  shows "terminates_with_res_time_IMP_Tailcall tp (tSeq p1 p2) s r val t"
+  (* assumes "t \<ge> t1 + t2" *)
+  shows "terminates_with_res_time_IMP_Tailcall tp (tSeq p1 p2) s r val (t1 + t2)"
   using assms by fastforce
 
 lemma terminates_with_res_time_tIfI:
+  assumes "cond \<Longrightarrow> s1 = s" (* do we really need these s_i = s assumptions ? *)
   assumes "cond \<Longrightarrow> terminates_with_res_time_IMP_Tailcall p p1 s1 r val t1"
-  assumes "cond \<Longrightarrow> s1 = s"
-  assumes "\<not>cond \<Longrightarrow> terminates_with_res_time_IMP_Tailcall p p2 s2 r val t2"
   assumes "\<not>cond \<Longrightarrow> s2 = s"
+  assumes "\<not>cond \<Longrightarrow> terminates_with_res_time_IMP_Tailcall p p2 s2 r val t2"
+  assumes "cond \<Longrightarrow> t \<ge> t1 + 1"
+  assumes "\<not>cond \<Longrightarrow> t \<ge> t2 + 1"
+  assumes "cond = (s vb \<noteq> 0)"
   (* assumes "\<not>cond \<Longrightarrow> s2 r = val" *)
   (* assumes "s = (if cond then s1 else s2)" *)
-  assumes "t \<ge> (if cond then t1 else t2) + 1"
-  assumes "cond = (s vb \<noteq> 0)"
+  (* assumes "t \<ge> (if cond then t1 else t2) + 1" *)
   shows "terminates_with_res_time_IMP_Tailcall p (tIf vb p1 p2) s r val t"
   using assms by fastforce
 
 lemma terminates_with_res_time_treturnI:
   assumes "aval a s = val"
-  assumes "t \<ge> 2"
-  shows "terminates_with_res_time_IMP_Tailcall p (tAssign r a) s r val t"
+  (* assumes "t \<ge> 2" *)
+  shows "terminates_with_res_time_IMP_Tailcall p (tAssign r a) s r val 2"
   using assms by fastforce
 
 lemma terminates_with_res_time_tTailI:
-  assumes "terminates_with_res_time_IMP_Tailcall tp tp s r val t'"
-  assumes "t \<ge> t' + 5"
-  shows "terminates_with_res_time_IMP_Tailcall tp tTAIL s r val t"
+  assumes "terminates_with_res_time_IMP_Tailcall tp tp s r val t"
+  (* assumes "t \<ge> t' + 5" *)
+  shows "terminates_with_res_time_IMP_Tailcall tp tTAIL s r val (t + 5)"
   using assms by fastforce
 
 (*
@@ -760,50 +763,60 @@ method start_time uses f_def =
 fun bar :: "nat \<Rightarrow> nat" where
   "bar 0 = 0" |
   "bar (Suc n) = bar n"
+declare bar.simps[simp del]
 time_fun bar
 
 case_of_simps bar_eq_case : bar.simps
 lemmas bar_eq = bar_eq_case[unfolded case_nat_eq_if]
 compile_nat bar_eq
 
-
 method cond_false = rule not_TrueE FalseE, assumption
 
 lemma simps_to_eq_r: assumes "PROP SIMPS_TO y y'" "x = y'" shows "x = y"
   using SIMPS_TOD[OF assms(1)] assms(2) by simp
 
+lemma simps_to_case_end:
+  assumes "PROP SIMPS_TO s s'"
+  assumes "PROP SIMPS_TO v v'"
+  assumes "terminates_with_res_time_IMP_Tailcall tp p s' r v' t"
+  shows "terminates_with_res_time_IMP_Tailcall tp p s r v t"
+  using SIMPS_TOD[OF assms(1)] SIMPS_TOD[OF assms(2)] assms(3) by simp
+
+
+(*
 lemma ind_stepI:
   assumes "twt = terminates_with_time_IMP_Tailcall p p s s' t"
   assumes "twt \<and> s' r = x \<and> t \<le> c * z"
   shows "terminates_with_time_IMP_Tailcall p p s s' t \<and>
            s' r = x \<and> t \<le> c * z"
-  using assms by blast
+  using assms by blast *)
 
 lemma flip_xsrD: assumes "x = s r" shows "s r = x" using assms by blast
 
 
-
+(*
 lemma mreow:
   assumes "\<And>s. terminates_with_res_time_IMP_Tailcall p p s r (val s) (t s)"
   obtains s where "terminates_with_res_time_IMP_Tailcall p p s r (val s) (t s)"
   using assms by blast
-    
+    *)
   
 
-
+(*
 lemma mmm: (* exists c ? *)
   fixes y
   assumes "c * T_bar y \<le> t1"
   assumes "terminates_with_res_time_IMP_Tailcall bar_IMP_tailcall bar_IMP_tailcall v' r val (c * T_bar y)"
   shows "terminates_with_res_time_IMP_Tailcall bar_IMP_tailcall bar_IMP_tailcall v' r val t1"
   using assms terminates_with_res_time_IMP_Tailcall_bound by blast
-
+*)
 (* lemma xsr_sym: *)
   (* assumes "(\<And>s. s r = x \<Longrightarrow> P s)" *)
   (* obtains s where "(x = s r \<Longrightarrow> P s)" *)
   (* using assms by simp *)
 
-lemma xsr_sym: fixes s :: "string \<Rightarrow> nat" shows "(x = s r) \<equiv> (s r = x)" by linarith
+(*
+lemma xsr_sym: fixes s :: "string \<Rightarrow> nat" shows "(x = s r) \<equiv> (s r = x)" by linarith *)
 
 (*
 lemma nnn:
@@ -813,15 +826,11 @@ lemma nnn:
 
 lemma start_case:
   assumes "p \<equiv> e"
-  assumes "s' = s"
-  assumes "t \<ge> t'"
-  assumes "terminates_with_res_time_IMP_Tailcall p e s' r val t'"
+  assumes "terminates_with_res_time_IMP_Tailcall p e s r val t'"
+  (* assumes "s' = s" *)
+  assumes "t' \<le> t"
   shows "terminates_with_res_time_IMP_Tailcall p p s r val t"
   using assms terminates_with_res_time_IMP_Tailcall_bound by blast
-  
-(* lemma a: assumes P "P \<Longrightarrow> Q" shows "Q"  *)
-  (* using assms by blast *)
-
 
 schematic_goal h1: "
   (y = (v(''eq.arg.x'' := Suc y, ''eq.arg.y'' := 0, ''eq.ret'' := 0, ''sub.arg.x'' := Suc y, ''sub.arg.y'' := 1, ''sub.ret'' := y,
@@ -829,229 +838,130 @@ schematic_goal h1: "
                 terminates_with_res_time_IMP_Tailcall bar_IMP_tailcall bar_IMP_tailcall (v(''eq.arg.x'' := Suc y, ''eq.arg.y'' := 0, ''eq.ret'' := 0, ''sub.arg.x'' := Suc y, ''sub.arg.y'' := 1, ''sub.ret'' := y,
                  ''bar.arg.xa'' := y)) ''bar.ret'' (bar ((v(''eq.arg.x'' := Suc y, ''eq.arg.y'' := 0, ''eq.ret'' := 0, ''sub.arg.x'' := Suc y, ''sub.arg.y'' := 1, ''sub.ret'' := y,
                  ''bar.arg.xa'' := y)) ''bar.arg.xa''))
-                 (?c18 y * T_bar ((v(''eq.arg.x'' := Suc y, ''eq.arg.y'' := 0, ''eq.ret'' := 0, ''sub.arg.x'' := Suc y, ''sub.arg.y'' := 1, ''sub.ret'' := y,
+                 (?c y * T_bar ((v(''eq.arg.x'' := Suc y, ''eq.arg.y'' := 0, ''eq.ret'' := 0, ''sub.arg.x'' := Suc y, ''sub.arg.y'' := 1, ''sub.ret'' := y,
                  ''bar.arg.xa'' := y)) ''bar.arg.xa''))) \<Longrightarrow>
            v ''bar.arg.xa'' = Suc y \<Longrightarrow>
            terminates_with_res_time_IMP_Tailcall bar_IMP_tailcall bar_IMP_tailcall
             (v(''eq.arg.x'' := Suc y, ''eq.arg.y'' := 0, ''eq.ret'' := 0, ''sub.arg.x'' := Suc y, ''sub.arg.y'' := 1, ''sub.ret'' := y,
                  ''bar.arg.xa'' := y))
-            ''bar.ret'' (bar (v ''bar.arg.xa'')) (?t'52 y v)"
-  by simp
+            ''bar.ret'' (bar (v ''bar.arg.xa'')) (?t y v)"
+  by (simp add: bar.simps)
+
+schematic_goal h2:
+  assumes "(\<And>s. y = s ''bar.arg.xa'' \<Longrightarrow>
+                terminates_with_res_time_IMP_Tailcall bar_IMP_tailcall bar_IMP_tailcall s ''bar.ret'' (bar (s ''bar.arg.xa''))
+                 (c * T_bar (s ''bar.arg.xa'')))"
+  shows "y = (v(''eq.arg.x'' := Suc y, ''eq.arg.y'' := 0, ''eq.ret'' := 0, ''sub.arg.x'' := Suc y, ''sub.arg.y'' := 1, ''sub.ret'' := y, ''bar.arg.xa'' := y)) ''bar.arg.xa'' \<Longrightarrow>
+                terminates_with_res_time_IMP_Tailcall bar_IMP_tailcall bar_IMP_tailcall (v(''eq.arg.x'' := Suc y, ''eq.arg.y'' := 0, ''eq.ret'' := 0, ''sub.arg.x'' := Suc y, ''sub.arg.y'' := 1, ''sub.ret'' := y, ''bar.arg.xa'' := y)) ''bar.ret'' (bar ((v(''eq.arg.x'' := Suc y, ''eq.arg.y'' := 0, ''eq.ret'' := 0, ''sub.arg.x'' := Suc y, ''sub.arg.y'' := 1, ''sub.ret'' := y, ''bar.arg.xa'' := y)) ''bar.arg.xa''))
+                 (c * T_bar ((v(''eq.arg.x'' := Suc y, ''eq.arg.y'' := 0, ''eq.ret'' := 0, ''sub.arg.x'' := Suc y, ''sub.arg.y'' := 1, ''sub.ret'' := y, ''bar.arg.xa'' := y)) ''bar.arg.xa''))"
+  using assms by blast
 
 lemma pick:
   assumes "t \<le> u"
   shows "t \<le> u"
   using assms .
 
+method start_case uses IMP_def =
+   drule flip_xsrD, (* flip "x = s r" assumptions *)
+   rule start_case[OF IMP_def] (* avoid flex-flex pair with explicit rule instead of subst *)
+
+method terminates_with_res_time_seq_assign =
+  rule terminates_with_res_time_tSeqI, rule terminates_with_time_tAssignI[OF refl]
+
+method terminates_with_res_time_seq_call uses f_thm =
+  rule terminates_with_res_time_tSeqI,
+  rule terminates_with_time_tCallI[OF refl],
+  rule terminates_with_res_time_IMPI_bound,
+  rule f_thm
+
+method terminates_with_res_time_if = rule terminates_with_res_time_tIfI[OF refl _ refl _]
+
 schematic_goal h: "
     terminates_with_res_time_IMP_Tailcall bar_IMP_tailcall bar_IMP_tailcall s
       ''bar.ret'' (bar (s ''bar.arg.xa'')) (?c * T_bar (s ''bar.arg.xa''))"
-
-  (* apply (rule terminates_with_time_tCallI_b[OF eq_IMP_twrbt]) *)
 
   apply (induction "s ''bar.arg.xa''" arbitrary: s rule: bar.induct) (* what is the induction rule??? *)
 
   (* base case *)
 
-   apply (drule flip_xsrD) (* flip "x = s r" assumptions *)
-   apply (rule start_case[OF bar_IMP_tailcall_def]) (* avoid flex-flex pair with explicit rule instead of subst *)
-     prefer 3
+  apply (start_case IMP_def: bar_IMP_tailcall_def)
 
-     apply (rule terminates_with_res_time_tSeqI)
-       prefer 3 apply (urule le_refl)
-      apply (rule terminates_with_time_tAssignI)
-       prefer 4 apply (urule refl)
-      prefer 2 apply (urule le_refl)
-     prefer 2
+    apply terminates_with_res_time_seq_assign
+    apply terminates_with_res_time_seq_assign
+    apply (terminates_with_res_time_seq_call f_thm: eq_IMP_twrbt)
 
-     apply (rule terminates_with_res_time_tSeqI)
-       prefer 3 apply (urule le_refl)
-      apply (rule terminates_with_time_tAssignI)
-       prefer 4 apply (urule refl)
-      prefer 2 apply (urule le_refl)
-     prefer 2
+    apply terminates_with_res_time_if
+        apply (rule terminates_with_res_time_treturnI) defer
 
-     apply (rule terminates_with_res_time_tSeqI)
-       prefer 3 apply (urule le_refl)
-      apply (rule terminates_with_time_tCallI)
-        prefer 5 apply (urule refl)
-       prefer 3 apply (urule le_refl)
-      apply (rule terminates_with_res_time_IMPI_bound)
-        thm eq_IMP_twrbt
-        apply (rule eq_IMP_twrbt)
-       apply (urule refl) (* do we want this here? in general we may want to take a close look at state management on a call, e.g. preserve a sNN? = ... constraint to avoid blowing things up? *)
-      (* apply (simp add: constant_time_def) *)
-      apply (urule le_refl)
-     prefer 2
+        apply terminates_with_res_time_seq_assign
+        apply terminates_with_res_time_seq_assign
+        apply (terminates_with_res_time_seq_call f_thm: sub_IMP_twrbt)
+        apply terminates_with_res_time_seq_assign
 
-      (* at this point we could already simplify the pre-conditional state (?) *)
-      (* although that could be wasted effort if we're currently
-          in a conditional that will get discarded anyway... *)
+        apply (rule terminates_with_res_time_tTailI)
 
-     apply (rule terminates_with_res_time_tIfI)
-          prefer 5 apply (urule le_refl)
-
-         apply (rule terminates_with_res_time_treturnI)
-            (* prefer 3 apply (urule refl) *) (* ? *)
-          prefer 2 apply (urule le_refl)
-         prefer 3
-
-         apply (rule terminates_with_res_time_tSeqI)
-           prefer 3 apply (urule le_refl)
-          apply (rule terminates_with_time_tAssignI)
-           prefer 6 apply (urule refl)
-          prefer 2 apply (urule le_refl)
-         prefer 2
-
-         apply (rule terminates_with_res_time_tSeqI)
-           prefer 3 apply (urule le_refl)
-          apply (rule terminates_with_time_tAssignI)
-           prefer 4 apply (urule refl)
-          prefer 2 apply (urule le_refl)
-         prefer 2
-
-         apply (rule terminates_with_res_time_tSeqI)
-           prefer 3 apply (urule le_refl)
-          apply (rule terminates_with_time_tCallI)
-            prefer 5 apply (urule refl)
-           prefer 3 apply (urule le_refl)
-          apply (rule terminates_with_res_time_IMPI_bound)
-            apply (rule sub_IMP_twrbt)
-           apply (urule refl)
-          apply (urule le_refl)
-         prefer 2
-
-         apply (rule terminates_with_res_time_tSeqI)
-           prefer 3 apply (urule le_refl)
-          apply (rule terminates_with_time_tAssignI)
-           prefer 4 apply (urule refl)
-          prefer 2 apply (urule le_refl)
-         prefer 2
-
-         apply (rule terminates_with_res_time_tTailI)
-           prefer 2 apply (urule le_refl)
-
-          (* evaluate state up until right before conditional *)
-          prefer 6 apply (rule simps_to_eq_r) apply (simp (no_asm_simp) add: HTHN.eq_nat_def True_nat_def) apply (urule SIMPS_TOI) apply (urule refl)
-         (* evaluate condition *)
-         prefer 5 apply (rule simps_to_eq_r) apply (simp (no_asm_simp)) apply (urule SIMPS_TOI) apply (urule refl)
-        (* select return value of conditional *)
-        (* prefer 4 apply (rule simps_to_eq_r) apply (simp (no_asm_simp) only: if_True) apply (urule SIMPS_TOI) apply (urule refl) *)
-       (* dismiss opposite conditional branch *)
-       prefer 2 apply cond_false
+        (* simplify condition *)
+        prefer 4 apply (rule simps_to_eq_r) apply (simp (no_asm_simp) add: HTHN.eq_nat_def True_nat_def) apply (urule SIMPS_TOI) apply (urule refl)
+       (* dismiss opposite conditional branch, this only works when condition is case analysis of function definition *)
+       prefer 3 apply cond_false
       prefer 1 apply cond_false
-      (* evaluate state inside selected conditional branch *)
-     prefer 2 apply (rule simps_to_eq_r) apply (simp (no_asm_simp)) apply (urule SIMPS_TOI) apply (urule refl)
 
-    apply (simp (no_asm_simp) only:) (* substitute "s r = x" assumptions *)
-    apply simp (* solve the equality outright (hopefully) *)
-
-   apply simp (* simplify the constraint on the timing constant *)
-   defer 1
+     prefer 4
+     apply (simp (no_asm_simp) only:) (* substitute "s r = x" assumptions *)
+     apply (simp (no_asm_simp) add: bar.simps) (* solve the equality outright (hopefully) *)
 
 (* induction step *)
 
-   apply (drule flip_xsrD) (* flip "x = s r" assumptions *)
-   apply (rule start_case[OF bar_IMP_tailcall_def]) (* avoid flex-flex pair with explicit rule instead of subst *)
-     prefer 3
+    prefer 3
+    apply (start_case IMP_def: bar_IMP_tailcall_def)
 
-     apply (rule terminates_with_res_time_tSeqI)
-       prefer 3 apply (urule le_refl)
-      apply (rule terminates_with_time_tAssignI)
-       prefer 4 apply (urule refl)
-      prefer 2 apply (urule le_refl)
-     prefer 2
+     apply terminates_with_res_time_seq_assign
+     apply terminates_with_res_time_seq_assign
+     apply (terminates_with_res_time_seq_call f_thm: eq_IMP_twrbt)
 
-     apply (rule terminates_with_res_time_tSeqI)
-       prefer 3 apply (urule le_refl)
-      apply (rule terminates_with_time_tAssignI)
-       prefer 4 apply (urule refl)
-      prefer 2 apply (urule le_refl)
-     prefer 2
+     apply terminates_with_res_time_if
+         apply (rule terminates_with_res_time_treturnI) defer
 
-     apply (rule terminates_with_res_time_tSeqI)
-       prefer 3 apply (urule le_refl)
-      apply (rule terminates_with_time_tCallI)
-        prefer 5 apply (urule refl)
-       prefer 3 apply (urule le_refl)
-      apply (rule terminates_with_res_time_IMPI_bound)
-        apply (rule eq_IMP_twrbt)
-       apply (urule refl) (* do we want this here? in general we may want to take a close look at state management on a call, e.g. preserve a sNN? = ... constraint to avoid blowing things up? *)
-      (* apply (simp add: constant_time_def) *)
-      apply (urule le_refl)
-     prefer 2
-
-      (* at this point we could already simplify the pre-conditional state (?) *)
-      (* although that could be wasted effort if we're currently
-          in a conditional that will get discarded anyway... *)
-
-     apply (rule terminates_with_res_time_tIfI)
-          prefer 5 apply (urule le_refl)
-
-         apply (rule terminates_with_res_time_treturnI)
-            (* prefer 3 apply (urule refl) *) (* ? *)
-          prefer 2 apply (urule le_refl)
-         prefer 3
-
-         apply (rule terminates_with_res_time_tSeqI)
-           prefer 3 apply (urule le_refl)
-          apply (rule terminates_with_time_tAssignI)
-           prefer 6 apply (urule refl)
-          prefer 2 apply (urule le_refl)
-         prefer 2
-
-         apply (rule terminates_with_res_time_tSeqI)
-           prefer 3 apply (urule le_refl)
-          apply (rule terminates_with_time_tAssignI)
-           prefer 4 apply (urule refl)
-          prefer 2 apply (urule le_refl)
-         prefer 2
-
-         apply (rule terminates_with_res_time_tSeqI)
-           prefer 3 apply (urule le_refl)
-          apply (rule terminates_with_time_tCallI)
-            prefer 5 apply (urule refl)
-           prefer 3 apply (urule le_refl)
-          apply (rule terminates_with_res_time_IMPI_bound)
-            apply (rule sub_IMP_twrbt)
-           apply (urule refl)
-          apply (urule le_refl)
-         prefer 2
-
-         apply (rule terminates_with_res_time_tSeqI)
-           prefer 3 apply (urule le_refl)
-          apply (rule terminates_with_time_tAssignI)
-           prefer 4 apply (urule refl)
-          prefer 2 apply (urule le_refl)
-         prefer 2
+         apply terminates_with_res_time_seq_assign
+         apply terminates_with_res_time_seq_assign
+         apply (terminates_with_res_time_seq_call f_thm: sub_IMP_twrbt)
+         apply terminates_with_res_time_seq_assign
 
          apply (rule terminates_with_res_time_tTailI)
-           prefer 2 apply (urule le_refl)
 
-          (* evaluate state up until right before conditional *)
-          prefer 6 apply (rule simps_to_eq_r) apply (simp (no_asm_simp) add: HTHN.eq_nat_def False_nat_def) apply (urule SIMPS_TOI) apply (urule refl)
-         (* evaluate condition *)
-         prefer 5 apply (rule simps_to_eq_r) apply (simp (no_asm_simp)) apply (urule SIMPS_TOI) apply (urule refl)
-        (* select return value of conditional *)
-        (* prefer 4 apply (rule simps_to_eq_r) apply (simp (no_asm_simp) only: if_True) apply (urule SIMPS_TOI) apply (urule refl) *)
-       (* dismiss opposite conditional branch *)
-       prefer 4 apply cond_false
-      (* evaluate state inside selected conditional branch *)
-      prefer 2 apply (rule simps_to_eq_r) apply (simp (no_asm_simp)) apply (urule SIMPS_TOI) apply (urule refl)
+         (* simplify condition *)
+         prefer 4 apply (rule simps_to_eq_r) apply (simp (no_asm_simp) add: HTHN.eq_nat_def False_nat_def) apply (urule SIMPS_TOI) apply (urule refl)
+        (* dismiss opposite conditional branch, this only works when condition is case analysis of function definition *)
+        prefer 7 apply cond_false
+       prefer 2 apply cond_false
 
-    (* apply (simp (no_asm_simp) only:) (* substitute "s r = x" assumptions *) *)
+      
+      apply (rule simps_to_case_end)
 
-    apply (rename_tac y v)
-    apply (rule h1)
-     apply assumption
-    apply assumption
-    apply simp
+        (* simplify state *)
+        apply (simp add: HTHN.eq_nat_def False_nat_def)
+        apply (urule SIMPS_TOI)
+
+        (* "run" function *)
+        apply (simp (no_asm_simp) only:) (* substitute "s r = x" assumptions *)
+       apply (simp (no_asm_simp) add: bar.simps)
+       apply (urule SIMPS_TOI)
+
+      apply (drule h2) (* instantiate IH *)
+       apply simp (* solve IH assumption *)
+      apply simp (* apply IH *)
+
+  (* now we have two timing constraints per case: one each "up to" the condition, and each "inside" the condition *)
+
+     prefer 3 apply (urule le_refl)
+    prefer 1 apply (urule le_refl)
    apply (simp_all add: constant_time1)
+
   (* what we have here is really just the constraint system:
       16 + C_eq + C_sub + c * T_bar x \<le> c * (T_bar x + 1)
       7  + C_eq \<le> c
      which has a solution c := max (7 + C_eq) (16 + C_eq + C_sub) *)
-  (* this would be nicer if we could prove the least_bound_time_IMP equality, but it works as is... *)
+  (* this would be a little bit nicer if we could prove the least_bound_time_IMP equality, but it works as is... *)
    prefer 2 apply (rule pick[where u =
         "max
           (7
@@ -1073,7 +983,8 @@ lemma bar_IMP_Tailcall_twrbt:
   apply (rule terminates_with_res_bound_time_IMP_TailcallI)
   apply (rule exI)
   apply (rule allI)
-  using h by blast
+  apply (rule h)
+  done
 
 
 
