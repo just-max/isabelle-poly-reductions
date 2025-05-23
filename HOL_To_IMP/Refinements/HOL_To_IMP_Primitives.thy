@@ -152,6 +152,8 @@ definition "terminates_with_res_time_IMP_Tailcall tp p s r val t \<equiv>
 definition "terminates_with_res_time_IMP p s r val t \<equiv>
   terminates_with_res_pred_time_IMP p s r val (bounded_by t)"
 
+(* _time: ((=) t); _bound_time: \exists c. \forall s. \exists t. ... (t) \and t \<le> c * T_f *)
+
 (* TODO: probably only care about IMP, not IMP_Tailcall ? *)
 definition "terminates_with_res_bound_time_IMP_Tailcall tp p r f T_f \<equiv>
   \<exists>c. \<forall>s. terminates_with_res_time_IMP_Tailcall tp p s r (f s) (c * T_f s)"
@@ -159,11 +161,8 @@ definition "terminates_with_res_bound_time_IMP_Tailcall tp p r f T_f \<equiv>
 definition "terminates_with_res_bound_time_IMP p r f T_f \<equiv>
   \<exists>c. \<forall>s. terminates_with_res_time_IMP p s r (f s) (c * T_f s)"
 
-
-(* remove or complete *)
-(* definition "terminates_with_bound_time_IMP p s' T_f \<equiv>
-  \<exists>c. \<forall>s. terminates_with_time_IMP p s (s' s) (c * T_f s)" *)
-
+definition "terminates_with_bound_time_IMP p s_p T_f \<equiv>
+  \<exists>c. \<forall>s. terminates_with_time_IMP p s (s_p s) (c * T_f s)"
 
 definition "least_bound_time_IMP p T_f \<equiv>
   (LEAST c. \<forall>s. \<exists>s'. terminates_with_time_IMP p s s' (c * T_f s))"
@@ -171,13 +170,7 @@ definition "least_bound_time_IMP p T_f \<equiv>
 definition "least_bound_time_IMP_res p r f T_f \<equiv>
   (LEAST c. \<forall>s. terminates_with_res_time_IMP p s r (f s) (c * T_f s))"
 
-(* TODO: we may need to add a predicate on states where they are hidden by a definition *)
-
-lemma
-  assumes "\<exists>t. terminates_with_res_time_IMP p s r (val s) t"
-  shows "least_bound_time_IMP p T_f = least_bound_time_IMP_res p r f T_f"
-  using assms oops
-(* something like this *must* hold, due to the determinism of IMP... find the correct lemma! *)
+(* TODO: we may need to add a predicate on states where they are hidden inside a definition *)
 
 (* it might be "nicer" to write these in terms of terminates_with_pred_time_IMP_TailcallI/E,
     but the resulting higher-order unification seems to trip up the automation *)
@@ -263,6 +256,17 @@ lemma terminates_with_res_bound_time_IMPE:
   obtains c where "\<And>s. terminates_with_res_time_IMP p s r (val s) (c * t s)"
   using assms unfolding terminates_with_res_bound_time_IMP_def by blast
 
+lemma terminates_with_bound_time_IMPI:
+  assumes "\<exists>c. \<forall>s. terminates_with_time_IMP p s (s_p s) (c * t s)"
+  shows "terminates_with_bound_time_IMP p s_p t"
+  unfolding terminates_with_bound_time_IMP_def using assms by blast
+
+lemma terminates_with_bound_time_IMPE:
+  assumes "terminates_with_bound_time_IMP p s_p t"
+  obtains c where "\<And>s. terminates_with_time_IMP p s (s_p s) (c * t s)"
+  using assms unfolding terminates_with_bound_time_IMP_def by blast
+
+
 lemmas terminates_with_intros =
   terminates_with_pred_time_IMP_TailcallI
   terminates_with_res_pred_time_IMP_TailcallI
@@ -274,6 +278,7 @@ lemmas terminates_with_intros =
   terminates_with_res_pred_time_IMPI
   terminates_with_time_IMPI
   terminates_with_res_time_IMPI
+  terminates_with_bound_time_IMPI
   terminates_with_res_bound_time_IMPI
 
 lemmas terminates_with_elims =
@@ -287,6 +292,7 @@ lemmas terminates_with_elims =
   terminates_with_res_pred_time_IMPE
   terminates_with_time_IMPE
   terminates_with_res_time_IMPE
+  terminates_with_bound_time_IMPE
   terminates_with_res_bound_time_IMPE
 
 context
@@ -311,32 +317,54 @@ lemma bound_fix_state:
   shows "\<And>s. \<exists>c. terminates_with_res_time_IMP p s r (f s) (c * T_f s)"
   using assms by blast
 
-lemma nores_from_res:
-  assumes "terminates_with_res_time_IMP p s r val t"
-  shows "\<exists>s'. terminates_with_time_IMP p s s' t"
-  using assms terminates_with_res_time_IMP_def terminates_with_time_IMP_def by auto
-
 lemma terminates_with_time_res_equiv:
   "terminates_with_res_time_IMP p s r val t \<equiv>
     \<exists>s'. terminates_with_time_IMP p s s' t \<and> s' r = val"
-  by (simp add: terminates_with_res_pred_time_IMP_def terminates_with_res_time_IMP_def
-      terminates_with_time_IMP_def) (* meh *)
+  by (rule eq_reflection, rule iffI; blast)
 
-(*
+lemma terminates_with_res_to_terminates_with_bound_time:
+  assumes "terminates_with_res_bound_time_IMP p r f T_f"
+  shows "\<exists>s_p. terminates_with_bound_time_IMP p s_p T_f \<and> (\<forall>s. s_p s r = f s)"
+proof-
+  from assms have "\<exists>c. \<forall>s. \<exists>s'. terminates_with_time_IMP p s s' (c * T_f s) \<and> s' r = f s" by fastforce
+  then have "\<exists>s_p. \<exists>c. \<forall>s. terminates_with_time_IMP p s (s_p s) (c * T_f s) \<and> s_p s r = f s" using choice by fast
+  then show "\<exists>s_p. terminates_with_bound_time_IMP p s_p T_f \<and> (\<forall>s. s_p s r = f s)" by blast
+  (* note these last two are equivalent, and the former could perhaps be useful, but the latter is "cleaner" *)
+qed
+
+(* not used *)
+lemma terminates_with_to_terminates_with_res_bound_time:
+  assumes "terminates_with_bound_time_IMP p s_p T_f"
+  shows "terminates_with_res_bound_time_IMP p r (\<lambda>s. s_p s r) T_f"
+  using assms by fastforce
+
+
 lemma obtain_least_bound:
   assumes has_res_bound: "terminates_with_bound_time_IMP p s' t"
   shows "terminates_with_time_IMP p s (s' s) (least_bound_time_IMP p t * t s)"
   using assms
   by (smt (verit, ccfv_threshold) LeastI_ex big_step_t_determ2 least_bound_time_IMP_def
-      terminates_with_bound_time_IMP_def terminates_with_time_IMPE) (* tidy *) *)
+      terminates_with_bound_time_IMP_def terminates_with_time_IMPE) (* tidy *)
 
-
-lemma obtain_least_bound_res:
+lemma obtain_least_bound_res_1:
   assumes has_res_bound: "terminates_with_res_bound_time_IMP p r f T_f"
   shows "terminates_with_res_time_IMP p s r (f s) (least_bound_time_IMP_res p r f T_f * T_f s)"
   using assms
   by (smt (verit) least_bound_time_IMP_res_def terminates_with_res_bound_time_IMP_def
       wellorder_Least_lemma(1)) (* tidy *)
+
+lemma obtain_least_bound_res_2:
+  assumes "terminates_with_res_bound_time_IMP p r f T_f"
+  shows "terminates_with_res_time_IMP p s r (f s) (least_bound_time_IMP p T_f * T_f s)"
+proof-
+  from assms have "\<exists>s_p. terminates_with_bound_time_IMP p s_p T_f \<and> (\<forall>s. s_p s r = f s)"
+    using terminates_with_res_to_terminates_with_bound_time by blast
+  then have "\<exists>s_p. terminates_with_time_IMP p s (s_p s) (least_bound_time_IMP p T_f * T_f s) \<and> s_p s r = f s"
+    using obtain_least_bound by blast
+  then show "terminates_with_res_time_IMP p s r (f s) (least_bound_time_IMP p T_f * T_f s)"
+    using terminates_with_time_res_equiv by blast
+qed
+
 
 lemma terminates_with_time_tSeqI:
   assumes "terminates_with_time_IMP_Tailcall tp p1 s s' t1"
@@ -363,9 +391,9 @@ lemma terminates_with_time_tIfI:
 
 lemma terminates_with_res_time_IMPI_bound:
   assumes "terminates_with_res_bound_time_IMP p r f T_f"
-  shows "terminates_with_res_time_IMP p s r (f s) (least_bound_time_IMP_res p r f T_f * T_f s)"
-  using obtain_least_bound_res[OF assms(1), where s = s] using assms by fastforce
-  (* note this is just obtain_least_bound_res *)
+  shows "terminates_with_res_time_IMP p s r (f s) (least_bound_time_IMP p T_f * T_f s)"
+  using obtain_least_bound_res_2[OF assms(1), where s = s] using assms by fastforce
+  (* note this is just obtain_least_bound_res_2, but we abstract it here *)
 
 lemma terminates_with_time_tCallI:
   assumes "s' = s(r := val)"
@@ -628,17 +656,12 @@ schematic_goal bar_IMP_Tailcall_twrt: "
       16 + C_eq + C_sub + c * T_bar x \<le> c * (T_bar x + 1)
       7  + C_eq \<le> c
      which has a solution c := max (7 + C_eq) (16 + C_eq + C_sub) *)
-  (* this would be a little bit nicer if we could prove the least_bound_time_IMP equality, but it works as is... *)
    prefer 2 apply (rule pick[where u =
         "max
-          (7
-            + least_bound_time_IMP_res eq_IMP ''eq.ret''
-                (\<lambda>s. HTHN.eq_nat (s ''eq.arg.x'') (s ''eq.arg.y'')) constant_time)
+          (7 + least_bound_time_IMP eq_IMP constant_time)
           (16
-            + least_bound_time_IMP_res eq_IMP ''eq.ret''
-                (\<lambda>s. HTHN.eq_nat (s ''eq.arg.x'') (s ''eq.arg.y'')) constant_time
-            + least_bound_time_IMP_res sub_IMP ''sub.ret''
-                (\<lambda>s. s ''sub.arg.x'' - s ''sub.arg.y'') constant_time)"
+            + least_bound_time_IMP eq_IMP constant_time
+            + least_bound_time_IMP sub_IMP constant_time)"
         ])
 (* can isabelle solve this automatically? *)
    apply (auto simp add: algebra_simps)
