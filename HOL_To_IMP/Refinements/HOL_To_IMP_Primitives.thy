@@ -170,6 +170,28 @@ definition "least_constant_IMP p T_f \<equiv>
 definition "least_constant_with_res_IMP p r f T_f \<equiv>
   (LEAST c. \<forall>s. terminates_with_res_time_IMP p s r (f s) (c * T_f s))"
 
+
+(* Idea: following the formulation from A Fistful of Dollars, one
+    could abstract the definition of "asymptotically bounded" away: *)
+
+definition "of_order g = (\<lambda>f. \<exists>c. \<forall>x. f x \<le> c * g x)"
+
+definition "terminates_with_res_time_order_IMP' p r f T_f \<equiv>
+  \<exists>T. (of_order T_f) T \<and> (\<forall>s. terminates_with_res_time_IMP p s r (f s) (T s))"
+
+(* With the given definition of "of_order", this is equivalent to the existing definition,
+    see lemma abstract_of_order_equiv further below
+
+  Advantages:
+  - No more "c" floating around in the definition of terminates_with_res_time_order_IMP
+  - Also don't need to add a "c" parameter to terminates_with_res_time_IMP, which I think would get in the way:
+      - Since that predicate is used for the recursion on the term, the "c" would be an extra parameter fixed at 1
+      - There's also nothing that could force "c" to be a constant there, so it would just be an extra parameter that gets multiplied in inside the predicate
+  - Keeps the definition of "of_order" in one place, which we might need when considering functions that have run time of 0
+      - E.g. of_order g f = if (g is zero function) then (f is constant function) else (existing def ...)
+      - Any change here would of course nevertheless need to be accounted for whenever an auxiliary function is called.
+ *)
+
 (* TODO: we may need to add a predicate on states where they are hidden inside a definition *)
 
 (* it might be "nicer" to write these in terms of terminates_with_pred_time_IMP_TailcallI/E,
@@ -311,6 +333,27 @@ lemma terminates_with_res_time_IMP_mono:
   shows "terminates_with_res_time_IMP p s r val u"
   using assms by fastforce
 
+lemma abstract_of_order_equiv:
+  "terminates_with_res_time_order_IMP' p r f T_f = terminates_with_res_time_order_IMP p r f T_f"
+proof
+  (* given a suitable timing function T, we know T is of the order T_f and thus bounded by c * T_f,
+      which by monotonicity is still a suitable running time bound *)
+  assume "terminates_with_res_time_order_IMP' p r f T_f"
+  then obtain T where "of_order T_f T" and bound: "\<forall>s. terminates_with_res_time_IMP p s r (f s) (T s)"
+    using terminates_with_res_time_order_IMP'_def by blast
+  then obtain c where "\<forall>s. T s \<le> c * T_f s" unfolding of_order_def by blast
+  with terminates_with_res_time_IMP_mono bound
+    have "\<forall>s. terminates_with_res_time_IMP p s r (f s) (c * T_f s)" by fastforce
+  then show "terminates_with_res_time_order_IMP p r f T_f" by blast
+next
+  (* given the existence of a suitable constant c, one can pick c * T_f as a suitable timing function *)
+  assume "terminates_with_res_time_order_IMP p r f T_f"
+  then obtain c where c: "\<forall>s. terminates_with_res_time_IMP p s r (f s) (c * T_f s)" by fastforce
+  let ?T = "\<lambda>s. c * T_f s"
+  have "of_order T_f ?T" unfolding of_order_def by blast
+  with c show "terminates_with_res_time_order_IMP' p r f T_f"
+    unfolding terminates_with_res_time_order_IMP'_def by blast
+qed
 
 lemma bound_fix_state:
   assumes "terminates_with_res_time_order_IMP p r f T_f"
