@@ -336,8 +336,8 @@ lemma terminates_with_res_time_IMP_mono:
 lemma abstract_of_order_equiv:
   "terminates_with_res_time_order_IMP' p r f T_f = terminates_with_res_time_order_IMP p r f T_f"
 proof
-  (* given a suitable timing function T, we know T is of the order T_f and thus bounded by c * T_f,
-      which by monotonicity is still a suitable running time bound *)
+  (* given a suitable timing function T, we know T is of the order T_f and thus bounded by c * T_f
+      for some c, which by monotonicity is still a suitable running time bound *)
   assume "terminates_with_res_time_order_IMP' p r f T_f"
   then obtain T where "of_order T_f T" and bound: "\<forall>s. terminates_with_res_time_IMP p s r (f s) (T s)"
     using terminates_with_res_time_order_IMP'_def by blast
