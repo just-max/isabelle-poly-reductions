@@ -259,23 +259,23 @@ lemma terminates_with_res_time_IMPE:
   by metis
 
 lemma terminates_with_res_time_order_IMP_TailcallI:
-  assumes "\<exists>c. \<forall>s. terminates_with_res_time_IMP_Tailcall tp p s r (val s) (c * t s)"
-  shows "terminates_with_res_time_order_IMP_Tailcall tp p r val t"
+  assumes "\<exists>c. \<forall>s. terminates_with_res_time_IMP_Tailcall tp p s r (f s) (c * T_f s)"
+  shows "terminates_with_res_time_order_IMP_Tailcall tp p r f T_f"
   unfolding terminates_with_res_time_order_IMP_Tailcall_def using assms by blast
 
 lemma terminates_with_res_time_order_IMP_TailcallE:
-  assumes "terminates_with_res_time_order_IMP_Tailcall tp p r val t"
-  obtains c where "\<And>s. terminates_with_res_time_IMP_Tailcall tp p s r (val s) (c * t s)"
+  assumes "terminates_with_res_time_order_IMP_Tailcall tp p r f T_f"
+  obtains c where "\<And>s. terminates_with_res_time_IMP_Tailcall tp p s r (f s) (c * T_f s)"
   using assms unfolding terminates_with_res_time_order_IMP_Tailcall_def by blast
 
 lemma terminates_with_res_time_order_IMPI:
-  assumes "\<exists>c. \<forall>s. terminates_with_res_time_IMP p s r (val s) (c * t s)"
-  shows "terminates_with_res_time_order_IMP p r val t"
+  assumes "\<exists>c. \<forall>s. terminates_with_res_time_IMP p s r (f s) (c * T_f s)"
+  shows "terminates_with_res_time_order_IMP p r f T_f"
   unfolding terminates_with_res_time_order_IMP_def using assms by blast
 
 lemma terminates_with_res_time_order_IMPE:
-  assumes "terminates_with_res_time_order_IMP p r val t"
-  obtains c where "\<And>s. terminates_with_res_time_IMP p s r (val s) (c * t s)"
+  assumes "terminates_with_res_time_order_IMP p r f T_f"
+  obtains c where "\<And>s. terminates_with_res_time_IMP p s r (f s) (c * T_f s)"
   using assms unfolding terminates_with_res_time_order_IMP_def by blast
 
 lemma terminates_with_time_order_IMPI:
