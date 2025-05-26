@@ -476,6 +476,66 @@ lemma terminates_with_res_time_tTailI:
   shows "terminates_with_res_time_IMP_Tailcall tp tTAIL s r val (t + 5)"
   using assms by fastforce
 
+
+lemma tbigstep_progress: assumes "tp \<turnstile> (p,s) \<Rightarrow>\<^bsup>z \<^esup> t" shows "z > 0"
+  using assms apply (induction rule: tbig_step_t_induct)
+  using bigstep_progress apply simp_all
+  done
+
+(* analogue of terminates_with_res_IMP_if_terminates_with_res_IMP_TailcallI *)
+lemma tailcall_to_IMP_order_preserving:
+  assumes invar: "invar p"
+  assumes return: "r \<in> set (vars p)"
+  assumes tailcall: "terminates_with_res_time_order_IMP_Tailcall p p r f T_f"
+  shows "terminates_with_res_time_order_IMP (tailcall_to_IMP p) r f T_f"
+(* TODO: clean up proof *)
+proof -
+  from tailcall obtain c where c: "terminates_with_res_time_IMP_Tailcall p p s r (f s) (c * T_f s)" for s by fastforce
+  show "terminates_with_res_time_order_IMP (tailcall_to_IMP p) r f T_f"
+  proof (rule terminates_with_res_time_order_IMPI, rule exI, rule allI)
+    fix s :: state
+    (* from assms(1) obtain c where "terminates_with_res_time_IMP_Tailcall p p s r (f s) (c * T_f s)" *)
+      (* using terminates_with_res_time_order_IMP_TailcallE by blast (* shouldn't it already be an elim rule ? *) *)
+    from c obtain z t where "p \<turnstile> (p,s) \<Rightarrow>\<^bsup>z \<^esup> t" and 6: "t r = f s" and 3: "0 < z" and 2: "z \<le> c * T_f s"
+      by (meson tbigstep_progress terminates_with_res_time_IMP_TailcallE)
+    then obtain t' where "(compile p,s) \<Rightarrow>'\<^bsup> 7 + z\<^esup>  t'" and 7: "t = t' on set (vars p)"
+      using compile_sound invar by blast
+    then obtain z_1 t_1 where
+      5: "(tailcall_to_IMP p,s) \<Rightarrow>\<^bsup> z_1 \<^esup> t_1"
+      and 8: "t_1 = t' on set (vars (compile p))"
+      and "(7 + z) \<le> z_1"
+      and 1: "z_1 \<le> ((7 + z) + 1) * (1 + size\<^sub>c (compile p))"
+      unfolding tailcall_to_IMP_eq using inline_sound by blast
+  
+    have "T_f s > 0" using 2 3 by force then have 4: "T_f s \<ge> 1" by linarith
+  
+    let ?d = "(1 + size\<^sub>c (compile p))"
+    let ?c' = "(8 + c) * ?d"
+    (* have "z_1 \<le> ?c' * T_f s" sledgehammer *)
+    have "z_1 \<le> (8 + z) * ?d" using 1 by simp
+    also have "... \<le> (8 + c * T_f s) * ?d" using 2 by simp
+    also have "... = (8 * ?d) + ((c * T_f s) * ?d)" by algebra
+    also have "... \<le> (1 * 8 * ?d) + ((c * T_f s) * ?d)" by simp
+    also have "... \<le> ((T_f s) * 8 * ?d) + ((c * T_f s) * ?d)"
+      (* apply (rule add_le_mono1) *)
+      (* apply (rule mult_le_mono1) *)
+      (* apply (rule mult_le_mono1) *)
+      using 4 add_le_mono1 mult_le_mono1 by presburger
+    also have "... = (8 * (T_f s * ?d)) + (c * (T_f s * ?d))" by simp
+    also have "... = ?c' * T_f s" by algebra
+    finally have z_1: "z_1 \<le> ?c' * T_f s" .
+  
+    show "terminates_with_res_time_IMP (tailcall_to_IMP p) s r (f s) (?c' * T_f s)"
+      apply rule
+        apply (rule 5)
+       defer
+       apply (rule z_1)
+      (* find_theorems "vars (compile ?p)" *)
+      using 6 7 8 return set_vars_compile
+      by force
+  qed
+qed
+
 end
 
 (* this stuff is just here for now for proving correctness/timing for IMP primitives *)
@@ -569,7 +629,7 @@ lemma start_case:
   using assms terminates_with_res_time_IMP_Tailcall_mono by blast
 
 method start_case uses IMP_def =
-   drule flip_xsrD, (* flip "x = s r" assumptions *)
+   (drule flip_xsrD)?, (* flip "x = s r" assumptions TODO: need to apply to all assumptions *)
    rule start_case[OF IMP_def] (* avoid flex-flex pair with explicit rule instead of subst *)
 
 method terminates_with_res_time_seq_assign =
@@ -719,8 +779,63 @@ lemma bar_IMP_Tailcall_twrbt:
   apply (rule bar_IMP_Tailcall_twrt)
   done
 
+lemma bar_IMP_twrbt:
+  "terminates_with_res_time_order_IMP (tailcall_to_IMP bar_IMP_tailcall)
+      ''bar.ret'' (\<lambda>s. bar (s ''bar.arg.xa'')) (\<lambda>s. T_bar (s ''bar.arg.xa''))"
+  apply (rule tailcall_to_IMP_order_preserving[OF _ _ bar_IMP_Tailcall_twrbt])
+  unfolding bar_IMP_tailcall_def apply simp_all
+  done
 
 HOL_To_IMP_correct bar by cook
+
+
+fun baz where
+  "baz x y = (if x = y then bar y else bar 0)"
+declare baz.simps[simp del]
+time_fun baz
+
+compile_nat baz.simps
+
+(*
+lemma eq_nat_eq: "HTHN.eq_nat x y \<equiv> natify (x = y)"
+  by (smt (verit) HOL_To_HOL_Nat.eq_nat_def HOL_To_HOL_Nat.eq_nat_eq_False_nat_iff natify_bool_def) *)
+
+lemma eq_nat_non_zero_eq: "HTHN.eq_nat x y \<noteq> 0 \<equiv> x = y"
+  using False_nat_eq_zero HOL_To_HOL_Nat.eq_nat_eq_False_nat_iff by presburger
+(* kommt man ohne aus? *)
+
+schematic_goal baz_IMP_Tailcall_twrt: "
+    terminates_with_res_time_IMP_Tailcall baz_IMP_tailcall baz_IMP_tailcall s
+      ''baz.ret'' (baz (s ''baz.arg.x'') (s ''baz.arg.y'')) (?c * T_baz (s ''baz.arg.x'') (s ''baz.arg.y''))"
+
+  (* apply (induction "s ''baz.arg.x''" "s ''baz.arg.y''" arbitrary: s rule: baz.induct) *)
+
+  (* base case *)
+
+  apply (start_case IMP_def: baz_IMP_tailcall_def)
+
+   apply terminates_with_res_time_seq_assign
+   apply terminates_with_res_time_seq_assign
+   apply (terminates_with_res_time_seq_call f_thm: eq_IMP_twrbt)
+   apply terminates_with_res_time_if
+       apply terminates_with_res_time_seq_assign
+       apply (terminates_with_res_time_seq_call f_thm: bar_IMP_twrbt)
+       apply (rule terminates_with_res_time_treturnI) defer
+
+       apply terminates_with_res_time_seq_assign
+       apply (terminates_with_res_time_seq_call f_thm: bar_IMP_twrbt)
+       apply (rule terminates_with_res_time_treturnI) defer
+
+       prefer 3 apply (rule simps_to_eq_r) apply (simp (no_asm_simp) add: eq_nat_non_zero_eq) apply (urule SIMPS_TOI) apply (urule refl)
+      prefer 5 apply (simp add: baz.simps)
+     prefer 4 apply (simp add: baz.simps)
+    prefer 1 apply simp
+    prefer 2 apply simp
+    prefer 3 apply (simp only: constant_time1)
+    apply (cases "s ''baz.arg.x'' = s ''baz.arg.y''"; simp)
+  oops
+
+  thm simps_to_case_end
 
 end
 
