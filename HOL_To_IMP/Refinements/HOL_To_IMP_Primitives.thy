@@ -194,6 +194,9 @@ definition "terminates_with_res_time_order_IMP' p r f T_f \<equiv>
 
 (* TODO: we may need to add a predicate on states where they are hidden inside a definition *)
 
+
+definition "running z u \<equiv> u - z"
+
 (* it might be "nicer" to write these in terms of terminates_with_pred_time_IMP_TailcallI/E,
     but the resulting higher-order unification seems to trip up the automation *)
 lemma terminates_with_time_IMP_TailcallI:
@@ -321,6 +324,11 @@ context
   notes terminates_with_intros[intro] terminates_with_elims[elim]
 begin
 
+lemma tbigstep_progress: assumes "tp \<turnstile> (p,s) \<Rightarrow>\<^bsup>z \<^esup> t" shows "z > 0"
+  using assms apply (induction rule: tbig_step_t_induct)
+  using bigstep_progress apply simp_all
+  done
+
 lemma terminates_with_res_time_IMP_Tailcall_mono:
   assumes "t \<le> u"
   assumes "terminates_with_res_time_IMP_Tailcall tp p s r val t"
@@ -332,6 +340,12 @@ lemma terminates_with_res_time_IMP_mono:
   assumes "terminates_with_res_time_IMP p s r val t"
   shows "terminates_with_res_time_IMP p s r val u"
   using assms by fastforce
+
+(*
+lemma
+  assumes "False"
+  shows "terminates_with_res_time_IMP_Tailcall tp p s r val (running z u)"
+  oops *)
 
 lemma abstract_of_order_equiv:
   "terminates_with_res_time_order_IMP' p r f T_f = terminates_with_res_time_order_IMP p r f T_f"
@@ -409,11 +423,12 @@ proof-
 qed
 
 
+(*
 lemma terminates_with_time_tSeqI:
   assumes "terminates_with_time_IMP_Tailcall tp p1 s s' t1"
   assumes "terminates_with_time_IMP_Tailcall tp p2 s' s'' t2"
   shows "terminates_with_time_IMP_Tailcall tp (tSeq p1 p2) s s'' (t1 + t2)"
-  using assms by fastforce
+  using assms by fastforce *)
 
 lemma terminates_with_time_tAssignI:
   assumes "s' = s(k := aval aexp s)"
@@ -421,6 +436,7 @@ lemma terminates_with_time_tAssignI:
   using assms by fastforce
 
 (* TODO: do we need a non-res version?? \<rightarrow> if so, fix *)
+(*
 lemma terminates_with_time_tIfI:
   assumes "cond \<Longrightarrow> terminates_with_time_IMP_Tailcall p p1 s1 s1' t1"
   assumes "cond \<Longrightarrow> s1 = s"
@@ -430,7 +446,7 @@ lemma terminates_with_time_tIfI:
   assumes "t \<ge> (if cond then t1 else t2) + 1"
   assumes "cond = (s vb \<noteq> 0)"
   shows "terminates_with_time_IMP_Tailcall p (tIf vb p1 p2) s s' t"
-  using assms by fastforce
+  using assms by fastforce *)
 
 lemma terminates_with_res_time_IMPI_bound:
   assumes "terminates_with_res_time_order_IMP p r f T_f"
@@ -444,10 +460,11 @@ lemma terminates_with_time_tCallI:
   shows "terminates_with_time_IMP_Tailcall tp (tCall p r) s s' t"
   using assms by fastforce
 
+(*
 lemma terminates_with_time_tTailI:
   assumes "terminates_with_time_IMP_Tailcall tp tp s s' t"
   shows "terminates_with_time_IMP_Tailcall tp tTAIL s s' (t + 5)"
-  using assms by fastforce
+  using assms by fastforce *)
 
 lemma terminates_with_res_time_tSeqI:
   assumes "terminates_with_time_IMP_Tailcall tp p1 s s' t1"
@@ -477,10 +494,75 @@ lemma terminates_with_res_time_tTailI:
   using assms by fastforce
 
 
-lemma tbigstep_progress: assumes "tp \<turnstile> (p,s) \<Rightarrow>\<^bsup>z \<^esup> t" shows "z > 0"
-  using assms apply (induction rule: tbig_step_t_induct)
-  using bigstep_progress apply simp_all
+
+(*
+lemma terminates_with_time_tAssignI_r:
+  assumes "s' = s(k := aval aexp s)"
+  assumes "t + 2 \<le> u"
+  shows "terminates_with_time_IMP_Tailcall p (tAssign k aexp) s s' (running t u)"
+  using assms unfolding running_def by fastforce
+
+lemma terminates_with_time_tCallI_r:
+  assumes "s' = s(r := val)"
+  assumes "terminates_with_res_time_IMP p s r val (running t u)"
+  shows "terminates_with_time_IMP_Tailcall tp (tCall p r) s s' (running t u)"
+  using assms by fastforce *)
+
+
+
+lemma running_uz:
+  assumes "terminates_with_res_time_IMP_Tailcall tp p s r val (running z u)"
+  shows "u > z"
+proof -
+  from assms(1) obtain s' t' where "tp \<turnstile> (p, s) \<Rightarrow>\<^bsup>t'\<^esup>  s'" "t' \<le> running z u" by blast
+  with tbigstep_progress show "u > z" unfolding running_def by fastforce
+qed
+
+lemma runningI[intro]:
+  assumes "terminates_with_res_time_IMP_Tailcall tp p s r val (u - z)"
+  shows "terminates_with_res_time_IMP_Tailcall tp p s r val (running z u)"
+  using assms unfolding running_def by simp
+
+lemma runningE[elim]:
+  assumes "terminates_with_res_time_IMP_Tailcall tp p s r val (running z u)"
+  shows "u > z" "terminates_with_res_time_IMP_Tailcall tp p s r val (u - z)"
+  using running_uz assms unfolding running_def by blast+
+
+lemma running_plusE[elim]:
+  assumes *: "terminates_with_res_time_IMP_Tailcall tp p s r val (running (k + z) u)"
+  shows "u - z > k" "terminates_with_res_time_IMP_Tailcall tp p s r val (u - z - k)"
+  using assms running_uz apply fastforce
+  using assms unfolding running_def apply fastforce
   done
+
+lemma terminates_with_res_time_tSeqI_r:
+  assumes "terminates_with_time_IMP_Tailcall tp p1 s s' t1"
+  assumes "terminates_with_res_time_IMP_Tailcall tp p2 s' r val (running (t + t1) u)"
+  shows "terminates_with_res_time_IMP_Tailcall tp (tSeq p1 p2) s r val (running t u)"
+  using assms(1) running_plusE[OF assms(2)] by fastforce
+
+lemma terminates_with_res_time_tIfI_r:
+  assumes "cond \<Longrightarrow> s1 = s" (* do we really need these s_i = s assumptions ? *)
+  assumes "cond \<Longrightarrow> terminates_with_res_time_IMP_Tailcall p p1 s1 r val (running (t + 1) u)"
+  assumes "\<not>cond \<Longrightarrow> s2 = s"
+  assumes "\<not>cond \<Longrightarrow> terminates_with_res_time_IMP_Tailcall p p2 s2 r val (running (t + 1) u)"
+  assumes "cond = (s vb \<noteq> 0)"
+  shows "terminates_with_res_time_IMP_Tailcall p (tIf vb p1 p2) s r val (running t u)"
+  using assms running_uz unfolding running_def by fastforce
+
+lemma terminates_with_res_time_treturnI_r:
+  assumes "aval a s = val"
+  assumes "t + 2 \<le> u"
+  shows "terminates_with_res_time_IMP_Tailcall p (tAssign r a) s r val (running t u)"
+  using assms by fastforce
+
+lemma terminates_with_res_time_tTailI_r:
+  assumes "terminates_with_res_time_IMP_Tailcall tp tp s r val (running (t + 5) u)"
+  shows "terminates_with_res_time_IMP_Tailcall tp tTAIL s r val (running t u)"
+  using assms
+  by (metis add.commute add_diff_inverse_nat diff_diff_left less_or_eq_imp_le linorder_not_le running_def running_uz terminates_with_res_time_tTailI) (* TODO *)
+
+
 
 (* analogue of terminates_with_res_IMP_if_terminates_with_res_IMP_TailcallI *)
 lemma tailcall_to_IMP_order_preserving:
@@ -662,6 +744,8 @@ fun bar :: "nat \<Rightarrow> nat" where
 declare bar.simps[simp del]
 time_fun bar
 
+lemma T_bar: "T_bar n = n + 1" by (induction n) auto
+
 case_of_simps bar_eq_case : bar.simps
 lemmas bar_eq = bar_eq_case[unfolded case_nat_eq_if]
 compile_nat bar_eq
@@ -791,8 +875,8 @@ HOL_To_IMP_correct bar by cook
 
 fun baz where
   "baz x y = (if x = y then bar y else bar 0)"
-declare baz.simps[simp del]
 time_fun baz
+declare baz.simps[simp del] T_baz.simps[simp del]
 
 compile_nat baz.simps
 
@@ -804,38 +888,180 @@ lemma eq_nat_non_zero_eq: "HTHN.eq_nat x y \<noteq> 0 \<equiv> x = y"
   using False_nat_eq_zero HOL_To_HOL_Nat.eq_nat_eq_False_nat_iff by presburger
 (* kommt man ohne aus? *)
 
+
+
+lemma start_case_r:
+  assumes "p \<equiv> e"
+  assumes "terminates_with_res_time_IMP_Tailcall p e s r val (running 0 t)"
+  shows "terminates_with_res_time_IMP_Tailcall p p s r val t"
+  using assms terminates_with_res_time_IMP_Tailcall_mono unfolding running_def by fastforce
+
+method start_case_r uses IMP_def =
+   (drule flip_xsrD)?,
+   rule start_case_r[OF IMP_def]
+
+method terminates_with_res_time_seq_assign_r =
+  rule terminates_with_res_time_tSeqI_r, rule terminates_with_time_tAssignI[OF refl]
+
+method terminates_with_res_time_seq_call_r uses f_thm =
+  rule terminates_with_res_time_tSeqI_r,
+  rule terminates_with_time_tCallI[OF refl],
+  rule terminates_with_res_time_IMPI_bound,
+  rule f_thm
+
+method terminates_with_res_time_if_r = rule terminates_with_res_time_tIfI_r[OF refl _ refl _]
+
+lemma set_max_as_upper_bound:
+  fixes a b :: nat
+  shows "a \<le> max a b"
+  by simp
+
+lemma unfold_max_as_upper_bound:
+  fixes a b c :: nat
+  assumes "a \<le> c"
+  shows "a \<le> max b c"
+  using assms by simp
+
+method find_upper_bound' methods unfold =
+  unfold, rule set_max_as_upper_bound,
+  (find_upper_bound' \<open>rule unfold_max_as_upper_bound, unfold\<close>)?
+
+method find_upper_bound = find_upper_bound' succeed
+(* for whatever reason, this produces too many schematics, but works; fine, it's just for show *)
+
+schematic_goal find_upper_bound_example: fixes a b c d :: nat
+  shows "a \<le> ?e \<and> b \<le> ?e \<and> c \<le> ?e \<and> d \<le> ?e"
+  apply (repeat \<open>rule conjI\<close>)
+     apply find_upper_bound
+  done
+
+(* conceptually, (cs + ds) * fs, i.e. the collected standalone-constants (cs) plus the
+    collected factors (fs), times the collected function running times (fs)
+   - given that fs is the running time of the HOL function (sum of running times of called functions),
+      then cs + ds is a suitable constant factor to use
+   - note that we need to account for fs = 0 here, but would rather not (TODO: new of_order def!) *)
+definition gather :: "nat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> nat" where
+  "gather cs ds fs \<equiv> cs * max fs 1 + ds * fs"
+
+lemma gather_start:
+  assumes "a + gather 0 0 0 \<le> b"
+  shows "a \<le> b"
+  using assms by simp
+
+lemma gather_finish:
+  assumes "max fs 1 \<le> f"
+  assumes "cs + ds \<le> c"
+  shows "0 + gather cs ds fs \<le> c * f"
+proof -
+  have "gather cs ds fs \<le> cs * max fs 1 + ds * max fs 1" unfolding gather_def by simp
+  also have "... = (cs + ds) * max fs 1" by algebra
+  also from assms have "... \<le> c * f" using mult_le_mono by simp
+  finally show ?thesis by simp
+qed
+
+lemma gather_constant:
+  assumes "a + gather (cs + k) ds fs \<le> b"
+  shows "(a + k) + gather cs ds fs \<le> b"
+proof -
+  have "(a + k) + gather cs ds fs \<le> (a + k * max fs 1) + gather cs ds fs" by fastforce
+  also have "... = a + gather (cs + k) ds fs" unfolding gather_def by algebra
+  finally show ?thesis using assms by simp
+qed
+
+lemma gather_constant_time:
+  assumes "a + gather (cs + least_constant_IMP p constant_time) ds fs \<le> b"
+  shows "(a + least_constant_IMP p constant_time * constant_time s) + gather cs ds fs \<le> b"
+  using assms gather_constant constant_time1 by fastforce
+
+lemma gather_f:
+  assumes "a + gather cs (max ds (least_constant_IMP p T_f)) (fs + T_f s) \<le> b"
+  shows "(a + least_constant_IMP p T_f * T_f s) + gather cs ds fs \<le> b"
+proof -
+  let ?d = "least_constant_IMP p T_f"
+  have "(a + ?d * T_f s) + gather cs ds fs \<le> (a + (max ds ?d) * T_f s) + gather cs ds fs" by simp
+  also have "... \<le> (a + (max ds ?d) * T_f s) + gather cs (max ds ?d) fs" unfolding gather_def by simp
+  also have "... \<le> a + gather cs (max ds (least_constant_IMP p T_f)) (fs + T_f s)"
+    unfolding gather_def by (auto simp add: algebra_simps)
+  finally show ?thesis using assms by fastforce
+qed
+
+
+
 schematic_goal baz_IMP_Tailcall_twrt: "
     terminates_with_res_time_IMP_Tailcall baz_IMP_tailcall baz_IMP_tailcall s
       ''baz.ret'' (baz (s ''baz.arg.x'') (s ''baz.arg.y'')) (?c * T_baz (s ''baz.arg.x'') (s ''baz.arg.y''))"
 
-  (* apply (induction "s ''baz.arg.x''" "s ''baz.arg.y''" arbitrary: s rule: baz.induct) *)
+  apply (start_case_r IMP_def: baz_IMP_tailcall_def)
 
-  (* base case *)
+   apply terminates_with_res_time_seq_assign_r
+   apply terminates_with_res_time_seq_assign_r
+   apply (terminates_with_res_time_seq_call_r f_thm: eq_IMP_twrbt)
+   apply terminates_with_res_time_if_r
+    apply terminates_with_res_time_seq_assign_r
+    apply (terminates_with_res_time_seq_call_r f_thm: bar_IMP_twrbt)
+    apply (rule terminates_with_res_time_treturnI_r) defer defer
 
-  apply (start_case IMP_def: baz_IMP_tailcall_def)
+     apply terminates_with_res_time_seq_assign_r
+     apply (terminates_with_res_time_seq_call_r f_thm: bar_IMP_twrbt)
+     apply (rule terminates_with_res_time_treturnI_r) defer defer
 
-   apply terminates_with_res_time_seq_assign
-   apply terminates_with_res_time_seq_assign
-   apply (terminates_with_res_time_seq_call f_thm: eq_IMP_twrbt)
-   apply terminates_with_res_time_if
-       apply terminates_with_res_time_seq_assign
-       apply (terminates_with_res_time_seq_call f_thm: bar_IMP_twrbt)
-       apply (rule terminates_with_res_time_treturnI) defer
+      (* simplify condition *)
+      prefer 1 apply (rule simps_to_eq_r) apply (simp (no_asm_simp) add: eq_nat_non_zero_eq) apply (urule SIMPS_TOI) apply (urule refl)
+     (* prove correctness *)
+     prefer 3 apply (simp add: baz.simps)
+    prefer 1 apply (simp add: baz.simps)
 
-       apply terminates_with_res_time_seq_assign
-       apply (terminates_with_res_time_seq_call f_thm: bar_IMP_twrbt)
-       apply (rule terminates_with_res_time_treturnI) defer
+   (* now we have the constraint system consisting of the goals (i, ii):
+        C_eq + C_bar * T_bar y + 9 \<le> ?c * T_baz x y   (i)
+        C_eq + C_bar * T_bar 0 + 9 \<le> ?c * T_baz x y   (ii) *)
 
-       prefer 3 apply (rule simps_to_eq_r) apply (simp (no_asm_simp) add: eq_nat_non_zero_eq) apply (urule SIMPS_TOI) apply (urule refl)
-      prefer 5 apply (simp add: baz.simps)
-     prefer 4 apply (simp add: baz.simps)
-    prefer 1 apply simp
-    prefer 2 apply simp
-    prefer 3 apply (simp only: constant_time1)
-    apply (cases "s ''baz.arg.x'' = s ''baz.arg.y''"; simp)
-  oops
+   apply (rule gather_start)
+   apply (rule gather_constant_time | rule gather_f | rule gather_constant)+
+   apply (rule gather_finish)
+    apply (simp add: T_bar T_baz.simps)
+   defer
 
-  thm simps_to_case_end
+   apply (rule gather_start)
+   apply (rule gather_constant_time | rule gather_f | rule gather_constant)+
+   apply (rule gather_finish)
+    apply (simp add: T_bar T_baz.simps)
+   defer
+
+   (* now we have "gathered" the summands on the LHS of the inequality,
+      by approximating with an upper bound, conceptually giving us the theorems (ia, iia):
+        C_eq + C_bar * T_bar y + 9 \<le> (C_eq + C_bar + 9) * T_bar x   (ia)
+        C_eq + C_bar + 9           \<le> (C_eq + C_bar + 9) * T_bar 0   (iia)
+
+      by "running" the timing function baz, we show that the right-hand factor on the RHS
+      is just the running time of the HOL function:
+        C_eq + C_bar * T_bar y + 9 \<le> (C_eq + C_bar + 9) * T_baz x y   (ib)
+        C_eq + C_bar + 9           \<le> (C_eq + C_bar + 9) * T_baz x y   (iib)
+      
+      now if we can show ?c \<ge> C_eq + C_bar + 9 and ?c \<ge> C_eq + C_bar + 9 (note in general those won't be the same),
+      we are done, which we do by chosing max (C_eq + C_bar + 9) (C_eq + C_bar + 9) as a suitable c
+   *)
+
+   (* here we would have a problem if the running time function T_bar were ever zero,
+      this would be helped by a different definition of running time order (special casing zero-functions)
+      - note that gathering just makes this problem obvious, we wouldn't be able to find a suitable c any other way *)
+
+  (* the remaining goals are only identical by coincidence! *)
+
+  apply find_upper_bound
+  done (* :3c *)
+
+   (* we should obtain something of this form in general
+      it seems non-trivial for a SAT-solver to handle this (it would need to find a function c, that depends on all the given constants),
+      but very easy to just rewrite and take the maximum (as above) as a suitable c *)
+
+(*
+lemma "\<forall>c1\<ge>(0 :: int). \<forall>c2\<ge>0. (\<exists>c. \<forall>f2\<ge>0. c1 + c2 * f2 + 9 \<le> c * f2)
+  \<equiv> \<exists>c. \<forall>c1\<ge>(0 :: int). \<forall>c2\<ge>0. (\<forall>f2\<ge>0. c1 + c2 * f2 + 9 \<le> c c1 c2 * f2)"
+  apply (rule eq_reflection, rule iffI)
+  using choice apply force
+  apply blast
+  done
+*)
 
 end
 
