@@ -1108,7 +1108,7 @@ schematic_goal baz_IMP_Tailcall_twrt: "
         C_eq + C_bar + 9           \<le> (C_eq + C_bar + 9) * T_baz x y   (iib)
 
       now if we can show ?c \<ge> C_eq + C_bar + 9 and ?c \<ge> C_eq + C_bar + 9 (note in general those won't be the same),
-      we are done, which we do by chosing max (C_eq + C_bar + 9) (C_eq + C_bar + 9) as a suitable c
+      we are done, which we do by choosing max (C_eq + C_bar + 9) (C_eq + C_bar + 9) as a suitable c
    *)
 
    (* here we would have a problem if the running time function T_bar were ever zero,
@@ -1133,14 +1133,30 @@ lemma "\<forall>c1\<ge>(0 :: int). \<forall>c2\<ge>0. (\<exists>c. \<forall>f2\<
   done
 *)
 
+ML\<open>
+val get_s = Term.strip_comb #> snd #> (fn xs => nth xs 2)
+  fun foc_fun focus =
+    let
+      val s = #concl focus |> Thm.term_of |> HOLogic.dest_Trueprop |> @{print} |> get_s
+      val instantiations = s $ @{term "''bar.arg.xa''"}
+        |> (fn t => SOME (NONE, (t, false)))
+      val arbitrary = [dest_Free s]
+      val inducts = SOME [@{thm bar.induct}]
+    in Induction.induction_tac (#context focus) true [[instantiations]] [arbitrary] [] inducts [] 1 end
+  val a = Subgoal.FOCUS_PARAMS foc_fun
+
+\<close>
 
 thm bar_IMP_Tailcall_twrt
 (* same as above, but with the nicer proof, this time showcasing recursion *)
-schematic_goal bar_IMP_Tailcall_twrt_r: "
+schematic_goal bar_IMP_Tailcall_twrt_r: "\<exists>c. \<forall> s.
     terminates_with_res_time_IMP_Tailcall bar_IMP_tailcall bar_IMP_tailcall s
-      ''bar.ret'' (bar (s ''bar.arg.xa'')) (?c * T_bar (s ''bar.arg.xa''))"
+      ''bar.ret'' (bar (s ''bar.arg.xa'')) (c * T_bar (s ''bar.arg.xa''))"
 
-  apply (induction "s ''bar.arg.xa''" arbitrary: s rule: bar.induct)
+  apply (rule exI)
+  apply (rule allI)
+  apply (tactic \<open>a @{context} 1\<close>)
+  (* apply (induction "s ''bar.arg.xa''" for s rule: bar.induct) *)
 
   (* base case *)
 
@@ -1234,7 +1250,11 @@ schematic_goal bar_IMP_Tailcall_twrt_r: "
     apply find_upper_bound
   done
 
-
+lemma "terminates_with_res_time_order_IMP_Tailcall bar_IMP_tailcall bar_IMP_tailcall
+      ''bar.ret'' (\<lambda>s. bar (s ''bar.arg.xa'')) (\<lambda>s. T_bar (s ''bar.arg.xa''))"
+  apply (rule terminates_with_res_time_order_IMP_TailcallI)
+  apply (fact bar_IMP_Tailcall_twrt_r)
+  done
 
 
 end
