@@ -18,6 +18,13 @@ type_synonym thol_reg = "vname \<Rightarrow> ((nat list \<Rightarrow> nat) \<tim
 abbreviation "f_from_reg (reg :: thol_reg) name \<equiv> fst (reg name)"
 abbreviation "T_f_from_reg (reg :: thol_reg) name \<equiv> snd (reg name)"
 
+(* function name \<Rightarrow> (argument registers' names \<times> IMP command \<times> return register's name *)
+type_synonym thol_ctxt = "vname \<Rightarrow> (vname list \<times> com \<times> vname)"
+abbreviation "args_from_ctxt (ctxt :: thol_ctxt) name \<equiv> fst (ctxt name)"
+abbreviation "com_from_ctxt (ctxt :: thol_ctxt) name \<equiv> fst (snd (ctxt name))"
+abbreviation "ret_from_ctxt (ctxt :: thol_ctxt) name \<equiv> snd (snd (ctxt name))"
+(* TODO: use these abbrev. *)
+
 definition "null = (\<lambda>_. undefined)"
 
 lemma tdeterm:
@@ -791,11 +798,11 @@ qed
 
 
 fun to_imp_tc ::
-    "vname list \<Rightarrow> (vname \<Rightarrow> (vname list \<times> com \<times> vname))
+    "vname list \<Rightarrow> thol_ctxt
     \<Rightarrow> vname list \<Rightarrow> vname \<Rightarrow> vname list \<Rightarrow> thol
     \<Rightarrow> tcom" where
   (* f_args: list of argument registers' names
-     ctxt: for each called function: argument registers' names, IMP command, return register's name
+     ctxt: see type def
      bs: names of bound variables
      r: return register name
      stale: variable names that must not be written to *)
@@ -914,13 +921,13 @@ fun h_calls where
   "h_calls (hCall f ts) = f # concat (map h_calls ts)" |
   "h_calls (hTAIL ts) = concat (map h_calls ts)"
 
-definition "special_regs f_args ctxt r t =
-    (concat (map (fst o ctxt) (h_calls t)) @ map (snd o snd o ctxt) (h_calls t) @ r # f_args)"
+definition "reserved_regs f_args ctxt bs t =
+    (f_args @ bs @ concat (map (fst o ctxt) (h_calls t)) @ map (snd o snd o ctxt) (h_calls t))"
 
 (* mark argument/return registers of all called functions and of f itself as stale *)
-definition "to_imp_tc_1 f_args ctxt r t =
-  to_imp_tc f_args ctxt [] r (special_regs f_args ctxt r t) t"
-(* TODO: right-assoc *)
+definition "to_imp_tc' f_args ctxt bs r t =
+  to_imp_tc f_args ctxt bs r (reserved_regs f_args ctxt bs t) t"
+(* TODO: right-assoc ? *)
 
 definition "h_let_1 = hLet (hNumber 7) (hLetBound 0)"
 value "to_imp_tc_1 [] null ''r'' h_let_1"
@@ -951,9 +958,7 @@ lemma t_thol_sum: "t_thol fcs1 s's1 + t_thol fcs2 s's2 = t_thol (fcs1 @ fcs2) (s
   unfolding t_thol_def sum_map_def using t_thol_sum1 apply (induction fcs1 s's1 rule: list_induct2')
   apply simp different lengths... *)
 
-definition "lookups s = map (\<lambda>name. s name)"
-
-value "sum_list [3 :: nat, 5, 2]"
+abbreviation "lookups names (s :: state) \<equiv> map s names"
 
 definition "is_call_in t f = (f \<in> set (h_calls t))"
 
@@ -961,7 +966,7 @@ term time_to_tail term ttime_to_tail
 thm time_to_tail ttime_to_tail
 
 
-fun tstruct_k where
+fun tstruct_k :: "tcom \<Rightarrow> nat" where
   "tstruct_k tSKIP = 1" |
   "tstruct_k (tAssign _ _) = 2" |
   "tstruct_k (tSeq c1 c2) = tstruct_k c1 + tstruct_k c2 + 1" |
@@ -970,55 +975,5 @@ fun tstruct_k where
   "tstruct_k tTAIL = 5"
 
 
-  (* assumes inf: "\<exists>zh v. (f,reg) \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup>zh\<^esup> v" *)
-
-(* definition "interp_time1 reg g vs_arg_g = T_f_from_reg reg g vs_arg_g" *)
-(* definition "interp_time reg = sum_map (\<lambda>(g, vs_arg_g). interp_time1 reg g vs_arg_g)" *)
-  (* assumes "f_imp = to_imp_tc_1 f_args ctxt r0 f" *)
-  (* assumes "set (special_regs f_args ctxt r t) \<subseteq> set stale" *)
-lemma
-  assumes "t_imp = to_imp_tc f_args ctxt bs r stale t"
-  assumes "lookups s f_args = vs_arg"
-  assumes "lookups s bs = vs_b"
-  shows "\<exists>k z.
-    ttime_to_tail s t_imp (k + z)
-    \<and> k \<le> tstruct_k t_imp
-    \<and> z \<le> (sum_map (\<lambda>(g, vs_arg_g). t_f_konst g * interp_time1 reg g vs_arg_g) (time_to_tail reg vs_b vs_arg t))"
-  sorry
-
-lemma "\<exists>c. \<forall>s. tstruct_k t_imp + something \<le> c * interp_time reg (time_to_tail reg vs_b vs_arg t)" oops
-(* in fact, we can calculate c as the max of the structural-constant-factor and all T_f_const-ants or so *)
-
-lemma
-  fixes f_imp f_args reg ctxt r0 f (* stuff that never changes *)
-  fixes t_imp vs_b vs_arg t (* stuff that determines the evaluation of the current term t *)
-  assumes f_imp: "f_imp = to_imp_tc_1 f_args ctxt r0 f"
-  (* assumes t_imp: "t_imp = to_imp_tc f_args ctxt bs r stale t" *)
-  assumes inf: "\<exists>z_hol v. (f,reg) \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup>z_hol\<^esup> v"
-  shows "
-    \<exists>cc.
-    \<forall>r bs. t_imp = to_imp_tc f_args ctxt bs r stale t \<longrightarrow>
-    (\<forall>vs_b vs_arg s. lookups s bs = vs_b \<and> lookups s f_args = vs_arg \<longrightarrow>
-    (\<exists>gs. (\<forall>g \<in> set gs. is_call_in f g) \<and>
-    (\<exists>k_hol k_imp. time_thol f reg t vs_b vs_arg (k_hol + 1) \<and> time_imp f_imp t_imp s 1)))"
-proof goal_cases
-  case 1
-  from inf obtain z_hol v where infobt: "(f,reg) \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup>z_hol\<^esup> v" by blast
-  then have ?case apply (induction arbitrary: t_imp stale t rule: hbig_step_t.induct)
-    oops
-
-lemma
-  fixes f :: thol and f_args :: "vname list" and reg :: thol_reg and r0 :: vname
-  fixes ctxt (* todo *)
-  fixes t :: thol and r :: vname
-  (* assuming timing correctness in registry of all called functions *)
-  (* todo: stale ? *)
-  assumes "\<exists>z v. (f, xs0, reg) \<turnstile> (t, []) \<Rightarrow>\<^bsup>z\<^esup> v"
-
-shows "\<exists>fcs k. \<forall>xs bs. \<forall>s. lookups s f_args = xs \<longrightarrow> (\<exists>ss'.
-          time_thol f xs reg (lookups s bs) t (t_thol fcs ss')
-          \<and> time_imp (to_imp_tc_1 f_args ctxt r0 f) (to_imp_tc f_args ctxt bs r stale t) s (t_tcom fcs k ss'))"
-proof (induction t arbitrary: r stale) (* to_imp_tc doesn't care what's stale around it \<rightarrow> except f/g_args/ret ? *)
-qed
 
 end
