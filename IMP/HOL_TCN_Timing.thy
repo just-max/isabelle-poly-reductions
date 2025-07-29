@@ -2,6 +2,17 @@ theory HOL_TCN_Timing
   imports "HOL-Library.Log_Nat" IMP_Tailcall Fresh
 begin
 
+(* general stuff *)
+
+abbreviation "sum_map f xs \<equiv> sum_list (map f xs)"
+
+lemma sum_map_concat: "sum_map f (concat xss) = sum_list (concat (map (map f) xss))"
+  using map_concat by metis
+
+(* hol-tcn definition+semantics*)
+
+type_synonym fun_ref = string
+
 (* HOL-TCN *)
 datatype
   thol = hLet thol thol
@@ -9,42 +20,61 @@ datatype
   | hArg nat
   | hNumber nat
   | hIf thol thol thol
-  | hCall vname "thol list"
+  | hCall fun_ref "thol list"
   | hTAIL "thol list"
 
+open_bundle thol_syntax begin
+notation hLet ("LET _ IN _") and
+         hIf ("(IF _/\<noteq>0 THEN _/ ELSE _)"  [0, 0, 61] 61)
+end
 
 (* function name \<Rightarrow> (function \<times> timing function) *)
-type_synonym thol_reg = "vname \<Rightarrow> ((nat list \<Rightarrow> nat) \<times> (nat list \<Rightarrow> nat))"
+type_synonym thol_reg = "fun_ref \<Rightarrow> ((nat list \<Rightarrow> nat) \<times> (nat list \<Rightarrow> nat))"
 abbreviation "f_from_reg (reg :: thol_reg) name \<equiv> fst (reg name)"
 abbreviation "T_f_from_reg (reg :: thol_reg) name \<equiv> snd (reg name)"
 
+lemma split_from_reg:
+  "(f, T_f) = reg fr \<longleftrightarrow> f_from_reg reg fr = f \<and> T_f_from_reg reg fr = T_f"
+  using split_pairs .
+
 (* function name \<Rightarrow> (argument registers' names \<times> IMP command \<times> return register's name *)
-type_synonym thol_ctxt = "vname \<Rightarrow> (vname list \<times> com \<times> vname)"
+type_synonym thol_ctxt = "fun_ref \<Rightarrow> (vname list \<times> com \<times> vname)"
 abbreviation "args_from_ctxt (ctxt :: thol_ctxt) name \<equiv> fst (ctxt name)"
 abbreviation "com_from_ctxt (ctxt :: thol_ctxt) name \<equiv> fst (snd (ctxt name))"
 abbreviation "ret_from_ctxt (ctxt :: thol_ctxt) name \<equiv> snd (snd (ctxt name))"
 (* TODO: use these abbrev. *)
+(* TODO: use better names than reg/ctxt *)
 
 definition "null = (\<lambda>_. undefined)"
 
-lemma tdeterm:
-  assumes "f \<turnstile> (c,s) \<Rightarrow>\<^bsup>z1\<^esup> t1"
-  assumes "f \<turnstile> (c,s) \<Rightarrow>\<^bsup>z2\<^esup> t2"
-  shows "z1 = z2" "t1 = t2"
-  using assms apply (induction arbitrary: z2 t2 rule: tbig_step_t.induct)
-               apply blast apply blast apply blast apply blast apply blast apply blast
-         apply fastforce
-  apply (meson tIf_tE)
-       apply fastforce
-  using bot_nat_0.not_eq_extremum apply blast
-  using determ apply blast
-  using determ apply blast
-  apply (metis tTail_tE)
-  apply (metis tTail_tE)
-  done
- (* TODO cleanup *)
 
 
+inductive
+  hbig_step_t :: "thol \<times> thol_reg \<Rightarrow> thol \<times> nat list \<times> nat list \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool" ("_ \<turnstile> _ \<Rightarrow>\<^bsup>_\<^esup>  _" 55)
+  where
+hLet: "\<lbrakk>env \<turnstile> (t1,bs,xs) \<Rightarrow>\<^bsup>z1\<^esup> v1; env \<turnstile> (t2,v1#bs,xs) \<Rightarrow>\<^bsup>z2\<^esup> v; z = z1+z2\<rbrakk>
+       \<Longrightarrow> env \<turnstile> (LET t1 IN t2,bs,xs) \<Rightarrow>\<^bsup>z\<^esup> v" |
+hLetBound: "v = bs!n \<Longrightarrow> env \<turnstile> (hLetBound n,bs,xs) \<Rightarrow>\<^bsup>0\<^esup> v" |
+hArg: "v = xs!n \<Longrightarrow> env \<turnstile> (hArg n,bs,xs) \<Rightarrow>\<^bsup>0\<^esup> v" |
+hNumber: "env \<turnstile> (hNumber n,bs,xs) \<Rightarrow>\<^bsup>0\<^esup> n" |
+hIfTrue: "\<lbrakk>env \<turnstile> (t1,bs,xs) \<Rightarrow>\<^bsup>z1\<^esup> v1; v1 \<noteq> 0; env \<turnstile> (t2,bs,xs) \<Rightarrow>\<^bsup>z2\<^esup> v2; z = z1+z2\<rbrakk>
+          \<Longrightarrow> env \<turnstile> (IF t1\<noteq>0 THEN t2 ELSE t3,bs,xs) \<Rightarrow>\<^bsup>z\<^esup> v2" |
+hIfFalse: "\<lbrakk>env \<turnstile> (t1,bs,xs) \<Rightarrow>\<^bsup>z1\<^esup> v1; v1 = 0; env \<turnstile> (t3,bs,xs) \<Rightarrow>\<^bsup>z2\<^esup> v2; z = z1+z2\<rbrakk>
+          \<Longrightarrow> env \<turnstile> (IF t1\<noteq>0 THEN t2 ELSE t3,bs,xs) \<Rightarrow>\<^bsup>z\<^esup> v2" |
+hCall: "\<lbrakk>(g, T_g) = reg gr; length zs = length ts; length vs = length ts;
+          \<forall>i < length ts. (f,reg) \<turnstile> (ts ! i, bs, xs) \<Rightarrow>\<^bsup>zs ! i\<^esup> vs ! i;
+          g vs = v'; z' = sum_list zs + T_g vs\<rbrakk>
+          \<Longrightarrow> (f,reg) \<turnstile> (hCall gr ts,bs,xs) \<Rightarrow>\<^bsup>z'\<^esup> v'" |
+hTAIL: "\<lbrakk>length zs = length ts; length vs = length ts;
+          \<forall>i < length ts. (f,reg) \<turnstile> (ts ! i, bs, xs) \<Rightarrow>\<^bsup>zs ! i\<^esup> vs ! i;
+          (f,reg) \<turnstile> (f,[],vs) \<Rightarrow>\<^bsup>z'\<^esup> v';
+          z'' = sum_list zs + z' + 1\<rbrakk>
+          \<Longrightarrow> (f,reg) \<turnstile> (hTAIL ts,bs,xs) \<Rightarrow>\<^bsup>z''\<^esup> v'"
+
+
+
+
+(* 
 (* TODO: use list_all instead of quantifiers?:
     list_all (\<lambda>(ti, zi, vi). (f,reg) \<turnstile> (ti,bs,xs) \<Rightarrow>\<^bsup>zi\<^esup> vi) (zip ts (zip zs vs)) *)
 inductive
@@ -67,11 +97,13 @@ hTAIL: "\<lbrakk>length zs = length ts; length vs = length ts;
           \<And>ti vi zi. (ti, zi, vi) \<in> set (zip ts (zip zs vs)) \<longrightarrow> (f,reg) \<turnstile> (ti,bs,xs) \<Rightarrow>\<^bsup>zi\<^esup> vi;
           (f,reg) \<turnstile> (f,[],vs) \<Rightarrow>\<^bsup>z'\<^esup> v';
           z'' = sum_list zs + z' + 1\<rbrakk>
-          \<Longrightarrow> (f,reg) \<turnstile> (hTAIL ts,bs,xs) \<Rightarrow>\<^bsup>z''\<^esup> v'"
+          \<Longrightarrow> (f,reg) \<turnstile> (hTAIL ts,bs,xs) \<Rightarrow>\<^bsup>z''\<^esup> v'" *)
 
 print_theorems
 
 (* code_pred [show_modes] hbig_step_t . (* can't handle the universal quantifier *) *)
+
+lemmas hbig_step_t_induct = hbig_step_t.induct[split_format(complete)]
 
 inductive_cases hLet_case [elim!]: "env \<turnstile> (hLet t1 t2,bs,xs) \<Rightarrow>\<^bsup>z\<^esup> v"
 inductive_cases hLetBound_case [elim!]: "env \<turnstile> (hLetBound n,bs,xs) \<Rightarrow>\<^bsup>z\<^esup> v"
@@ -83,526 +115,208 @@ inductive_cases hTAIL_case [elim!]: "(f,reg) \<turnstile> (hTAIL ts,bs,xs) \<Rig
 lemmas hbig_step_t_cases = hLet_case hLetBound_case hArg_case hNumber_case hIf_case hCall_case hTAIL_case
 
 
-lemma plus_eqI:
-  assumes "x1 = x2"
-  assumes "y1 = y2"
-  shows "x1 + y1 = x2 + y2"
-  using assms by simp
-
-lemma list_eq_by_zip:
-  assumes "length xs = length ys"
-  assumes "\<forall>(x,y) \<in> set (zip xs ys). x = y"
-  shows "xs = ys"
-  using assms by (induction rule: list_induct2) simp_all
-
-abbreviation "sum_map f xs \<equiv> sum_list (map f xs)"
-
-lemma sum_map_concat: "sum_map f (concat xss) = sum_list (concat (map (map f) xss))"
-  using map_concat by metis
-
-(* todo: rename bs to vs_b, rename xs to vs_arg, change bs/xs order *)
-fun eval_non_tail :: "thol_reg \<Rightarrow> nat list \<Rightarrow> nat list \<Rightarrow> thol \<Rightarrow> nat" where
-  "eval_non_tail reg bs xs (hLet t1 t2) = eval_non_tail reg ((eval_non_tail reg bs xs t1) # bs) xs t2" |
-  "eval_non_tail reg bs xs (hLetBound n) = bs ! n" |
-  "eval_non_tail reg bs xs (hArg n) = xs ! n" |
-  "eval_non_tail reg bs xs (hNumber n) = n" |
-  "eval_non_tail reg bs xs (hIf t1 t2 t3) = (
-    if eval_non_tail reg bs xs t1 \<noteq> 0
-    then eval_non_tail reg bs xs t2
-    else eval_non_tail reg bs xs t3)" |
-  "eval_non_tail reg bs xs (hCall g ts) = f_from_reg reg g (map (eval_non_tail reg bs xs) ts)" |
-  "eval_non_tail _ _ _ (hTAIL _) = undefined"
-
-fun eval_to_tail :: "thol_reg \<Rightarrow> nat list \<Rightarrow> nat list \<Rightarrow> thol \<Rightarrow> nat list option" where
-  "eval_to_tail reg bs xs (hLet t1 t2) = eval_to_tail reg (eval_non_tail reg bs xs t1 # bs) xs t2" |
-  "eval_to_tail reg bs xs (hLetBound n) = None" |
-  "eval_to_tail reg bs xs (hArg n) = None" |
-  "eval_to_tail reg bs xs (hNumber n) = None" |
-  "eval_to_tail reg bs xs (hIf t1 t2 t3) = (
-    if eval_non_tail reg bs xs t1 \<noteq> 0
-    then eval_to_tail reg bs xs t2
-    else eval_to_tail reg bs xs t3)" |
-  "eval_to_tail reg bs xs (hCall g ts) = None" |
-  "eval_to_tail reg bs xs (hTAIL ts) = Some (map (eval_non_tail reg bs xs) ts)"
-
-fun time_to_tail :: "thol_reg \<Rightarrow> nat list \<Rightarrow> nat list \<Rightarrow> thol \<Rightarrow> (string \<times> nat list) list" where
-  "time_to_tail reg bs xs (hLet t1 t2) =
-    time_to_tail reg bs xs t1 @
-    time_to_tail reg ((eval_non_tail reg bs xs t1) # bs) xs t2" |
-  "time_to_tail reg bs xs (hLetBound n) = []" |
-  "time_to_tail reg bs xs (hArg n) = []" |
-  "time_to_tail reg bs xs (hNumber n) = []" |
-  "time_to_tail reg bs xs (hIf t1 t2 t3) =
-    time_to_tail reg bs xs t1 @ (
-      if eval_non_tail reg bs xs t1 \<noteq> 0
-      then time_to_tail reg bs xs t2
-      else time_to_tail reg bs xs t3)" |
-  "time_to_tail reg bs xs (hCall g ts) =
-    concat (map (time_to_tail reg bs xs) ts) @
-    [(g, map (eval_non_tail reg bs xs) ts)]" |
-  "time_to_tail reg bs xs (hTAIL ts) = concat (map (time_to_tail reg bs xs) ts)"
-
-value "time_to_tail null [] [] (hCall ''r'' [hNumber 9])"
-value "eval_to_tail null [1] [5] (hTAIL [hLetBound 0, hArg 0])"
-
-fun non_tail where
-  "non_tail (hTAIL _) = False" |
-  "non_tail (hLet t1 t2) = (non_tail t1 \<and> non_tail t2)" |
-  "non_tail (hIf t1 t2 t3) = (non_tail t1 \<and> non_tail t2 \<and> non_tail t3)" |
-  "non_tail (hCall g ts) = (\<forall>t \<in> set ts. non_tail t)" |
-  "non_tail _ = True"
-
-fun tailrec where
-  "tailrec (hLet t1 t2) = (non_tail t1 \<and> tailrec t2)" |
-  "tailrec (hIf t1 t2 t3) = (non_tail t1 \<and> tailrec t2 \<and> tailrec t3)" |
-  "tailrec (hCall g ts) = (\<forall>t \<in> set ts. non_tail t)" |
-  "tailrec (hTAIL ts) = (\<forall>t \<in> set ts. non_tail t)" |
-  "tailrec _ = True"
-
-lemma set_map:
-  assumes "\<forall>x \<in> set xs. P (f x)"
-  shows "\<forall>y \<in> set (map f xs). P y"
-  using assms by simp
-
-(* not really commutative.... *)
-lemma set_zip_com:
-  assumes "\<forall>(x,y) \<in> set (zip xs ys). P x y"
-  shows "\<forall>(y,x) \<in> set (zip ys xs). P x y"
-  using assms by (induction xs ys rule: list_induct2') simp_all
-
-lemma set_zip_com':
-  assumes "(x, y) \<in> set (zip xs ys)"
-  shows "(y, x) \<in> set (zip ys xs)"
-  using assms by (metis in_set_zip prod.sel(1,2))
-
-lemma set_zip_assoc1':
-  assumes "(x,y,z) \<in> set (zip xs (zip ys zs))"
-  shows "((x,y),z) \<in> set (zip (zip xs ys) zs)"
-  using assms by (smt (verit) in_set_zip length_zip min_less_iff_conj nth_zip prod.sel(1,2))
-
-lemma set_zip_assoc2':
-  assumes "((x,y),z) \<in> set (zip (zip xs ys) zs)"
-  shows "(x,y,z) \<in> set (zip xs (zip ys zs))"
-  using assms by (smt (verit) in_set_zip length_zip min_less_iff_conj nth_zip prod.sel(1,2))
-
-lemma set_zip_rot:
-  assumes "(x,y,z) \<in> set (zip xs (zip ys zs))"
-  shows "(y,z,x) \<in> set (zip ys (zip zs xs))"
-  using assms by (smt (verit) in_set_zip length_zip min_less_iff_conj nth_zip prod.sel(1,2))
-
-lemma set_zip_rot2:
-  assumes "(x,y,z) \<in> set (zip xs (zip ys zs))"
-  shows "(y,x,z) \<in> set (zip ys (zip xs zs))"
-  using assms by (smt (verit) in_set_zip length_zip min_less_iff_conj nth_zip prod.sel(1,2))
-
-
-lemma set_zip_assoc1:
-  assumes "\<forall>(x,y,z) \<in> set (zip xs (zip ys zs)). P x y z"
-  shows "\<forall>((x,y),z) \<in> set (zip (zip xs ys) zs). P x y z"
-  using assms apply (induction xs "zip ys zs" rule: list_induct2') apply simp_all
-   apply (induction ys zs rule: list_induct2') apply simp_all
-   apply (induction ys zs rule: list_induct2') apply simp_all
-  by (metis list.exhaust list.set_cases list.simps(3) not_Cons_self2 zip_eq_Nil_iff) (* aaaa *)
-
-lemma set_zip_assoc2:
-  assumes "\<forall>((x,y),z) \<in> set (zip (zip xs ys) zs). P x y z"
-  shows "\<forall>(x,y,z) \<in> set (zip xs (zip ys zs)). P x y z"
-  using assms apply (induction xs "zip ys zs" rule: list_induct2') apply simp_all
-   apply (induction ys zs rule: list_induct2') apply simp_all
-   apply (induction ys zs rule: list_induct2') apply simp_all
-  by (metis list.exhaust list.set_cases list.simps(3) not_Cons_self2 zip_eq_Nil_iff) (* aaaa *)
-
-lemma set_zip_drop:
-  assumes "length xs \<le> length ys"
-  assumes "\<forall>(x,y) \<in> set (zip xs ys). P x"
-  shows "\<forall>x \<in> set xs. P x"
-  using assms by (induction xs ys rule: list_induct2') simp_all
-
-lemma map2_zip: "map (\<lambda>(x, y). (f x, g y)) (zip xs ys) = zip (map f xs) (map g ys)"
-  by (induction xs ys rule: list_induct2') simp_all
-
-lemma map2_zip1: "map (\<lambda>(x, y). (f x, y)) (zip xs ys) = zip (map f xs) ys"
-  using map2_zip[where g = id] by auto
-
-lemma map2_zip2: "map (\<lambda>(x, y). (x, g y)) (zip xs ys) = zip xs (map g ys)"
-  using map2_zip[where f = id] by auto
-
-
-lemma set_in_I2:
-  assumes "\<And>x y. (x, y) \<in> xys \<Longrightarrow> P x y"
-  shows "\<forall>(x, y) \<in> xys. P x y"
-  using assms by blast
-
-lemma eval_non_tail:
-  assumes "non_tail t"
-  assumes "(f,reg) \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup>z\<^esup> v"
-  shows "v = eval_non_tail reg vs_b vs_arg t"
-  using assms proof (induction t arbitrary: vs_b z v)
-  case (hLet t1 t2)
-  then show ?case using hLet_case by force
-next
-  case (hLetBound n)
-  then show ?case apply simp using hbig_step_t.cases by blast
-next
-  case (hArg n)
-  then show ?case apply simp using hbig_step_t.cases by blast
-next
-  case (hNumber n)
-  then show ?case apply simp using hbig_step_t.cases by blast
-next
-  case (hIf t1 t2 t3)
-  then obtain z1 v1 where *: "(f,reg) \<turnstile> (t1,vs_b,vs_arg) \<Rightarrow>\<^bsup>z1\<^esup> v1" using hIf_case by blast
-  then show ?case
-  proof (cases "v1 = 0")
-    case False
-    then show ?thesis using hIf_case hIf *
-      by (metis (no_types, lifting) eval_non_tail.simps(5) non_tail.simps(3))
+lemma determ:
+  fixes t :: thol
+  assumes "ctxt \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup>z1\<^esup> v1"
+  assumes "ctxt \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup>z2\<^esup> v2"
+  shows "z1 = z2" "v1 = v2"
+  oops
+(* using assms proof (induction arbitrary: z2 v2 rule: hbig_step_t.induct)
+  case (hCall g T_g reg gr zs ts vs f bs xs v' z')
+  {
+    case 1
+    then show ?case sorry (* TODO *)
   next
-    case True
-    then show ?thesis using hIf_case hIf *
-      by (smt (verit) eval_non_tail.simps(5) less_numeral_extra(3) non_tail.simps(3))
-    qed
+    case 2
+    then show ?case sorry
+  }
 next
-  case (hCall vg ts)
-
-  then obtain g T_g zs vs where
-    reg: "reg vg = (g, T_g)"
-    and len_zs: "length zs = length ts" and len: "length vs = length ts"
-    and args: "\<And>ti vi zi. (ti, zi, vi) \<in> set (zip ts (zip zs vs)) \<longrightarrow> (f,reg) \<turnstile> (ti,vs_b,vs_arg) \<Rightarrow>\<^bsup>zi\<^esup> vi"
-    and g: "g vs = v"
-    using hCall_case by blast
-
-  from len len_zs have lens: "length (zip vs ts) = length zs" by simp
-
-  have 1: "f_from_reg reg vg = g" using reg by simp
-  have 2: "vs = map (eval_non_tail reg vs_b vs_arg) ts"
-  proof (rule list_eq_by_zip[OF _ set_in_I2])
-    show "length vs = length (map (eval_non_tail reg vs_b vs_arg) ts)"
-      using len by simp
+  case (hTAIL zs ts vs f reg bs xs z' v' z'')
+  {
+    case 1
+    then show ?case sorry
   next
-    fix vi v'
-
-    assume 1: "(vi, v') \<in> set (zip vs (map (eval_non_tail reg vs_b vs_arg) ts))"
-
-    from 1 have "(vi, v') \<in> set (map (\<lambda>(vi, ti). (vi, eval_non_tail reg vs_b vs_arg ti)) (zip vs ts))"
-      apply (subst map2_zip2) by simp
-    then obtain ti where b: "(vi, ti) \<in> set (zip vs ts)" and *: "v' = eval_non_tail reg vs_b vs_arg ti"
-      using set_map by auto
-
-    from b obtain zi where "((vi, ti), zi) \<in> set (zip (zip vs ts) zs)"
-      using in_set_impl_in_set_zip1[OF lens] by auto
-    then have "(ti, zi, vi) \<in> set (zip ts (zip zs vs))"
-      using set_zip_com' set_zip_assoc1' by metis
-    with args have 3: "(f,reg) \<turnstile> (ti,vs_b,vs_arg) \<Rightarrow>\<^bsup>zi\<^esup> vi" by simp
-
-    have 1: "ti \<in> set ts" using set_zip_rightD[OF b] .
-    then have 2: "non_tail ti" using hCall by simp
-    from hCall.IH[OF 1 2 3] have vi: "vi = eval_non_tail reg vs_b vs_arg ti" by simp
-
-    show "vi = v'" using vi * by simp
-  qed
-
-  then show ?case using g 1 2 by simp
-next
-  case (hTAIL ts)
-  then show ?case by simp
-qed
-
-definition "interp_time1 reg g vs_arg_g = T_f_from_reg reg g vs_arg_g"
-definition "interp_time reg = sum_map (\<lambda>(g, vs_arg_g). interp_time1 reg g vs_arg_g)"
-
-lemma interp_time_append[simp]:
-  "interp_time reg (xs @ ys) = interp_time reg xs + interp_time reg ys"
-  unfolding interp_time_def by simp
-lemma interp_time_concat_is_sum_map:
-  "interp_time reg (concat xss) = sum_list (map (interp_time reg) xss)"
-  unfolding interp_time_def by (induction xss) auto
+    case 2
+    then show ?case sorry
+  }
+qed blast+ *)
 
 
-(* TODO: find general lemma that subsumes eval_arg_values/eval_arg_times *)
-lemma eval_arg_values:
-  assumes non_tail: "\<forall>t \<in> set ts. non_tail t"
-  assumes len_zs: "length zs = length ts" and len_vs: "length vs = length ts"
-  assumes args: "\<And>ti vi zi. (ti, zi, vi) \<in> set (zip ts (zip zs vs)) \<longrightarrow> (f,reg) \<turnstile> (ti,vs_b,vs_arg) \<Rightarrow>\<^bsup>zi\<^esup> vi"
-  shows "vs = map (eval_non_tail reg vs_b vs_arg) ts"
-  proof (rule list_eq_by_zip[OF _ set_in_I2])
-    show "length vs = length (map (eval_non_tail reg vs_b vs_arg) ts)"
-      using len_vs by simp
-  next
-    fix vi v'
+fun tails where
+  "tails (hTAIL _) \<longleftrightarrow> True" |
+  "tails (hLet t1 t2) \<longleftrightarrow> tails t1 \<or> tails t2" |
+  "tails (hIf t1 t2 t3) \<longleftrightarrow> tails t1 \<or> tails t2 \<or> tails t3" |
+  "tails (hCall g ts) \<longleftrightarrow> (\<exists>t \<in> set ts. tails t)" |
+  "tails _ = False"
 
-    assume 1: "(vi, v') \<in> set (zip vs (map (eval_non_tail reg vs_b vs_arg) ts))"
+fun invar where
+  "invar (hLet t1 t2) \<longleftrightarrow> \<not> tails t1 \<and> invar t2" |
+  "invar (hIf t1 t2 t3) \<longleftrightarrow> \<not> tails t1 \<and> invar t2 \<and> invar t3" |
+  "invar (hCall g ts) = (\<forall>t \<in> set ts. \<not> tails t)" |
+  "invar (hTAIL ts) = (\<forall>t \<in> set ts. \<not> tails t)" |
+  "invar _ = True"
 
-    from 1 have "(vi, v') \<in> set (map (\<lambda>(vi, ti). (vi, eval_non_tail reg vs_b vs_arg ti)) (zip vs ts))"
-      apply (subst map2_zip2) by simp
-    then obtain ti where b: "(vi, ti) \<in> set (zip vs ts)" and *: "v' = eval_non_tail reg vs_b vs_arg ti"
-      using set_map by auto
+lemma non_tail_invar[simp]: "\<not> tails t \<Longrightarrow> invar t" by (induction t) auto
 
-    from len_zs len_vs have "length (zip vs ts) = length zs" by simp
-    with b obtain zi where "((vi, ti), zi) \<in> set (zip (zip vs ts) zs)"
-      using in_set_impl_in_set_zip1 by metis
-    then have "(ti, zi, vi) \<in> set (zip ts (zip zs vs))"
-      using set_zip_com' set_zip_assoc1' by metis
-    with args have 3: "(f,reg) \<turnstile> (ti,vs_b,vs_arg) \<Rightarrow>\<^bsup>zi\<^esup> vi" by simp
 
-    have "ti \<in> set ts" using set_zip_rightD[OF b] .
-    then have 2: "non_tail ti" using non_tail by simp
-    from eval_non_tail[OF 2 3] have vi: "vi = eval_non_tail reg vs_b vs_arg ti" .
+(* traces *)
 
-    show "vi = v'" using vi * by simp
-  qed
+type_synonym trace = "(fun_ref \<times> nat list) list"
 
-lemma eval_arg_times:
-  assumes len_zs: "length zs = length ts" and len_vs: "length vs = length ts"
-  assumes args: "\<And>ti vi zi. (ti, zi, vi) \<in> set (zip ts (zip zs vs)) \<longrightarrow> (f,reg) \<turnstile> (ti,vs_b,vs_arg) \<Rightarrow>\<^bsup>zi\<^esup> vi"
-  assumes time_non_tail: "\<And>z v t. t \<in> set ts \<Longrightarrow> (f,reg) \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup>z\<^esup> v \<Longrightarrow> z = interp_time reg (time_to_tail reg vs_b vs_arg t)"
-  shows "zs = map (interp_time reg \<circ> time_to_tail reg vs_b vs_arg) ts"
-  proof (rule list_eq_by_zip[OF _ set_in_I2])
-    show "length zs = length (map (interp_time reg \<circ> time_to_tail reg vs_b vs_arg) ts)"
-      using len_zs by simp
-  next
-    fix zi z'
+definition "interp_trace_item reg g vs_arg_g = T_f_from_reg reg g vs_arg_g"
+definition "interp_trace reg = sum_map (\<lambda>(g, vs_arg_g). interp_trace_item reg g vs_arg_g)"
 
-    assume 1: "(zi, z') \<in> set (zip zs (map (interp_time reg \<circ> time_to_tail reg vs_b vs_arg) ts))"
+lemma interp_trace_append[simp]:
+  "interp_trace reg (xs @ ys) = interp_trace reg xs + interp_trace reg ys"
+  unfolding interp_trace_def by simp
+lemma interp_trace_concat_is_sum_map:
+  "interp_trace reg (concat xss) = sum_map (interp_trace reg) xss"
+  unfolding interp_trace_def by (induction xss) auto
 
-    from 1 have "(zi, z') \<in> set (map (\<lambda>(zi, ti). (zi, (interp_time reg \<circ> time_to_tail reg vs_b vs_arg) ti)) (zip zs ts))"
-      apply (subst map2_zip2) by simp
-    then obtain ti where b: "(zi, ti) \<in> set (zip zs ts)" and *: "z' = interp_time reg (time_to_tail reg vs_b vs_arg ti)"
-      using set_map by auto
 
-    from len_zs len_vs have "length (zip zs ts) = length vs" by simp
-    with b obtain vi where "((zi, ti), vi) \<in> set (zip (zip zs ts) vs)"
-      using in_set_impl_in_set_zip1 by metis
-    then have "(ti, zi, vi) \<in> set (zip ts (zip zs vs))"
-      using set_zip_com' set_zip_rot set_zip_rot2 by metis
-    with args have 3: "(f,reg) \<turnstile> (ti,vs_b,vs_arg) \<Rightarrow>\<^bsup>zi\<^esup> vi" by simp
 
-    have 1: "ti \<in> set ts" using set_zip_rightD[OF b] .
-    from time_non_tail[OF 1 3] have vi: "zi = interp_time reg (time_to_tail reg vs_b vs_arg ti)"
-      using "3" eval_non_tail by auto
-(* TODO: clean up *)
+datatype leaf_state = Value nat | Tail "nat list"
 
-    show "zi = z'" using vi * by simp
-  qed
+inductive
+  htrace_to_leaf :: "thol_reg \<Rightarrow> thol \<times> nat list \<times> nat list \<Rightarrow> trace \<Rightarrow> leaf_state \<Rightarrow> bool"  ("_ \<turnstile> _ \<Rightarrow>\<^bsup>_\<^esup>  _" 55)
+where
+hLet:
+  "\<lbrakk>reg \<turnstile> (t1,bs,xs) \<Rightarrow>\<^bsup>T1\<^esup> Value v1; reg \<turnstile> (t2,v1#bs,xs) \<Rightarrow>\<^bsup>T2\<^esup> l2; T = T1@T2\<rbrakk>
+   \<Longrightarrow> reg \<turnstile> (LET t1 IN t2,bs,xs) \<Rightarrow>\<^bsup>T\<^esup> l2" |
+hLetBound: "reg \<turnstile> (hLetBound n,bs,xs) \<Rightarrow>\<^bsup>[]\<^esup> Value (bs ! n)" |
+hArg: "reg \<turnstile> (hArg n,bs,xs) \<Rightarrow>\<^bsup>[]\<^esup> Value (xs ! n)" |
+hNumber: "reg \<turnstile> (hNumber n,bs,xs) \<Rightarrow>\<^bsup>[]\<^esup> Value n" |
+hIfTrue:
+  "\<lbrakk>reg \<turnstile> (t1,bs,xs) \<Rightarrow>\<^bsup>T1\<^esup> Value v1; v1 \<noteq> 0; reg \<turnstile> (t2,bs,xs) \<Rightarrow>\<^bsup>T2\<^esup> l2; T = T1@T2\<rbrakk>
+   \<Longrightarrow> reg \<turnstile> (IF t1\<noteq>0 THEN t2 ELSE t3,bs,xs) \<Rightarrow>\<^bsup>T\<^esup> l2" |
+hIfFalse:
+  "\<lbrakk>reg \<turnstile> (t1,bs,xs) \<Rightarrow>\<^bsup>T1\<^esup> Value v1; v1 = 0; reg \<turnstile> (t3,bs,xs) \<Rightarrow>\<^bsup>T3\<^esup> l3; T = T1@T3\<rbrakk>
+   \<Longrightarrow> reg \<turnstile> (IF t1\<noteq>0 THEN t2 ELSE t3,bs,xs) \<Rightarrow>\<^bsup>T\<^esup> l3" |
+hCall:
+  "\<lbrakk>(g, T_g) = reg gr; length vs = length ts; length Ts = length ts;
+    \<forall>i < length ts. reg \<turnstile> (ts ! i,bs,xs) \<Rightarrow>\<^bsup>Ts ! i\<^esup> Value (vs ! i);
+    T = concat Ts @ [(gr,vs)]; v = g vs\<rbrakk>
+   \<Longrightarrow> reg \<turnstile> (hCall gr ts,bs,xs) \<Rightarrow>\<^bsup>T\<^esup> Value v" |
+hTail:
+  "\<lbrakk>length vs = length ts; length Ts = length ts;
+    \<forall>i < length ts. reg \<turnstile> (ts ! i,bs,xs) \<Rightarrow>\<^bsup>Ts ! i\<^esup> Value (vs ! i);
+    T = concat Ts\<rbrakk>
+   \<Longrightarrow> reg \<turnstile> (hTAIL ts,bs,xs) \<Rightarrow>\<^bsup>T\<^esup> Tail vs"
 
-lemma time_non_tail:
-  assumes "non_tail t"
-  assumes "(f,reg) \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup>z\<^esup> v"
-  shows "z = interp_time reg (time_to_tail reg vs_b vs_arg t)"
-using assms proof (induction t arbitrary: vs_b z v)
-  case (hLet t1 t2)
-  then show ?case
-  proof (cases rule: hLet_case[OF hLet(4)])
-    case (1 z1 v1 z2)
-    with hLet show ?thesis using eval_non_tail by force
-  qed
-next
-  case (hLetBound n)
-  then show ?case unfolding interp_time_def by auto
-next
-  case (hArg n)
-  then show ?case unfolding interp_time_def by auto
-next
-  case (hNumber n)
-  then show ?case unfolding interp_time_def by auto
-next
-  case (hIf t1 t2 t3)
+lemmas htrace_to_leaf_induct = htrace_to_leaf.induct[split_format(complete)]
+
+
+(* relating traces to the semantics *)
+
+lemma trace_non_tail0:
+  assumes "reg \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup>(T :: trace)\<^esup> l" "l = Value v"
+  shows "(f,reg) \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup> interp_trace reg T \<^esup> v"
+using assms proof (induction arbitrary: v rule: htrace_to_leaf_induct)
+  case (hCall g T_g reg gr vs ts Ts bs xs T v)
+  let ?zs = "map (interp_trace reg) Ts"
   show ?case
-  proof (cases rule: hIf_case[OF hIf.prems(2)])
-    case (1 z1 v1 z2)
-    with hIf show ?thesis using eval_non_tail by force
+  proof
+    have "interp_trace reg [(gr,vs)] = T_g vs"
+      unfolding interp_trace_def interp_trace_item_def using hCall split_from_reg by simp
+    then show "interp_trace reg T = sum_list ?zs + T_g vs"
+      using hCall interp_trace_concat_is_sum_map interp_trace_append by simp
   next
-    case (2 z1 z2)
-    with hIf show ?thesis using eval_non_tail by force
-  qed
-next
-  case (hCall vg ts)
-  thm hCall.IH
-  then show ?case
-    thm hCall_case[OF hCall.prems(2)]
-  proof (cases rule: hCall_case[OF hCall.prems(2)])
-    case (1 g T_g zs vs)
+    show "g vs = v" using hCall by simp
+  qed (simp_all add: hCall)
+qed (simp_all add: interp_trace_def hbig_step_t.intros)
 
-    have g: "f_from_reg reg vg = g" using 1 by simp
-  
-    from hCall have "\<forall>t\<in>set ts. non_tail t" by simp
-    with 1 have "vs = map (eval_non_tail reg vs_b vs_arg) ts" (* 2 *)
-      using eval_arg_values by blast
-    then have *: "T_g vs = interp_time reg [(vg, map (eval_non_tail reg vs_b vs_arg) ts)]"
-      unfolding interp_time_def interp_time1_def using 1 by simp
-
-    have "zs = map (interp_time reg \<circ> time_to_tail reg vs_b vs_arg) ts"
-      apply (rule eval_arg_times[where vs = vs])
-      using 1 hCall by simp_all
-    then have **: "sum_list zs = interp_time reg (concat (map (time_to_tail reg vs_b vs_arg) ts))"
-      by (simp add: interp_time_concat_is_sum_map)
-
-    show ?thesis using 1 * ** by simp
-  qed
-next
-  case (hTAIL ts)
-  then show ?case by simp
-qed
+theorem trace_non_tail:
+  assumes "reg \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup>T\<^esup> Value v"
+  shows "(f,reg) \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup> interp_trace reg T \<^esup> v"
+  using assms trace_non_tail0 by blast
 
 
-definition "has_time_to_tail reg t vs_b vs_arg f vs_arg' v z = (\<exists>z'.
-  z = 1 + interp_time reg (time_to_tail reg vs_b vs_arg t) + z' \<and> (f,reg) \<turnstile> (f,[],vs_arg') \<Rightarrow>\<^bsup>z'\<^esup> v)"
-
-lemma has_time_to_tailI:
-  assumes "z = 1 + interp_time reg (time_to_tail reg vs_b vs_arg t) + z'"
-  assumes "(f,reg) \<turnstile> (f,[],vs_arg') \<Rightarrow>\<^bsup>z'\<^esup> v"
-  shows "has_time_to_tail reg t vs_b vs_arg f vs_arg' v z"
-  unfolding has_time_to_tail_def using assms by blast
-
-theorem time_to_tail:
-  assumes "tailrec t"
-  assumes "(f,reg) \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup>z\<^esup> v"
-  assumes "eval_to_tail reg vs_b vs_arg t = Some vs_arg'"
-  shows "has_time_to_tail reg t vs_b vs_arg f vs_arg' v z"
-using assms proof (induction t arbitrary: vs_b z)
-  case (hLet t1 t2)
-  from \<open>tailrec (hLet t1 t2)\<close> have "non_tail t1" "tailrec t2" by simp_all
-  from \<open>(f, reg) \<turnstile> (hLet t1 t2, vs_b, vs_arg) \<Rightarrow>\<^bsup>z\<^esup> v\<close>
-  obtain z1 v1 z2
-    where t1: "(f, reg) \<turnstile> (t1,vs_b,vs_arg) \<Rightarrow>\<^bsup>z1\<^esup> v1"
-      and t2: "(f, reg) \<turnstile> (t2,v1#vs_b,vs_arg) \<Rightarrow>\<^bsup>z2\<^esup> v"
-      and z: "z = z1+z2"
-    using hLet_case by blast
-
-  from \<open>non_tail t1\<close> t1 have z1: "z1 = interp_time reg (time_to_tail reg vs_b vs_arg t1)"
-    using time_non_tail by blast
-
-  from \<open>non_tail t1\<close> t1 have v1: "v1 = eval_non_tail reg vs_b vs_arg t1"
-    using eval_non_tail by blast
-  with hLet.prems(3) have "eval_to_tail reg (v1 # vs_b) vs_arg t2 = Some vs_arg'" by simp
-  then have "has_time_to_tail reg t2 (v1 # vs_b) vs_arg f vs_arg' v z2"
-    using hLet.IH(2) \<open>tailrec t2\<close> t2 by blast
-  then obtain z'
-    where "z2 = 1 + interp_time reg (time_to_tail reg (v1 # vs_b) vs_arg t2) + z'"
-      and z': "(f,reg) \<turnstile> (f,[],vs_arg') \<Rightarrow>\<^bsup>z'\<^esup> v"
-    unfolding has_time_to_tail_def by blast
-  with v1 have z2: "z2 =
-    1 + interp_time reg (time_to_tail reg (eval_non_tail reg vs_b vs_arg t1 # vs_b) vs_arg t2) + z'"
-    by blast
-
-  have t: "interp_time reg (time_to_tail reg vs_b vs_arg (hLet t1 t2)) =
-    interp_time reg (time_to_tail reg vs_b vs_arg t1)
-    + interp_time reg (time_to_tail reg (eval_non_tail reg vs_b vs_arg t1 # vs_b) vs_arg t2)"
-    using interp_time_append by auto
-
+lemma trace_tail0:
+  assumes "reg \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup>(T :: trace)\<^esup> l" "l = Tail xs'"
+  assumes "invar t"
+  assumes "(f,reg) \<turnstile> (f,[],xs') \<Rightarrow>\<^bsup>z\<^esup> v"
+  shows "(f,reg) \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup> interp_trace reg T + z + 1 \<^esup> v"
+  (* TODO: could probably get this proof a bit shorter/cleaner, OK for now *)
+using assms proof (induction arbitrary: rule: htrace_to_leaf_induct)
+  case (hLet reg t1 bs xs T1 v1 t2 T2 l2 T)
   show ?case
-    apply (rule has_time_to_tailI[where z' = z'])
-    by (simp only: z z1 z2 t) (rule z')
-next
-  case (hLetBound x)
-  then show ?case by simp
-next
-  case (hArg x)
-  then show ?case by simp
-next
-  case (hNumber x)
-  then show ?case by simp
-next
-  case (hIf t1 t2 t3)
-  from \<open>tailrec (hIf t1 t2 t3)\<close> have "non_tail t1" "tailrec t2" "tailrec t3" by simp_all
-
-  show ?case
-  proof (cases rule: hIf_case[OF \<open>(f,reg) \<turnstile> (hIf t1 t2 t3,vs_b,vs_arg) \<Rightarrow>\<^bsup>z\<^esup> v\<close>])
-    case (1 z1 v1 z2)
-
-    have z1: "z1 = interp_time reg (time_to_tail reg vs_b vs_arg t1)"
-      using \<open>non_tail t1\<close> 1(2) time_non_tail by blast
-
-    have v1: "eval_non_tail reg vs_b vs_arg t1 \<noteq> 0"
-      using \<open>non_tail t1\<close> 1(2,3) eval_non_tail by auto
-    have "eval_to_tail reg vs_b vs_arg t2 = Some vs_arg'"
-      using hIf.prems(3) v1 by simp
-    then have "has_time_to_tail reg t2 vs_b vs_arg f vs_arg' v z2"
-      using hIf.IH(2) \<open>tailrec t2\<close> 1(4) by blast
-    then obtain z'
-      where z2: "z2 = 1 + interp_time reg (time_to_tail reg vs_b vs_arg t2) + z'"
-        and z': "(f,reg) \<turnstile> (f,[],vs_arg') \<Rightarrow>\<^bsup>z'\<^esup> v"
-      unfolding has_time_to_tail_def by blast
-
-    have t: "interp_time reg (time_to_tail reg vs_b vs_arg (hIf t1 t2 t3)) =
-      interp_time reg (time_to_tail reg vs_b vs_arg t1)
-      + interp_time reg (time_to_tail reg vs_b vs_arg t2)"
-      using interp_time_append v1 by auto
-    
-    show ?thesis
-      apply (rule has_time_to_tailI[where z' = z'])
-      by (simp only: \<open>z = z1 + z2\<close> z1 z2 t) (rule z')
+  proof
+    show "interp_trace reg T + z + 1 = (interp_trace reg T1) + (interp_trace reg T2 + z + 1)"
+      using hLet interp_trace_append by simp
   next
-    case (2 z1 z2)
-
-    have z1: "z1 = interp_time reg (time_to_tail reg vs_b vs_arg t1)"
-      using \<open>non_tail t1\<close> 2(2) time_non_tail by blast
-
-    have v1: "0 = eval_non_tail reg vs_b vs_arg t1"
-      using \<open>non_tail t1\<close> 2(2) eval_non_tail by blast
-    have "eval_to_tail reg vs_b vs_arg t3 = Some vs_arg'"
-      using hIf.prems(3) v1 by simp
-    then have "has_time_to_tail reg t3 vs_b vs_arg f vs_arg' v z2"
-      using hIf.IH(3) \<open>tailrec t3\<close> 2(3) by blast
-    then obtain z'
-      where z2: "z2 = 1 + interp_time reg (time_to_tail reg vs_b vs_arg t3) + z'"
-        and z': "(f,reg) \<turnstile> (f,[],vs_arg') \<Rightarrow>\<^bsup>z'\<^esup> v"
-      unfolding has_time_to_tail_def by blast
-
-    have t: "interp_time reg (time_to_tail reg vs_b vs_arg (hIf t1 t2 t3)) =
-      interp_time reg (time_to_tail reg vs_b vs_arg t1)
-      + interp_time reg (time_to_tail reg vs_b vs_arg t3)"
-      using interp_time_append v1 by auto
-    
-    show ?thesis
-      apply (rule has_time_to_tailI[where z' = z'])
-      by (simp only: \<open>z = z1 + z2\<close> z1 z2 t) (rule z')
-  qed
-next
-  case (hCall vg ts)
-  then show ?case by simp
-next
-  case (hTAIL ts)
-
-  then obtain zs vs z' where
-    len_zs: "length zs = length ts" and len_vs: "length vs = length ts"
-    and args: "\<And>ti vi zi. (ti, zi, vi) \<in> set (zip ts (zip zs vs)) \<longrightarrow> (f,reg) \<turnstile> (ti,vs_b,vs_arg) \<Rightarrow>\<^bsup>zi\<^esup> vi"
-    and rec: "(f,reg) \<turnstile> (f,[],vs) \<Rightarrow>\<^bsup>z'\<^esup> v"
-    and z: "z = sum_list zs + z' + 1"
-    using hTAIL_case by auto
-
-  have nt: "\<forall>t \<in> set ts. non_tail t" using hTAIL by simp
-  with len_zs len_vs args have "vs = map (eval_non_tail reg vs_b vs_arg) ts"
-    using eval_arg_values by blast
-
-  with hTAIL have vs_arg': "vs = vs_arg'" by simp
-
-  show ?case
-  proof (rule has_time_to_tailI)
-    have "z = sum_list zs + (z' + 1)" using z by simp
-    also have "... = interp_time reg (time_to_tail reg vs_b vs_arg (hTAIL ts)) + (z' + 1)"
-    proof (rule plus_eqI)
-      have "zs = map (interp_time reg \<circ> time_to_tail reg vs_b vs_arg) ts"
-        apply (rule eval_arg_times[where vs = vs])
-        using len_zs len_vs nt hTAIL time_non_tail args time_non_tail by blast+
-      then show "sum_list zs = interp_time reg (time_to_tail reg vs_b vs_arg (hTAIL ts))"
-        by (simp add: interp_time_concat_is_sum_map)
-    qed simp
-    finally show "z = 1 + interp_time reg (time_to_tail reg vs_b vs_arg (hTAIL ts)) + z'" by simp
+    show "(f, reg) \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup>interp_trace reg T1\<^esup> v1"
+      using hLet trace_non_tail by simp
   next
-    show "(f, reg) \<turnstile> (f, [], vs_arg') \<Rightarrow>\<^bsup>z'\<^esup>  v"
-      using vs_arg' rec by simp
+    show "(f, reg) \<turnstile> (t2, v1 # bs, xs) \<Rightarrow>\<^bsup>interp_trace reg T2 + z + 1\<^esup>  v"
+      using hLet by simp
   qed
-qed
+next
+  case (hIfTrue reg t1 bs xs T1 v1 t2 T2 l2 T t3)
+  show ?case
+  proof (rule hbig_step_t.hIfTrue)
+    show "(f, reg) \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup>interp_trace reg T1\<^esup> v1"
+      using hIfTrue trace_non_tail by simp
+  next
+    show "v1 \<noteq> 0" using hIfTrue by simp
+  next
+    show "(f, reg) \<turnstile> (t2, bs, xs) \<Rightarrow>\<^bsup>interp_trace reg T2 + z + 1\<^esup> v" using hIfTrue by simp
+  next
+    show "interp_trace reg T + z + 1 = (interp_trace reg T1) + (interp_trace reg T2 + z + 1)"
+      using hIfTrue by simp
+  qed
+next
+  case (hIfFalse reg t1 bs xs T1 v1 t3 T3 l3 T t2)
+  show ?case
+  proof (rule hbig_step_t.hIfFalse)
+    show "(f, reg) \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup>interp_trace reg T1\<^esup> v1"
+      using hIfFalse trace_non_tail by simp
+  next
+    show "v1 = 0" using hIfFalse by simp
+  next
+    show "(f, reg) \<turnstile> (t3, bs, xs) \<Rightarrow>\<^bsup>interp_trace reg T3 + z + 1\<^esup> v" using hIfFalse by simp
+  next
+    show "interp_trace reg T + z + 1 = (interp_trace reg T1) + (interp_trace reg T3 + z + 1)"
+      using hIfFalse by simp
+  qed
+next
+  case (hTail vs ts Ts reg bs xs T)
+  let ?zs = "map (interp_trace reg) Ts"
+  show ?case
+  proof
+    show "interp_trace reg T + z + 1 = sum_list ?zs + z + 1"
+      using hTail interp_trace_concat_is_sum_map interp_trace_append by simp
+  next show "\<forall>i<length ts. (f, reg) \<turnstile> (ts ! i, bs, xs) \<Rightarrow>\<^bsup>?zs ! i\<^esup> vs ! i"
+      using hTail[simplified] nth_map trace_non_tail by simp
+  next show "length vs = length ts" using hTail by simp
+  next show "(f, reg) \<turnstile> (f, [], vs) \<Rightarrow>\<^bsup>z\<^esup> v" using hTail by simp
+  next show "length (map (interp_trace reg) Ts) = length ts" using hTail by simp
+  qed
+qed simp_all
+
+theorem trace_tail:
+  assumes "invar t"
+  assumes "reg \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup>T\<^esup> Tail xs'"
+  assumes "(f,reg) \<turnstile> (f,[],xs') \<Rightarrow>\<^bsup>z\<^esup> v"
+  shows "(f,reg) \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup> interp_trace reg T + z + 1 \<^esup> v"
+  using assms trace_tail0 by blast
 
 
-fun teval_non_tail :: "state \<Rightarrow> tcom \<Rightarrow> state" where
-  "teval_non_tail s tSKIP = s" |
-  "teval_non_tail s (tAssign x a) = s(x := aval a s)" |
-  "teval_non_tail s (tSeq c1 c2) = teval_non_tail (teval_non_tail s c1) c2" |
-  "teval_non_tail s (tIf x c1 c2) = teval_non_tail s (if s x \<noteq> 0 then c1 else c2)" |
-  "teval_non_tail s (tCall c x) = s" | (* TODO *)
-  "teval_non_tail s tTAIL = undefined"
+(* lemma trace_exists:
+  assumes "(f,reg) \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup> z \<^esup> v"
+  assumes "invar t"
+  shows "\<exists>(T :: trace) l. reg \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup>T\<^esup> l"
+  sorry *)
+
+lemma
+  assumes "(f,reg) \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup> z \<^esup> v1"
+  shows "\<exists>T l. reg \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup>T\<^esup> l \<and>
+    (case l of
+        Value v2 \<Rightarrow> v2 = v1
+      | Tail xs' \<Rightarrow> (f,reg) \<turnstile> (f,[],xs') \<Rightarrow>\<^bsup>z - interp_trace reg T - 1\<^esup> v)"
+  sorry
+
+
+
 
 term eval_to_tail
 
@@ -625,6 +339,7 @@ inductive ttime_to_tail :: "state \<Rightarrow> tcom \<Rightarrow> nat \<Rightar
   "\<lbrakk> s x = 0; ttime_to_tail s c2 z; z' = z + 1 \<rbrakk> \<Longrightarrow> ttime_to_tail s (tIf x c1 c2) z'" |
   "\<lbrakk> (c,s) \<Rightarrow>\<^bsup>z\<^esup> s2 \<rbrakk> \<Longrightarrow> ttime_to_tail s (tCall c x) z" |
   "ttime_to_tail s tTAIL 5"
+
 
 lemma tnon_tail_ctxt_swap:
   fixes f c :: tcom
@@ -842,7 +557,7 @@ proof (induction t arbitrary: bs r stale)
   case (hCall g ts)
   let ?xs = "make_n_fresh (length ts) stale ''Call.x.''"
   let ?cs1 = "mapi (\<lambda>i t. to_imp_tc f_args ctxt bs (?xs ! i) (?xs @ stale) t) ts"
-  let ?cs2 = "mapi (\<lambda>i t. tAssign (fst (ctxt g) ! i) (A (V (?xs ! i)))) ts"
+  let ?cs2 = "mapi (\<lambda>i t. tAssign (args_from_ctxt ctxt g ! i) (A (V (?xs ! i)))) ts"
 
   have 1: "\<forall>s \<in> set ?cs1. \<not> tails s"
   proof
@@ -948,7 +663,7 @@ definition "t_thol fcs (s's :: state list) = (sum_map (\<lambda>((f_i, _), s'_i)
 definition "t_tcom fcs (k :: nat) (s's :: state list) = k + sum_map (\<lambda>((f_i, c_i), s'_i). c_i * f_i s'_i) (zip fcs s's)"
 
 lemma t_thol_sum1: "f s' + t_thol fcs s's = t_thol ((f, c) # fcs) (s' # s's)"
-  unfolding t_thol_def sum_map_def by (simp add: zip_Cons)
+  unfolding t_thol_def by (simp add: zip_Cons)
 
 (*
 thm list_induct2'

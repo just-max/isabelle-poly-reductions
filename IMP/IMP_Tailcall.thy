@@ -56,6 +56,51 @@ inductive_cases tCall_tE[elim!]: "c \<turnstile> (CALL C RETURN v,s) \<Rightarro
 
 inductive_cases tTail_tE[elim]: "c \<turnstile> (tTAIL,s) \<Rightarrow>\<^bsup>x \<^esup> t"
 
+lemma tIfTrue_tE:
+  assumes "c \<turnstile> (IF b\<noteq>0 THEN c1 ELSE c2, s) \<Rightarrow>\<^bsup>y\<^esup> t"
+  assumes "s b \<noteq> 0"
+  obtains x where "y = Suc x" "c \<turnstile> (c1, s) \<Rightarrow>\<^bsup>x\<^esup>  t"
+  using assms by fastforce
+lemma tIfFalse_tE:
+  assumes "c \<turnstile> (IF b\<noteq>0 THEN c1 ELSE c2, s) \<Rightarrow>\<^bsup>y\<^esup> t"
+  assumes "s b = 0"
+  obtains x where "y = Suc x" "c \<turnstile> (c2, s) \<Rightarrow>\<^bsup>x\<^esup>  t"
+  using assms by fastforce
+
+
+lemma determ:
+  assumes "f \<turnstile> (c,s) \<Rightarrow>\<^bsup>z1\<^esup> t1"
+  assumes "f \<turnstile> (c,s) \<Rightarrow>\<^bsup>z2\<^esup> t2"
+  shows "z1 = z2" "t1 = t2"
+using assms proof (induction arbitrary: z2 t2 rule: tbig_step_t_induct)
+  case (tIfTrue s b c c1 x t y c2)
+  {
+    case 1
+    with tIfTrue tbig_step_t.tIfTrue tIfTrue_tE show ?case by metis
+  next
+    case 2
+    with tIfTrue tbig_step_t.tIfTrue tIfTrue_tE show ?case by metis
+  }
+next
+  case (tIfFalse s b c c2 x t y c1)
+  {
+    case 1
+    with tIfFalse tbig_step_t.tIfFalse tIfFalse_tE show ?case by metis
+  next
+    case 2
+    with tIfFalse tbig_step_t.tIfFalse tIfFalse_tE show ?case by metis
+  }
+next
+  case (tCall C s z t c r)
+  {
+    case 1
+    with tCall IMP_Calls.determ show ?case by blast
+  next
+    case 2
+    with tCall IMP_Calls.determ show ?case by blast
+  }
+qed blast+
+
 
 instantiation tcom :: vars
 begin
@@ -84,47 +129,6 @@ fun invar :: "tcom \<Rightarrow> bool" where
 
 lemma no_tails_invar[simp]: "\<not>tails c \<Longrightarrow> invar c"
   by (induction c) auto
-
-method repeat methods m = (m; repeat \<open>m\<close>)?
-
-(*
-lemma a: "tbig_step_t c (tSKIP,s) 1 s" using tbig_step_t.intros by fastforce
-lemma b:
-  assumes "tbig_step_t c (c1,s1) x s2" and "tbig_step_t c (c2,s2) y s3" and "z=x+y"
-  shows "tbig_step_t c (c1;;c2,s1) z s3"*)
-
-(*
-thm tbig_step_t.intros(1)
-schematic_goal meow: "tbig_step_t (tSKIP;; (tSKIP;; tTAIL)) ((tSKIP;;tTAIL),null_state) ?z ?s"
-  apply (repeat \<open>rule tbig_step_t.intros(1-6)\<close>)
-  apply auto
-  
-  apply simp_all
-  done
-thm meow *)
-
-(*
-fun ttime :: "tcom \<Rightarrow> tcom \<times> state \<Rightarrow> nat" where
-  "ttime _ (tSKIP,_) = 1" |
-  "ttime _ (_ ::= _,_) = 2" |
-  "ttime c (IF b \<noteq>0 THEN c1 ELSE c2,s) =
-    (if s b \<noteq> 0 then ttime c (c1,s) else ttime c (c2,s))" |
-  "ttime c (CALL C RETURN r,s) = 0" |
-  "ttime c (tTAIL,s) = ttime c (c,s)" *)
-
-(* tcom \<Rightarrow> tcom \<times> state \<Rightarrow> nat \<Rightarrow> state \<Rightarrow> bool *)
-
-(* 
-
-tSkip: "c \<turnstile> (tSKIP,s) \<Rightarrow>\<^bsup>Suc (0::nat) \<^esup> s" |
-tAssign: "c \<turnstile>(x ::= a,s) \<Rightarrow>\<^bsup>Suc (Suc 0) \<^esup> s(x := aval a s)" |
-tSeq: "\<lbrakk>c \<turnstile> (c1,s1) \<Rightarrow>\<^bsup>x \<^esup> s2; c \<turnstile> (c2,s2) \<Rightarrow>\<^bsup>y \<^esup> s3 ; z=x+y \<rbrakk> \<Longrightarrow> c \<turnstile> (c1;;c2, s1) \<Rightarrow>\<^bsup>z \<^esup> s3" |
-tIfTrue: "\<lbrakk> s b \<noteq> 0;  c \<turnstile> (c1,s) \<Rightarrow>\<^bsup>x \<^esup> t; y=x+1 \<rbrakk> \<Longrightarrow> c \<turnstile> (IF b \<noteq>0 THEN c1 ELSE c2, s) \<Rightarrow>\<^bsup>y \<^esup> t" |
-tIfFalse: "\<lbrakk> s b = 0; c \<turnstile> (c2,s) \<Rightarrow>\<^bsup>x \<^esup> t; y=x+1  \<rbrakk> \<Longrightarrow> c \<turnstile> (IF b \<noteq>0 THEN c1 ELSE c2, s) \<Rightarrow>\<^bsup>y \<^esup> t" |
-tCall: "(C,s) \<Rightarrow>\<^bsup>z \<^esup> t \<Longrightarrow> c \<turnstile> (CALL C RETURN r,s) \<Rightarrow>\<^bsup>z \<^esup> (s(r:=t r))" |
-\<comment> \<open>New rule\<close>
-tTail: "c \<turnstile> (c,s) \<Rightarrow>\<^bsup>z \<^esup> t \<Longrightarrow> c \<turnstile> (tTAIL,s) \<Rightarrow>\<^bsup>5 + z \<^esup> t"
-*)
 
 
 section \<open>Semantics for small-step-ish reasoning (loops)\<close>
