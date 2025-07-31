@@ -1,14 +1,18 @@
 theory HOL_TCN_To_IMP_Temp
-  imports HOL_To_IMP_Primitives "IMP.HOL_TCN_Timing"
+  imports HOL_To_IMP_Primitives "IMP.HOL_TCN_To_IMP"
 begin
 
-
+(*
   (* assumes inf: "\<exists>zh v. (f,reg) \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup>zh\<^esup> v" *)
 
 (* definition "interp_time1 reg g vs_arg_g = T_f_from_reg reg g vs_arg_g" *)
 (* definition "interp_time reg = sum_map (\<lambda>(g, vs_arg_g). interp_time1 reg g vs_arg_g)" *)
   (* assumes "f_imp = to_imp_tc_1 f_args ctxt r0 f" *)
   (* assumes "set (special_regs f_args ctxt r t) \<subseteq> set stale" *)
+
+abbreviation "lookups names (s :: state) \<equiv> map s names"
+
+definition "is_call_in t f = (f \<in> set (calls t))"
 
 lemma lookups_eq_on: assumes "s = t on set xs" shows "lookups xs s = lookups xs t"
   using assms by (simp add: eq_on_def)
@@ -21,20 +25,27 @@ definition "tinterp_time reg ctxt =
       HOL_Nat_To_IMP.least_constant_IMP (com_from_ctxt ctxt g) (T_f_from_reg reg g o lookup_args ctxt g)
       * interp_time1 reg g vs_arg_g)"
 
+*)
+
+abbreviation "lookups names (s :: state) \<equiv> map s names"
+abbreviation "lookup_args ctxt g \<equiv> lookups (args_from_ctxt ctxt g)"
+
+(* definition "is_call_in t f = (f \<in> set (calls t))" *)
+
 definition "well_formed_comp f_args ctxt bs stale t \<longleftrightarrow>
-  tailrec t
+  HOL_TCN_Timing.invar t
   \<and> set (reserved_regs f_args ctxt bs t) \<subseteq> set stale
   \<and> distinct f_args
-  \<and> (\<forall>g \<in> set (h_calls t). distinct (args_from_ctxt ctxt g))"
+  \<and> (\<forall>g \<in> set (calls t). distinct (args_from_ctxt ctxt g))"
 
 definition "well_encoded_comp f_args bs vs_arg vs_b s \<longleftrightarrow> lookups f_args s = vs_arg \<and> lookups bs s = vs_b"
 
-definition "called_correctness ctxt reg t \<longleftrightarrow> (\<forall>g \<in> set (h_calls t).
+definition "called_correctness ctxt reg t \<longleftrightarrow> (\<forall>g \<in> set (calls t).
     HOL_Nat_To_IMP.terminates_with_res_time_order_IMP
       (com_from_ctxt ctxt g) (ret_from_ctxt ctxt g)
       (f_from_reg reg g o lookup_args ctxt g) (T_f_from_reg reg g o lookup_args ctxt g))" (* can we replace f with existential ? *)
 
-
+(*
 lemma ttime_non_tail:
   fixes c :: tcom
   assumes "invar c"
@@ -44,22 +55,22 @@ lemma ttime_non_tail:
   sorry (* TODO *)
 
 lemma non_tail_tailrec: "non_tail t \<Longrightarrow> tailrec t"
-  by (induction t) auto
+  by (induction t) auto *)
 
 (* TODO: need assumption relating registry and context *)
 lemma compiler_correct_nt:
-  assumes "non_tail t"
+  assumes "\<not> tails t"
   assumes "well_formed_comp f_args ctxt bs stale t"
   assumes "well_encoded_comp f_args bs vs_arg vs_b s"
   obtains f z s' where
     "f \<turnstile> (to_imp_tc f_args ctxt bs r stale t,s) \<Rightarrow>\<^bsup>z\<^esup> s'"
-    "s' r = eval_non_tail reg vs_b vs_arg t"
+    "s' r = eval_non_tail reg vs_b vs_arg t" (* TODO *)
     "s = s' on (Set.remove r (set stale))"
   nitpick
   sorry
 
 
-
+(*
 
 (* TODO: this should (just?) use the small step semantics instead !!!! *)
 (* state, term, constants, calls, new state, tail call *)
@@ -73,6 +84,8 @@ inductive tto_end :: "state \<Rightarrow> tcom \<Rightarrow> nat \<Rightarrow> (
   "\<lbrakk>(C,s) \<Rightarrow>\<^bsup>z \<^esup> t\<rbrakk> \<Longrightarrow> tto_end s (tCall C r) 0 [(C,s)] (s(r := t r)) False" |
   "tto_end s tTAIL 5 [] s True"
 
+*)
+
 
 (*
 lemma tto_end_tseqs:
@@ -85,6 +98,7 @@ fun tcalls where
   "tcalls (tCall C r) = [C]" |
   "tcalls _ = []"
 
+(*
 definition "truntime_reg gs T_g = (\<forall>C \<in> gs. \<forall>s. \<exists>t. (C,s) \<Rightarrow>\<^bsup> T_g C s \<^esup> t)"
 definition "tinterp_time2 T_g k gs = k + sum_map (\<lambda>(C,s). T_g C s) gs"
 
@@ -178,13 +192,14 @@ lemma tto_end_struct_k:
   shows "k \<le> tstruct_k c"
   using assms by (induction rule: tto_end.induct) simp_all
 
-thm tto_end_non_tail tto_end_tail
+thm tto_end_non_tail tto_end_tail *)
 
 find_theorems "map fst"
 lemma
   assumes compiler_correct_nt_: True
-  assumes "t_imp = to_imp_tc f_args ctxt bs r stale t"
-  assumes "t_time = time_to_tail reg vs_b vs_arg t"
+  fixes t_imp f_args ctxt reg bs r stale t vs_b vs_arg
+  defines "t_imp \<equiv> to_imp_tc f_args ctxt bs r stale t"
+  assumes "t_time \<equiv> time_to_tail reg vs_b vs_arg t"
   assumes "well_formed_comp f_args ctxt bs stale t"
   assumes "well_encoded_comp f_args bs vs_arg vs_b s"
   (* assumes "called_correctness ctxt reg t" *)
@@ -233,7 +248,7 @@ qed
     (* \<and> (\<forall>((C,s), (g,vs_arg_g)) \<in> set (zip gs (time_to_tail reg vs_b vs_arg t)). *)
           (* C = com_from_ctxt ctxt g \<and> vs_arg_g = lookup_args ctxt g s)" *)
 
-
+*)
 
 lemma
   assumes compiler_correct_nt_: True

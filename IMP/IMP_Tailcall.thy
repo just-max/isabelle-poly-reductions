@@ -101,6 +101,17 @@ next
   }
 qed blast+
 
+fun k_struct :: "tcom \<Rightarrow> nat" where
+  "k_struct tSKIP = 1" |
+  "k_struct (tAssign _ _) = 2" |
+  "k_struct (tSeq c1 c2) = k_struct c1 + k_struct c2 + 1" |
+  "k_struct (tIf x c1 c2) = max (k_struct c1) (k_struct c2) + 1" |
+  "k_struct (tCall _ _) = 0" |
+  "k_struct tTAIL = 5"
+
+(* cost of up to 5 per leaf (size c + 1), cost of up to 1 per inner node (size c) *)
+lemma k_struct_size_bound: "k_struct c \<le> 6 * size c + 5" by (induction c) auto
+
 
 instantiation tcom :: vars
 begin
@@ -129,6 +140,17 @@ fun invar :: "tcom \<Rightarrow> bool" where
 
 lemma no_tails_invar[simp]: "\<not>tails c \<Longrightarrow> invar c"
   by (induction c) auto
+
+lemma no_tails_swap_ctxt:
+  fixes f g c :: tcom
+  assumes "\<not> tails c"
+  assumes "f \<turnstile> (c,s) \<Rightarrow>\<^bsup>z\<^esup> t"
+  shows "g \<turnstile> (c,s) \<Rightarrow>\<^bsup>z\<^esup> t"
+  using assms(2,1) apply (induction f "(c,s)" z t arbitrary: c s rule: tbig_step_t.induct) apply simp_all
+       apply blast
+      apply blast
+     apply blast (* TODO *)
+  by auto
 
 
 section \<open>Semantics for small-step-ish reasoning (loops)\<close>
@@ -359,7 +381,7 @@ next
     using translate_def by auto
 
   from s' * have "s2 CONT = 0"
-    using tSeq by auto (metis "11" determ)
+    using tSeq by auto (metis "11" IMP_Calls.determ)
   with tSeq have 2: "(translate1 CONT c2;; translate CONT c, s2) \<Rightarrow>'\<^bsup> Suc (Suc 0) + y\<^esup>  s3"
     by auto
 
@@ -458,7 +480,7 @@ next
 qed
 
 lemma loop_min: "(WHILE b\<noteq>0 DO c, s) \<Rightarrow>'\<^bsup> z\<^esup>  t \<Longrightarrow> (c,s) \<Rightarrow>'\<^bsup>x\<^esup> s2 \<Longrightarrow> s b \<noteq> 0 \<Longrightarrow> z \<ge> 3+x"
-  apply (induction "WHILE b\<noteq>0 DO c" s z t rule: big_step_t'_induct) apply simp using determ by fastforce
+  apply (induction "WHILE b\<noteq>0 DO c" s z t rule: big_step_t'_induct) apply simp using IMP_Calls.determ by fastforce
 
 lemma translate_complete:
   "\<lbrakk> (translate CONT c,s)\<Rightarrow>'\<^bsup>5+z\<^esup>t; s CONT \<noteq> 0; invar c; CONT \<notin> set (vars c) \<rbrakk>
