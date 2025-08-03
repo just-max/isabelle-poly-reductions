@@ -340,11 +340,6 @@ context
   notes terminates_with_intros[intro] terminates_with_elims[elim]
 begin
 
-lemma tbigstep_progress: assumes "tp \<turnstile> (p,s) \<Rightarrow>\<^bsup>z \<^esup> t" shows "z > 0"
-  using assms apply (induction rule: tbig_step_t_induct)
-  using bigstep_progress apply simp_all
-  done
-
 lemma terminates_with_res_time_IMP_Tailcall_mono:
   assumes "t \<le> u"
   assumes "terminates_with_res_time_IMP_Tailcall tp p s r val t"
@@ -543,7 +538,7 @@ lemma running_uz:
   shows "u > z"
 proof -
   from assms(1) obtain s' t' where "tp \<turnstile> (p, s) \<Rightarrow>\<^bsup>t'\<^esup>  s'" "t' \<le> running z u" by blast
-  with tbigstep_progress show "u > z" unfolding running_def by fastforce
+  with bigstep_progress show "u > z" unfolding running_def by fastforce
 qed
 
 lemma runningI[intro]:
@@ -615,7 +610,7 @@ proof -
     (* from assms(1) obtain c where "terminates_with_res_time_IMP_Tailcall p p s r (f s) (c * T_f s)" *)
       (* using terminates_with_res_time_order_IMP_TailcallE by blast (* shouldn't it already be an elim rule ? *) *)
     from c obtain z t where "p \<turnstile> (p,s) \<Rightarrow>\<^bsup>z \<^esup> t" and 6: "t r = f s" and 3: "0 < z" and 2: "z \<le> c * T_f s"
-      by (meson tbigstep_progress terminates_with_res_time_IMP_TailcallE)
+      by (meson bigstep_progress terminates_with_res_time_IMP_TailcallE)
     then obtain t' where "(compile p,s) \<Rightarrow>'\<^bsup> 7 + z\<^esup>  t'" and 7: "t = t' on set (vars p)"
       using compile_sound invar by blast
     then obtain z_1 t_1 where

@@ -112,6 +112,13 @@ fun k_struct :: "tcom \<Rightarrow> nat" where
 (* cost of up to 5 per leaf (size c + 1), cost of up to 1 per inner node (size c) *)
 lemma k_struct_size_bound: "k_struct c \<le> 6 * size c + 5" by (induction c) auto
 
+lemma bigstep_progress: "f \<turnstile> (c, s) \<Rightarrow>\<^bsup>z\<^esup> t \<Longrightarrow> z > 0"
+  by (induct rule: tbig_step_t_induct) (auto simp add: Big_StepT.bigstep_progress) 
+
+lemma bigstep_progressE:
+  assumes "f \<turnstile> (c, s) \<Rightarrow>\<^bsup>z\<^esup> t"
+  obtains z' where "f \<turnstile> (c, s) \<Rightarrow>\<^bsup>Suc z'\<^esup> t" "z = Suc z'"
+  using assms bigstep_progress gr0_implies_Suc by blast
 
 instantiation tcom :: vars
 begin

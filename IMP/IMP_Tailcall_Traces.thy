@@ -16,7 +16,7 @@ definition "interp_trace k T z \<equiv>
 lemma interp_trace_append[simp]:
   assumes "interp_trace k1 T1 z1" "interp_trace k2 T2 z2"
   shows "interp_trace (k1 + k2) (T1 @ T2) (z1 + z2)"
-  using assms unfolding interp_trace_def sorry (* TODO *)
+  using assms unfolding interp_trace_def oops (* TODO *)
 
 type_synonym leaf_state = "state \<times> bool"
 
@@ -40,7 +40,6 @@ tTail: "(tTAIL,s) \<Rightarrow>\<^bsup>(5, [])\<^esup> (s, True)"
 
 lemmas ttrace_to_leaf_induct = ttrace_to_leaf.induct[split_format(complete)]
 
-
 lemma trace_nontail_to_semantics0:
   assumes "(c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l)" "\<not> l"
   shows "\<exists>z. interp_trace k T z \<and> f \<turnstile> (c,s) \<Rightarrow>\<^bsup> z \<^esup> t"
@@ -48,27 +47,28 @@ lemma trace_nontail_to_semantics0:
   subgoal unfolding interp_trace_def by force
   subgoal unfolding interp_trace_def by force
   using tbig_step_t.intros apply simp
-  sorry
+  oops
 
 theorem trace_nontail_to_semantics:
   assumes "(c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, False)"
   obtains z where "interp_trace k T z" "f \<turnstile> (c,s) \<Rightarrow>\<^bsup> z \<^esup> t"
-  using assms trace_nontail_to_semantics0 by blast
-
+  (* using assms trace_nontail_to_semantics0 by blast *)
+  oops
 
 lemma trace_tail_to_semantics0:
   assumes "(c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l)" "l"
   assumes "invar c"
   assumes "f \<turnstile> (f,t) \<Rightarrow>\<^bsup>y\<^esup> u"
   shows "\<exists>x. interp_trace k T x \<and> f \<turnstile> (c,s) \<Rightarrow>\<^bsup> x+y \<^esup> u"
-  sorry
+  oops
 
 theorem trace_tail_to_semantics:
   assumes "invar c"
   assumes "(c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, True)"
   assumes "f \<turnstile> (f,t) \<Rightarrow>\<^bsup>y\<^esup> u"
   obtains x where "interp_trace k T x" "f \<turnstile> (c,s) \<Rightarrow>\<^bsup> x+y \<^esup> u"
-  using assms trace_tail_to_semantics0 by blast
+  (* using assms trace_tail_to_semantics0 by blast *)
+  oops
 
 (* TODO: prove more things about traces, see HOL-TCN for inspiration *)
 
