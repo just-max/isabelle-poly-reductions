@@ -3,6 +3,8 @@ theory HOL_TCN_To_IMP
   imports IMP_Tailcall_Traces HOL_TCN_Timing Fresh
 begin
 
+unbundle no com_syntax and thol_syntax and tcom_syntax
+
 (* function name \<Rightarrow> (argument registers' names \<times> IMP command \<times> return register's name *)
 type_synonym com_registry = "fun_ref \<Rightarrow> (vname list \<times> com \<times> vname)"
 abbreviation "args_from_crgt (crgt :: com_registry) name \<equiv> fst (crgt name)"
@@ -12,6 +14,24 @@ abbreviation "ret_from_crgt (crgt :: com_registry) name \<equiv> snd (snd (crgt 
 
 definition "null = (\<lambda>_. undefined)"
 
+definition "generate f n \<equiv> map f [0..<n]"
+(* abbreviation "generate_len f xs \<equiv> generate f (length xs)" (* ? *) *)
+
+lemma generate_cong[fundef_cong]:
+  assumes "n = m" "\<And>i. i < m \<Longrightarrow> f i = g i"
+  shows "generate f n = generate g m"
+  using assms unfolding generate_def by simp
+
+lemma generate_snoc: "generate f (Suc n) = generate f n @ [f n]"
+  unfolding generate_def by auto
+
+lemma generate_of_snoc: "generate (\<lambda>i. f i ((xs @ [x]) ! i)) (length xs) = generate (\<lambda>i. f i (xs ! i)) (length xs)"
+  unfolding generate_def using nth_append_left by fastforce
+
+lemma generate_of_snoc':
+  assumes "n = length xs" shows "generate (\<lambda>i. f i ((xs @ [x]) ! i)) n = generate (\<lambda>i. f i (xs ! i)) n"
+  using assms generate_of_snoc[where f = f] by blast
+
 
 (* fresh *)
 
@@ -20,16 +40,16 @@ abbreviation "fresh' \<equiv> Fresh.fresh"
 
 (* TODO: this should go in Fresh (but then can't swap out fresh' anymore) *)
 definition "make_nth_fresh stale name = fresh' stale o ((@) name) o string_of_nat" 
-definition "make_n_fresh stale name n = map (make_nth_fresh stale name) [0..<n]"
+definition "make_n_fresh stale name = generate (make_nth_fresh stale name)"
 
 lemma inj_make_nth_fresh[simp]: "inj (make_nth_fresh stale name)"
   by (simp add: inj_append2 inj_compose inj_fresh inj_string_of_nat make_nth_fresh_def)
 
 lemma distinct_make_n_fresh[simp]: "distinct (make_n_fresh stale name n)"
-  unfolding make_n_fresh_def using distinct_map inj_make_nth_fresh distinct_upt inj_on_subset by blast
+  unfolding make_n_fresh_def generate_def using distinct_map inj_make_nth_fresh distinct_upt inj_on_subset by blast
 
 lemma make_n_fresh_not_in_stale: "set (make_n_fresh stale name n) \<inter> set stale = {}"
-  unfolding make_n_fresh_def make_nth_fresh_def using fresh_not_in_stale by auto
+  unfolding make_n_fresh_def make_nth_fresh_def generate_def using fresh_not_in_stale by auto
 
 value "make_n_fresh [''f.args.2.0'', ''f.args.2.1'', ''f.args.3.0''] ''f.args.'' 5"
 
@@ -125,6 +145,7 @@ lemma non_tails_tseqs[simp]:
   (* apply simp sledgehammer *)
    (* apply (induction xs) unfolding t_seqs_def foldr1_def apply simp_all *)
 
+(*
 abbreviation "mapi' n ys f xs \<equiv> snd (fold (\<lambda>x (i, ys). (i + 1, ys @ [f i x])) xs (n, ys))"
 abbreviation "mapi \<equiv> mapi' 0 []"
 
@@ -169,8 +190,24 @@ proof-
   then have "i1 \<in> set [0..<length xs]" and 3: "x1 \<in> set xs" using in_set_zipE by meson+
   then have 2: "i1 < length xs" by simp
   from 1 2 3 show thesis using that[where i = i1 and x = x1] by simp
-qed
+qed *)
 
+abbreviation "concat_map f xs \<equiv> concat (map f xs)"
+
+definition "call_registers crgt t =
+  concat_map (args_from_crgt crgt o fst) (calls t) @ map (ret_from_crgt crgt o fst) (calls t)"
+  (* concat_map ((\<lambda>gr. ret_from_crgt crgt gr # args_from_crgt crgt gr) o fst) (calls t)" *)
+
+lemma call_registers_set:
+    "set (call_registers crgt t) =
+     (\<Union>gr\<in>fst ` set (calls t). set (args_from_crgt crgt gr) \<union> {ret_from_crgt crgt gr})"
+  apply (induction t)
+  unfolding call_registers_def split_beta by auto
+
+definition "stale_registers f_args crgt bs keep t = f_args @ bs @ keep @ call_registers crgt t"
+
+lemma size_nth_lt[termination_simp]: assumes "i < length xs" shows "size (xs ! i) < size_list size xs"
+  using id_take_nth_drop[OF assms] size_list_append[of size "take i xs" "xs ! i # drop (Suc i) xs"] by simp
 
 fun to_imp_tc ::
     "vname list \<Rightarrow> com_registry
@@ -180,141 +217,57 @@ fun to_imp_tc ::
      crgt: see type def
      bs: names of bound variables
      r: return register name
-     stale: variable names that must not be written to *)
-  (* fresh variables: need two conditions:
-    - must not overwrite live variables
-    - must not be overwritten before any use *)
-  "to_imp_tc f_args crgt bs r stale (hIf t1 t2 t3) =
-    (let x_var = fresh' stale ''If.x'';
-         c1 = to_imp_tc f_args crgt bs x_var stale t1;
-         c2 = to_imp_tc f_args crgt bs r stale t2;
-         c3 = to_imp_tc f_args crgt bs r stale t3
+     keep: variable names that must not be written to (let-def, call/recurse argument temporaries) *)
+  "to_imp_tc f_args crgt bs r keep (hIf t1 t2 t3) =
+    (let x_var = fresh' (stale_registers f_args crgt bs keep (hIf t1 t2 t3)) ''If.x'';
+         c1 = to_imp_tc f_args crgt bs x_var keep t1;
+         c2 = to_imp_tc f_args crgt bs r keep t2;
+         c3 = to_imp_tc f_args crgt bs r keep t3
       in tSeq c1 (tIf x_var c2 c3))" |
-  "to_imp_tc f_args crgt bs r stale (hLet t1 t2) =
-    (let x_var = fresh' stale ''Let.x'';
-         c1 = to_imp_tc f_args crgt bs x_var stale t1;
-         c2 = to_imp_tc f_args crgt (x_var # bs) r (x_var # stale) t2
+  "to_imp_tc f_args crgt bs r keep (hLet t1 t2) =
+    (let x_var = fresh' (stale_registers f_args crgt bs keep (hLet t1 t2)) ''Let.x'';
+         c1 = to_imp_tc f_args crgt bs x_var keep t1;
+         c2 = to_imp_tc f_args crgt (x_var # bs) r (x_var # keep) t2
       in tSeq c1 c2)" |
-  "to_imp_tc f_args crgt bs r stale (hLetBound n) = tAssign r (A (V (bs ! n)))" |
-  "to_imp_tc f_args crgt bs r stale (hArg n) = tAssign r (A (V (f_args ! n)))" |
-  "to_imp_tc f_args crgt bs r stale (hNumber n) = tAssign r (A (N n))" |
-  (* TODO: call/TAIL cases could be written more nicely, but need termination proofs.
-      On the other hand, this more closely follows the written presentation. *)
-  (* could use nth consistently *)
-  "to_imp_tc f_args crgt bs r stale (hCall g ts) =
+  "to_imp_tc f_args crgt bs r keep (hLetBound n) = tAssign r (A (V (bs ! n)))" |
+  "to_imp_tc f_args crgt bs r keep (hArg n) = tAssign r (A (V (f_args ! n)))" |
+  "to_imp_tc f_args crgt bs r keep (hNumber n) = tAssign r (A (N n))" |
+  "to_imp_tc f_args crgt bs r keep (hCall g ts) =
     (let (g_args, c_g, g_ret) = crgt g;
-         xs = make_n_fresh stale ''Call.x.'' (length ts);
-         cs1 = mapi (\<lambda>i t. to_imp_tc f_args crgt bs (xs ! i) (xs @ stale) t) ts;
-         cs2 = map (\<lambda>i. tAssign (g_args ! i) (A (V (xs ! i)))) [0..<length ts]
-      in t_seqs (cs1 @ cs2) (tSeq (tCall c_g g_ret) (tAssign r (A (V g_ret)))))" |
-  "to_imp_tc f_args crgt bs r stale (hTAIL ts) =
-    (let xs = make_n_fresh stale ''TAIL.x.'' (length ts);
-         cs1 = mapi (\<lambda>i t. to_imp_tc f_args crgt bs (xs ! i) (xs @ stale) t) ts;
-         cs2 = map (\<lambda>i. tAssign (f_args ! i) (A (V (xs ! i)))) [0..<length ts]
-      in t_seqs (cs1 @ cs2) tTAIL)"
-(*
-  "to_imp_tc f_args crgt bs r stale (hCall g ts) =
-    (let (g_args, c_g, g_ret) = crgt g;
-         xs = make_n_fresh (length ts) stale ''Call.x.'';
-         cs1 = mapi (\<lambda>i t. to_imp_tc f_args crgt bs (xs ! i) (xs @ stale) t) ts;
-         cs2 = mapi (\<lambda>i t. tAssign (g_args ! i) (A (V (xs ! i)))) ts
-      in t_seqs (cs1 @ cs2) (tSeq (tCall c_g g_ret) (tAssign r (A (V g_ret)))))" |
-  "to_imp_tc f_args crgt bs r stale (hTAIL ts) =
-    (let xs = make_n_fresh (length ts) stale ''TAIL.x.'';
-         cs1 = mapi (\<lambda>i t. to_imp_tc f_args crgt bs (xs ! i) (xs @ stale) t) ts;
-         cs2 = mapi (\<lambda>i t. tAssign (f_args ! i) (A (V (xs ! i)))) ts
-      in t_seqs (cs1 @ cs2) tTAIL)" *)
-
-lemma to_imp_nontail: "\<not> HOL_TCN_Timing.tails t \<Longrightarrow> \<not> IMP_Tailcall.tails (to_imp_tc f_args crgt bs r stale t)"
-proof (induction t arbitrary: bs r stale)
-  case (hCall g ts)
-  let ?xs = "make_n_fresh stale ''Call.x.'' (length ts)"
-  let ?cs1 = "mapi (\<lambda>i t. to_imp_tc f_args crgt bs (?xs ! i) (?xs @ stale) t) ts"
-  let ?cs2 = "mapi (\<lambda>i t. tAssign (args_from_crgt crgt g ! i) (A (V (?xs ! i)))) ts"
-
-  have 1: "\<forall>s \<in> set ?cs1. \<not> IMP_Tailcall.tails s"
-  proof
-    fix s
-    assume 1: "s \<in> set ?cs1"
-    obtain i t where "s = to_imp_tc f_args crgt bs (?xs ! i) (?xs @ stale) t" "t \<in> set ts"
-      using mapi_obtain[OF 1] by blast
-    with hCall show "\<not> IMP_Tailcall.tails s" by simp
-  qed
-  have 2: "\<forall>s \<in> set ?cs2. \<not> IMP_Tailcall.tails s" apply (subst mapi_map2) apply simp apply (subst split_beta) by simp
-
-  show ?case
-    apply (simp only: to_imp_tc.simps Let_def split_beta)
-    apply (rule non_tails_tseqs) prefer 2 apply simp
-    thm ball_Un
-    apply (simp only: set_append ball_Un, standard)
-    using 1 apply simp using 2 apply simp
-    done
-qed (simp_all add: Let_def) (* why do all the other cases go through by simp ???? TODO: figure it out and clean up these proofs *)
-
-lemma to_imp_invar: "HOL_TCN_Timing.invar t \<Longrightarrow> IMP_Tailcall.invar (to_imp_tc f_args crgt bs r stale t)"
-proof (induction t arbitrary: bs r stale)
-  case (hCall g ts)
-  let ?xs = "make_n_fresh stale ''Call.x.'' (length ts)"
-  let ?cs1 = "mapi (\<lambda>i t. to_imp_tc f_args crgt bs (?xs ! i) (?xs @ stale) t) ts"
-  let ?cs2 = "mapi (\<lambda>i t. tAssign (fst (crgt g) ! i) (A (V (?xs ! i)))) ts"
-
-  have 1: "\<forall>s \<in> set ?cs1. \<not> IMP_Tailcall.tails s"
-  proof
-    fix s
-    assume 1: "s \<in> set ?cs1"
-    obtain i t where "s = to_imp_tc f_args crgt bs (?xs ! i) (?xs @ stale) t" "t \<in> set ts"
-      using mapi_obtain[OF 1] by blast
-    with hCall to_imp_nontail show "\<not> IMP_Tailcall.tails s" by simp
-  qed
-  have 2: "\<forall>s \<in> set ?cs2. \<not> IMP_Tailcall.tails s" apply (subst mapi_map2) apply simp apply (subst split_beta) by simp
-
-  show ?case
-    apply (simp only: to_imp_tc.simps Let_def split_beta)
-    apply (rule invar_tseqs) prefer 2 apply simp
-    apply (simp only: set_append ball_Un, standard)
-    using 1 apply simp using 2 apply simp
-    done
-next
-  case (hTAIL ts)
-  let ?xs = "make_n_fresh stale ''TAIL.x.'' (length ts)"
-  let ?cs1 = "mapi (\<lambda>i t. to_imp_tc f_args crgt bs (?xs ! i) (?xs @ stale) t) ts"
-  let ?cs2 = "mapi (\<lambda>i t. tAssign (f_args ! i) (A (V (?xs ! i)))) ts"
-
-  have 1: "\<forall>s \<in> set ?cs1. \<not> IMP_Tailcall.tails s"
-  proof
-    fix s
-    assume 1: "s \<in> set ?cs1"
-    obtain i t where "s = to_imp_tc f_args crgt bs (?xs ! i) (?xs @ stale) t" "t \<in> set ts"
-      using mapi_obtain[OF 1] by blast
-    with hTAIL to_imp_nontail show "\<not> IMP_Tailcall.tails s" by simp
-  qed
-  have 2: "\<forall>s \<in> set ?cs2. \<not> IMP_Tailcall.tails s" apply (subst mapi_map2) apply simp apply (subst split_beta) by simp
-
-  show ?case
-    apply (simp only: to_imp_tc.simps Let_def)
-    apply (rule invar_tseqs) prefer 2 apply simp
-    apply (simp only: set_append ball_Un, standard)
-    using 1 apply simp using 2 apply simp
-    done
-qed (simp_all add: Let_def to_imp_nontail)
+         xs = make_n_fresh (stale_registers f_args crgt bs keep (hCall g ts)) ''Call.x.'' (length ts);
+         cs1 = generate (\<lambda>i. to_imp_tc f_args crgt bs (xs ! i) (xs @ keep) (ts ! i)) (length ts);
+         cs2 = generate (\<lambda>i. (g_args ! i) ::= A (V (xs ! i))) (length ts)
+      in t_seqs' cs1;; t_seqs' cs2;; tCall c_g g_ret;; r ::= A (V g_ret))" |
+  "to_imp_tc f_args crgt bs r keep (hTAIL ts) =
+    (let xs = make_n_fresh (stale_registers f_args crgt bs keep (hTAIL ts)) ''TAIL.x.'' (length ts);
+         cs1 = generate (\<lambda>i. to_imp_tc f_args crgt bs (xs ! i) (xs @ keep) (ts ! i)) (length ts);
+         cs2 = generate (\<lambda>i. (f_args ! i) ::= A (V (xs ! i))) (length ts)
+      in t_seqs' cs1;; t_seqs' cs2;; tTAIL)"
 
 
+lemma to_imp_nontail: "\<not> HOL_TCN_Timing.tails t \<Longrightarrow> \<not> IMP_Tailcall.tails (to_imp_tc f_args crgt bs r keep t)"
+  by (induction t arbitrary: bs r keep) (simp_all add: Let_def split_beta generate_def)
+
+lemma to_imp_invar: "HOL_TCN_Timing.invar t \<Longrightarrow> IMP_Tailcall.invar (to_imp_tc f_args crgt bs r keep t)"
+  by (induction t arbitrary: bs r keep) (simp_all add: Let_def split_beta generate_def to_imp_nontail)
+
+(* 
 definition "reserved_regs f_args crgt bs t =
     (f_args @ bs @ concat (map (args_from_crgt crgt o fst) (calls t)) @ map (ret_from_crgt crgt o fst) (calls t))"
 
 (* mark argument/return registers of all called functions and of f itself as stale *)
 definition "to_imp_tc' f_args crgt bs r t =
   to_imp_tc f_args crgt bs r (reserved_regs f_args crgt bs t) t"
-(* TODO: right-assoc ? *)
+(* TODO: right-assoc ? *) *)
 
 definition "h_let_1 = hLet (hNumber 7) (hLetBound 0)"
-value "to_imp_tc' [] null [] ''r'' h_let_1"
+value "to_imp_tc [] null [] ''r'' [] h_let_1"
 
 definition "h_call_1 = hCall ''g'' [hNumber 7, hNumber 5]"
-value "to_imp_tc' [] (null(''g'' := ([''g.x1'', ''g.x2''], Assign ''g.r'' (A (V ''g.x1'')), ''g.r''))) [] ''r'' h_call_1"
+value "to_imp_tc [] (null(''g'' := ([''g.x1'', ''g.x2''], Assign ''g.r'' (A (V ''g.x1'')), ''g.r''))) [] ''r'' [] h_call_1"
 
 definition "com_plus = ([''plus.x'', ''plus.y''], Assign ''plus.ret'' (Plus (V ''plus.x'') (V ''plus.y'')), ''plus.ret'')"
 definition "h_sum3 = hLet (hCall ''plus'' [hArg 0, hArg 1]) (hCall ''plus'' [hLetBound 0, hArg 2])"
-value "to_imp_tc' [''x'', ''y'', ''z''] (null(''plus'' := com_plus)) [] ''r'' h_sum3"
+value "to_imp_tc [''x'', ''y'', ''z''] (null(''plus'' := com_plus)) [] ''r'' [] h_sum3"
 
 end
