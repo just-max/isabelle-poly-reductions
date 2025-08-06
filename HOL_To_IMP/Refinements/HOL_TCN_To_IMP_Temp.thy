@@ -5,31 +5,6 @@ begin
 
 method repeat methods m = (m; repeat \<open>m\<close>)?
 
-(*
-  (* assumes inf: "\<exists>zh v. (f,frgt) \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup>zh\<^esup> v" *)
-
-(* definition "interp_time1 frgt g vs_arg_g = T_f_from_reg frgt g vs_arg_g" *)
-(* definition "interp_time frgt = sum_map (\<lambda>(g, vs_arg_g). interp_time1 frgt g vs_arg_g)" *)
-  (* assumes "f_imp = to_imp_tc_1 f_args crgt r0 f" *)
-  (* assumes "set (special_regs f_args crgt r t) \<subseteq> set keep" *)
-
-abbreviation "lookups names (s :: state) \<equiv> map s names"
-
-definition "is_call_in t f = (f \<in> set (calls t))"
-
-lemma lookups_eq_on: assumes "s = t on set xs" shows "lookups xs s = lookups xs t"
-  using assms by (simp add: eq_on_def)
-
-abbreviation "lookup_args crgt g \<equiv> lookups (args_from_crgt crgt g)"
-
-definition "tinterp_time frgt crgt =
-  sum_map
-    (\<lambda>(g, vs_arg_g).
-      HOL_Nat_To_IMP.least_constant_IMP (com_from_crgt crgt g) (T_f_from_reg frgt g o lookup_args crgt g)
-      * interp_time1 frgt g vs_arg_g)"
-
-*)
-
 abbreviation "lookups names (s :: state) \<equiv> map s names"
 abbreviation "lookup_args crgt g \<equiv> lookups (args_from_crgt crgt g)"
 
@@ -101,60 +76,6 @@ lemma compiler_args_invar_subset:
   using disjoint_subset2[where B = "set (call_registers crgt t)" and B' = "set (call_registers crgt t')"]
   using assms call_registers_set unfolding compiler_args_invar_def split_beta by auto
 
-
-(* 
-  \<and> (\<forall>(g, _) \<in> set (calls t).
-      distinct (args_from_crgt crgt g)
-      \<and> set f_args \<inter> set (args_from_crgt crgt g) = {}
-      \<and> ret_from_crgt crgt g \<notin> set f_args
-      \<and> set bs \<inter> set (args_from_crgt crgt g) = {}
-      \<and> ret_from_crgt crgt g \<notin> set bs) *)
-
-(*
-lemma compiler_args_invar_hCall:
-  assumes "invar (hCall gr ts)"
-  assumes "compiler_args_invar crgt f_args (hCall gr ts)"
-  assumes "t \<in> set ts"
-  shows "compiler_args_invar crgt f_args t"
-  using assms unfolding compiler_args_invar_def by simp
-
-lemma compiler_args_invar_hTAIL:
-  assumes "invar (hTAIL ts)"
-  assumes "compiler_args_invar f_args crgt bs keep (hTAIL ts)"
-  assumes "t \<in> set ts"
-  shows "compiler_args_invar f_args crgt bs keep t"
-proof-
-  let ?t = "hTAIL ts"
-  have calls_subset: "set (calls t) \<subseteq> set (calls ?t)" using assms by auto
-  show "compiler_args_invar f_args crgt bs keep t"
-  unfolding compiler_args_invar_def proof (repeat \<open>rule conjI\<close>)
-    show "HOL_TCN_Timing.invar t" using no_tails_invar assms by simp
-  next
-    have "set (reserved_regs f_args crgt bs t) \<subseteq> set (reserved_regs f_args crgt bs ?t)"
-      unfolding reserved_regs_def using calls_subset assms by auto
-    then show "set (reserved_regs f_args crgt bs t) \<subseteq> set keep"
-      using assms unfolding compiler_args_invar_def by auto
-  next
-    show "distinct f_args" using assms unfolding compiler_args_invar_def by simp
-  next
-    show "\<forall>(g,_)\<in>set (calls t). distinct (args_from_crgt crgt g)"
-      using assms calls_subset unfolding compiler_args_invar_def split_beta by blast
-  next
-    show "\<forall>(g, ts)\<in>set (calls t). length ts = length (args_from_crgt crgt g)"
-      using assms calls_subset unfolding compiler_args_invar_def split_beta by blast
-  qed
-qed*)
-
-(*
-fun subterms1 where
-  "subterms1 (hLet t1 t2) = [t1, t2]" |
-  "subterms1 (hIf t1 t2 t3) = [t1, t2, t3]" |
-  "subterms1 (hCall _ ts) = ts" |
-  "subterms1 (hTAIL ts) = ts" |
-  "subterms1 _ = []"*)
-
-
-
 (* the "state" of the HOL-TCN execution (args, bounds) is related
    to the state of the IMP-TC execution *)
 definition "relate_exec_state f_args bs vs_arg vs_b s \<longleftrightarrow>
@@ -204,45 +125,93 @@ proof-
   then show "P xs ys zs" by simp
 qed
 
-  
-(* 
-lemma snoc_list_induct3 [case_names len1 len2 Nil snoc]:
-  assumes "length ys = length xs"
-  assumes "length zs = length xs"
-  assumes nil: "P [] [] []"
-  assumes cons: "\<And>xs x ys y zs z. length ys = length xs \<Longrightarrow> length zs = length xs \<Longrightarrow> P xs ys zs \<Longrightarrow> P (xs @ [x]) (ys @ [y]) (zs @ [z])"
-  shows "P xs ys zs"
-using assms(1,2) proof (induction "rev xs" arbitrary: xs ys zs)
-  case (Cons a as')
-  then have "xs \<noteq> []" "ys \<noteq> []" "zs \<noteq> []" by auto
-  then obtain x xs' y ys' z zs' where "xs = xs' @ [x]" "ys = ys' @ [y]" "zs = zs' @ [z]" using snoc_obtain by metis
-  then moreover have "length ys' = length xs'" "length zs' = length xs'" using Cons by simp_all
-  ultimately show ?case using Cons cons by simp
-qed (simp add: nil) *)
-
-(*
-lemma mapi_ix1:
-  assumes "length ys = length xs"
-  shows "map (\<lambda>i. f ((ys @ zs) ! i) i) [0..<length xs] = map (\<lambda>i. f (ys ! i) i) [0..<length xs]"
-  apply simp apply (subst nth_append) using assms apply simp done
-
-lemma mapi_ix2:
-  assumes "length ys = length xs"
-  assumes "zs \<noteq> []"
-  shows "(\<lambda>i. f ((ys @ zs) ! i) i) (length xs) = f (hd zs) (length xs)"
-  apply (subst nth_append) using assms hd_conv_nth by fastforce *)
-
-(* lemma nth_append1:
-  assumes "n < length xs"
-  shows "(xs @ ys) ! n = xs ! n"
-  using assms nth_append by metis *)
-
 lemma nth_append_length_eq:
   assumes "length xs = n"
   shows "(xs @ y # zs) ! n = y"
   apply (subst nth_append) using assms by simp
 
-lemma copy_list_sem:
+(* executing a list of terms (as in the call and tail-call cases) *)
+lemma compiled_list_bigstep:
+  assumes lengths: "length vs = length ts" "length xs = length ts"
+  assumes rel: "relate_exec_state f_args bs vs_arg vs_b s"
+  assumes dist: "distinct xs"
+  assumes keep_xs: "set xs \<subseteq> set keep"
+  assumes disj: "set f_args \<inter>\<^sub>\<emptyset> set xs" "set bs \<inter>\<^sub>\<emptyset> set xs"
+  assumes sem: "\<And>i s.
+    \<lbrakk> i < length ts; relate_exec_state f_args bs vs_arg vs_b s \<rbrakk> \<Longrightarrow>
+    \<exists>z s'. f \<turnstile> (to_imp_tc f_args crgt bs (xs ! i) keep (ts ! i), s) \<Rightarrow>\<^bsup>z\<^esup> s' \<and>
+             s' (xs ! i) = (vs ! i) \<and> s' = s on set f_args \<union> set bs \<union> set keep - {xs ! i}"
+  shows "\<exists>z s'. f \<turnstile> (t_seqs' (generate (\<lambda>i. to_imp_tc f_args crgt bs (xs ! i) keep (ts ! i)) (length ts)), s) \<Rightarrow>\<^bsup>z\<^esup> s' \<and>
+                lookups xs s' = vs \<and> s' = s on set f_args \<union> set bs \<union> set keep - set xs"
+using dist keep_xs disj sem proof (induction ts xs vs rule: snoc_list_induct3)
+  case Nil
+  then show ?case unfolding generate_def by auto
+next
+  case (snoc ts t xs x vs v)
+
+  (* obtain the IH *)
+
+  from snoc have *: "distinct xs" "set xs \<subseteq> set keep" "set f_args \<inter>\<^sub>\<emptyset> set xs" "set bs \<inter>\<^sub>\<emptyset> set xs" by simp_all
+
+  have "i < length (ts @ [t])" if "i < length ts" for i using that by simp
+  with snoc.prems(5) have **: "\<exists>z s'.
+      f \<turnstile> (to_imp_tc f_args crgt bs (xs ! i) keep (ts ! i), s) \<Rightarrow>\<^bsup>z\<^esup>  s' \<and>
+      s' (xs ! i) = vs ! i \<and> s' = s on set f_args \<union> set bs \<union> set keep - {xs ! i}"
+    if "i < length ts" "relate_exec_state f_args bs vs_arg vs_b s" for i s
+    using that nth_append_left snoc.hyps by metis
+
+  with snoc.IH[OF * **] obtain z1 s2 where exec1:
+    "f \<turnstile> (t_seqs' (generate (\<lambda>i. to_imp_tc f_args crgt bs (xs ! i) keep (ts ! i)) (length ts)), s) \<Rightarrow>\<^bsup>z1\<^esup> s2"
+    "lookups xs s2 = vs" "s2 = s on set f_args \<union> set bs \<union> set keep - set xs"
+    by blast
+
+  (* obtain the step *)
+
+  have *: "length ts < length (ts @ [t])" by simp
+
+  from rel exec1(3) snoc.prems(3,4) have **: "relate_exec_state f_args bs vs_arg vs_b s2"
+    unfolding relate_exec_state_def by fastforce
+
+  from snoc.prems(5)[OF * **]
+  obtain z2 s3 where exec2:
+      "f \<turnstile> (to_imp_tc f_args crgt bs ((xs @ [x]) ! length ts) keep ((ts @ [t]) ! length ts), s2) \<Rightarrow>\<^bsup>z2\<^esup> s3"
+      "s3 ((xs @ [x]) ! length ts) = (vs @ [v]) ! length ts"
+      "s3 = s2 on set f_args \<union> set bs \<union> set keep - {(xs @ [x]) ! length ts}"
+    by blast
+
+  (* put it together *)
+
+  have "(xs @ [x]) ! i = xs ! i" "(ts @ [t]) ! i = ts ! i" if "i < length ts" for i
+    using nth_append_left snoc.hyps that by metis+
+  then have "generate (\<lambda>i. to_imp_tc f_args crgt bs (xs ! i) keep (ts ! i)) (length ts) =
+      generate (\<lambda>i. to_imp_tc f_args crgt bs ((xs @ [x]) ! i) keep ((ts @ [t]) ! i)) (length ts)"
+    unfolding generate_def by simp
+  then have append_cs: "generate (\<lambda>i. to_imp_tc f_args crgt bs ((xs @ [x]) ! i) keep ((ts @ [t]) ! i)) (length (ts @ [t])) =
+    generate (\<lambda>i. to_imp_tc f_args crgt bs (xs ! i) keep (ts ! i)) (length ts) @
+    [to_imp_tc f_args crgt bs ((xs @ [x]) ! length ts) keep ((ts @ [t]) ! length ts)]"
+    by (simp add: generate_snoc)
+
+  have "f \<turnstile> (t_seqs' (generate (\<lambda>i. to_imp_tc f_args crgt bs (xs ! i) keep (ts ! i)) (length ts));;
+              to_imp_tc f_args crgt bs ((xs @ [x]) ! length ts) keep ((ts @ [t]) ! length ts), s) \<Rightarrow>\<^bsup>z1 + z2\<^esup> s3"
+    using exec1 exec2 by blast
+  then have *: "f \<turnstile> (t_seqs' (generate (\<lambda>i. to_imp_tc f_args crgt bs ((xs @ [x]) ! i) keep ((ts @ [t]) ! i)) (length (ts @ [t]))), s) \<Rightarrow>\<^bsup>z1 + z2\<^esup> s3"
+    using append_cs t_seqs'_t_seqs by fastforce
+
+  have nth: "(xs @ [x]) ! length ts = x" "(vs @ [v]) ! length ts = v"
+    using nth_append_length_eq snoc.hyps by metis+
+
+  from exec2(2) have "s3 x = v" using snoc.hyps nth_append_length by metis
+  moreover from exec2(3) nth(1) snoc.prems(1,2) have "s3 = s2 on set xs" by auto
+  ultimately have **: "lookups (xs @ [x]) s3 = vs @ [v]" using exec1(2) by auto
+
+  have ***: "s3 = s on set f_args \<union> set bs \<union> set keep - set (xs @ [x])"
+    using DiffE DiffI UnCI empty_set eq_on_def exec1(3) exec2(3) nth(1) by auto
+
+  from * ** *** show ?case by blast
+qed (simp_all add: lengths)
+
+(* copying a list of registers *)
+lemma copy_list_bigstep:
   assumes "length xs = length ys"
   assumes "distinct ys"
   assumes "set xs \<inter> set ys = {}"
@@ -289,7 +258,22 @@ next
   from 1 2 3 snoc show ?case by blast
 qed (simp add: assms)
 
-lemma copy_list_sem':
+lemma compiled_list_bigstep':
+  assumes "length vs = length ts" "length xs = length ts"
+  assumes "relate_exec_state f_args bs vs_arg vs_b s"
+  assumes "distinct xs"
+  assumes "set xs \<subseteq> set keep"
+  assumes "set f_args \<inter>\<^sub>\<emptyset> set xs" "set bs \<inter>\<^sub>\<emptyset> set xs"
+  assumes "\<And>i s.
+    \<lbrakk> i < length ts; relate_exec_state f_args bs vs_arg vs_b s \<rbrakk> \<Longrightarrow>
+    \<exists>z s'. f \<turnstile> (to_imp_tc f_args crgt bs (xs ! i) keep (ts ! i), s) \<Rightarrow>\<^bsup>z\<^esup> s' \<and>
+             s' (xs ! i) = (vs ! i) \<and> s' = s on set f_args \<union> set bs \<union> set keep - {xs ! i}"
+  obtains z s' where
+    "f \<turnstile> (t_seqs' (generate (\<lambda>i. to_imp_tc f_args crgt bs (xs ! i) keep (ts ! i)) (length ts)), s) \<Rightarrow>\<^bsup>z\<^esup> s'"
+    "lookups xs s' = vs" "s' = s on set f_args \<union> set bs \<union> set keep - set xs"
+  using compiled_list_bigstep[OF assms] by blast
+
+lemma copy_list_bigstep':
   assumes "length xs = n"
   assumes "length ys = n"
   assumes "distinct ys"
@@ -297,19 +281,15 @@ lemma copy_list_sem':
   obtains s' where
     "f \<turnstile> (t_seqs' (generate (\<lambda>i. (ys ! i) ::= A (V (xs ! i))) n),s) \<Rightarrow>\<^bsup>Suc (2 * n)\<^esup> s'"
     "lookups ys s' = lookups xs s" "s' = s on (- set ys)"
-  using copy_list_sem[where xs = xs and ys = ys] assms by auto
+  using copy_list_bigstep[where xs = xs and ys = ys] assms by auto
 
-(*
-lemma cc_call_helper:
-  "f \<turnstile> (t_seqs' cs1;; t_seqs' cs2;; c, s) \<Rightarrow>\<^bsup>Suc (Suc z)\<^esup> t \<longleftrightarrow> f \<turnstile> (t_seqs (cs1 @ cs2) c, s) \<Rightarrow>\<^bsup>z\<^esup> t"
-  using tbig_step_t_t_seqs_rewrite by simp *)
 
 abbreviation "calls_r t \<equiv> set (map fst (calls t))"
 
 lemma Un_Diff_cancel1: "A \<union> B - A = B - A" for A B :: "'a set"
   by blast
 
-lemma compiler_correct_nt:
+theorem compiler_correct_nt:
   assumes "\<not> tails t"
   assumes "(f,frgt) \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup>z\<^esup> v"
   assumes "compiler_args_invar crgt f_args bs keep t"
@@ -493,9 +473,45 @@ next
   let ?xs = "make_n_fresh (stale_registers f_args crgt bs keep (hCall gr ts)) ''Call.x.'' (length ts)"
   let ?c1 = "t_seqs' (generate (\<lambda>i. to_imp_tc f_args crgt bs (?xs ! i) (?xs @ keep) (ts ! i)) (length ts))"
 
-  obtain z1 s2 where exec_c1: "f_c \<turnstile> (?c1, s)\<Rightarrow>\<^bsup>z1\<^esup> s2" "lookups ?xs s2 = vs"
-      "s2 r = v" "s2 = s on set f_args \<union> set bs \<union> set (?xs @ keep) - set ?xs"
-    sorry (* TODO ! *)
+
+  have 1: "length vs = length ts" "length ?xs = length ts"
+    using lengths unfolding make_n_fresh_def generate_def by simp_all
+  moreover have 2: "relate_exec_state f_args bs vs_arg vs_b s" using hCall by blast
+  moreover have 3: "distinct ?xs" using distinct_make_n_fresh by blast
+  moreover have 4: "set ?xs \<subseteq> set (?xs @ keep)" by simp
+  moreover have 5: "set f_args \<inter>\<^sub>\<emptyset> set ?xs" "set bs \<inter>\<^sub>\<emptyset> set ?xs"
+    unfolding stale_registers_def using make_n_fresh_not_in_stale by fastforce+
+  moreover have 6: "\<exists>z_c s'. f_c \<turnstile> (to_imp_tc f_args crgt bs (?xs ! i) (?xs @ keep) (ts ! i), s) \<Rightarrow>\<^bsup>z_c\<^esup>  s' \<and>
+       s' (?xs ! i) = (vs ! i) \<and> s' = s on set f_args \<union> set bs \<union> set (?xs @ keep) - {?xs ! i}"
+    if "i < length ts" "relate_exec_state f_args bs vs_arg vs_b s" for i s
+  proof (rule hCall.IH)
+    from that show "ts ! i \<in> set ts" by simp
+  next
+    from that hCall.prems(1) show "\<not> HOL_TCN_Timing.tails (ts ! i)" by simp
+  next
+    from that args_bigstep show "(f, frgt) \<turnstile> (ts ! i, vs_b, vs_arg) \<Rightarrow>\<^bsup>zs ! i\<^esup>  vs ! i" by simp
+  next
+    have "set (call_registers crgt (ts ! i)) \<subseteq> set (call_registers crgt (hCall gr ts))"
+      using call_registers_set that by fastforce
+    then have "set ?xs \<inter>\<^sub>\<emptyset> set (call_registers crgt (ts ! i))"
+      unfolding stale_registers_def using 1 make_n_fresh_not_in_stale by fastforce
+    moreover have "set ?xs \<inter>\<^sub>\<emptyset> set f_args"
+      unfolding stale_registers_def using make_n_fresh_not_in_stale by fastforce
+    moreover from that have "compiler_args_invar crgt f_args bs keep (ts ! i)"
+      using hCall.prems(1,3) compiler_args_invar_subset[where t = "ts ! i" and t' = "hCall gr ts"] by fastforce
+    ultimately show "compiler_args_invar crgt f_args bs (?xs @ keep) (ts ! i)"
+      unfolding compiler_args_invar_def by auto
+  next
+    from that show "relate_rgt_correctness frgt crgt (calls_r (ts ! i))"
+      using hCall.prems(4) unfolding relate_rgt_correctness_def by fastforce
+  next
+    from that show "relate_exec_state f_args bs vs_arg vs_b s" by blast
+  qed
+  thm compiled_list_bigstep
+
+  ultimately obtain z1 s2 where exec_c1: "f_c \<turnstile> (?c1, s) \<Rightarrow>\<^bsup>z1\<^esup>  s2"
+      "lookups ?xs s2 = vs" "s2 = s on set f_args \<union> set bs \<union> set (?xs @ keep) - set ?xs"
+    using compiled_list_bigstep' by blast
 
 
   (* part 2: copying from temporaries to argument registers *)
@@ -516,8 +532,8 @@ next
 
   ultimately obtain s3 where exec_c2: "f_c \<turnstile> (?c2, s2) \<Rightarrow>\<^bsup>?z2\<^esup> s3"
        "lookup_args crgt gr s3 = lookups ?xs s2" "s3 = s2 on - set (args_from_crgt crgt gr)"
-    using copy_list_sem' by blast
-
+    using copy_list_bigstep' by blast
+                       
 
   (* part 3: calling g *)
   
@@ -571,281 +587,20 @@ next
       using * ** *** by fastforce
   qed
 
-
-
-
-  have "s2 = s on set keep" using s2 .
-  have "set keep \<subseteq> - set (args_from_crgt crgt gr)"
-    using hCall.prems unfolding compiler_args_invar_def reserved_regs_def 
-(* not equal on all of keep! have to fix lemma *) sorry
-  have "s3 = s2 on set keep" using s3 using hCall.prems unfolding compiler_args_invar_def reserved_regs_def 
-  have "s = ?s5 on set keep - {r}" using s2 s3 s4 s5 apply simp
-  
-
-  thm hCall_case[OF hCall.prems(2)]
-  have ?case
-  apply (simp only: to_imp_tc.simps Let_def split_beta mapi_map cc_call_helper[symmetric])
-  proof (repeat \<open>rule exI\<close>; repeat \<open>rule conjI\<close>)
-    apply (subst sym[OF cc_call_helper]) sorry
-
-
-
-(* end *)
-
-
-
-  let ?c1_gen = "\<lambda>crgt st. t_seqs' (map (\<lambda>i. to_imp_tc f_args crgt bs (?xs ! i) st (ts ! i)) [0..<length ts])"
-  let ?crgt_gen = "crgt(gr := (take (length ts) (args_from_crgt crgt gr), com_from_crgt crgt gr, ret_from_crgt crgt gr))"
-  let ?c1 = "?c1_gen crgt (?xs @ keep)"
-  let ?c2 = "t_seqs' (map (\<lambda>i. (args_from_crgt crgt gr ! i) ::= A (V (?xs ! i))) [0..<length ts])"
-
-  (* let ?compiler_args_invar_weak = "\<lambda>f_args crgt bs keep t. *)
-        (* HOL_TCN_Timing.invar t *)
-        (* \<and> set (reserved_regs f_args crgt bs t) \<subseteq> set keep *)
-        (* \<and> distinct f_args *)
-        (* \<and> (\<forall>(g,_) \<in> set (calls t). distinct (args_from_crgt crgt g))" *)
-  (* from hCall(4) *)
-  (* have args_invar': "?compiler_args_invar_weak f_args crgt bs keep (hCall gr ts)" *)
-    (* unfolding compiler_args_invar_def by simp *)
-  have "\<exists>z1 s2. f_c \<turnstile> (?c1_gen crgt st,s) \<Rightarrow>\<^bsup>z1\<^esup> s2 \<and> lookups ?xs s2 = vs \<and> s = s2 on set keep"
-    if "set (?xs @ keep) \<subseteq> set st" "length ts = length (args_from_crgt crgt gr)" for st
-  using hCall(1,2,4,5,6) that args_bigstep proof (induction ts zs vs arbitrary: z v st crgt gr rule: snoc_list_induct3)
-    case Nil then show ?case unfolding make_n_fresh_def by auto
-  next
-    case (snoc ts_arg t_arg zs0 z0 vs0 v0)
-
-    let ?xs = "make_n_fresh keep ''Call.x.'' (length ts_arg)"
-    let ?xs' = "make_n_fresh keep ''Call.x.'' (length (ts_arg @ [t_arg]))"
-    let ?x = "make_nth_fresh keep ''Call.x.'' (length ts_arg)"
-    have xs': "?xs' = ?xs @ [?x]" unfolding make_n_fresh_def using nth_map_upt by simp
-    have x: "?xs' ! length ts_arg = ?x" unfolding xs' unfolding make_n_fresh_def by (subst nth_append) simp
-
-    let ?gr' = "fresh' (map fst (calls (hCall gr ts_arg))) ''g''"
-    (* let ?crgt = "crgt(?gr' := (take (length ts_arg) (args_from_crgt crgt gr), com_from_crgt crgt gr, ret_from_crgt crgt gr))" *)
-    let ?c1 = "t_seqs' (map (\<lambda>i. to_imp_tc f_args crgt bs (?xs ! i) st (ts_arg ! i)) [0..<length ts_arg])"
-    let ?c2 = "to_imp_tc f_args crgt bs ?x st t_arg"
-    term ?c1
-    (* have "set (calls (hCall gr ts_arg)) \<subseteq> set (calls (hCall gr (ts_arg @ [t_arg])))" *)
-      (* apply (induction ts_arg) apply auto *)
-    thm snoc
-    thm snoc.IH
-    have "\<exists>z1 s2. f_c \<turnstile> (?c1, s) \<Rightarrow>\<^bsup>z1\<^esup>  s2 \<and> lookups ?xs s2 = vs0 \<and> s = s2 on set keep"
-      apply (rule snoc.IH[where gr = gr]) (* ?gr' *)
-      subgoal using snoc.prems(1) by simp
-      subgoal using snoc.prems(2) by simp
-      subgoal
-        unfolding compiler_args_invar_def apply (repeat \<open>rule conjI\<close>)
-        subgoal using snoc.prems(3) unfolding compiler_args_invar_def by simp
-        subgoal using snoc.prems(3) unfolding compiler_args_invar_def reserved_regs_def thm set_take_subset apply simp done
-        subgoal using snoc.prems(3) unfolding compiler_args_invar_def by simp
-        subgoal using snoc.prems(3) unfolding compiler_args_invar_def by fastforce
-        subgoal using snoc.prems(3,7) unfolding compiler_args_invar_def apply (simp add: split_beta) sorry
-        done
-(* set (calls (hCall gr ts_arg) *)
-      subgoal using snoc.prems(4) unfolding relate_rgt_correctness_def by auto
-      subgoal using snoc.prems(5) by blast
-      subgoal using snoc.prems(6) unfolding make_n_fresh_def by fastforce
-      subgoal using snoc.prems(7) (* by (metis le_eq_less_or_eq le_imp_less_Suc length_append_singleton nth_append_left snoc.hyps(1,2)) *)
-        sorry
-      subgoal sorry
-      done
-    then obtain z1 s2 where ih1: "f_c \<turnstile> (?c1, s) \<Rightarrow>\<^bsup>z1\<^esup> s2" "lookups ?xs s2 = vs0" "s = s2 on set keep"
-      by blast
-
-
-    have t_arg_in_args: "t_arg \<in> set (ts_arg @ [t_arg])" by simp
-
-    have no_tails: "\<not> HOL_TCN_Timing.tails t_arg"
-      using that snoc.prems by auto
-
-    have calls_subset: "set (calls t_arg) \<subseteq> set (calls (hCall gr (ts_arg @ [t_arg])))"
-      using snoc.prems by auto
-
-    have args_invar: "compiler_args_invar f_args crgt bs st t_arg"
-    unfolding compiler_args_invar_def proof (repeat \<open>rule conjI\<close>)
-      show "HOL_TCN_Timing.invar t_arg" using no_tails_invar no_tails that by blast
-    next
-      have "set (reserved_regs f_args crgt bs t_arg) \<subseteq> set (reserved_regs f_args crgt bs (hCall gr (ts_arg @ [t_arg])))"
-        unfolding reserved_regs_def using calls_subset that by fastforce
-      then show "set (reserved_regs f_args crgt bs t_arg) \<subseteq> set st"
-        using snoc.prems unfolding compiler_args_invar_def by auto
-    next
-      show "distinct f_args" using hCall compiler_args_invar_def by simp
-    next
-      show "\<forall>(g,_)\<in>set (calls t_arg). distinct (args_from_crgt crgt g)"
-        using snoc.prems calls_subset that unfolding compiler_args_invar_def split_beta by blast
-    next
-      show "\<forall>(g, ts)\<in>set (calls t_arg). length ts = length (args_from_crgt crgt g)"
-        using snoc.prems calls_subset that unfolding compiler_args_invar_def split_beta by blast
-    qed
-
-    have rel_rgt: "relate_rgt_correctness frgt crgt (calls_r t_arg)"
-      using snoc.prems unfolding relate_rgt_correctness_def by auto
-
-    have exec_t_arg: "(f, frgt) \<turnstile> (t_arg, vs_b, vs_arg) \<Rightarrow>\<^bsup>z0\<^esup> v0" using snoc.prems
-      by (metis length_append_singleton lessI nth_append_length snoc.hyps(1,2))
-
-    have "set f_args \<subseteq> set keep" "set bs \<subseteq> set keep"
-      using snoc.prems unfolding compiler_args_invar_def reserved_regs_def by simp_all
-    then have rel_state: "relate_exec_state f_args bs vs_arg vs_b s2" using snoc.prems(5) ih1
-      unfolding relate_exec_state_def using eq_on_subset by fastforce
-
-    obtain z2 s3 where texec_t_arg:
-        "f_c \<turnstile> (to_imp_tc f_args crgt bs ?x st t_arg, s2) \<Rightarrow>\<^bsup>z2\<^esup>  s3"
-        "s3 ?x = v0"
-        "s2 = s3 on set st - {?x}"
-      using snoc.prems t_arg_in_args no_tails exec_t_arg args_invar rel_rgt rel_state by metis
-    
-    show ?case proof (repeat \<open>rule exI\<close>; repeat \<open>rule conjI\<close>)
-      have "?x \<notin> set ?xs"
-        apply (subst sym[OF none_equal_not_in])
-        using make_n_fresh_def inj_on_contraD[OF inj_make_nth_fresh] by simp (* this should not be so hard... *)
-      then have "set ?xs \<subseteq> set (?xs' @ keep) - {?x}" using xs' fresh_not_in_keep unfolding make_nth_fresh_def by simp
-      also have "... \<subseteq> set st - {?x}" using snoc.prems by blast
-      finally show "lookups ?xs' s3 = vs0 @ [v0]"
-        using xs' ih1 texec_t_arg by fastforce
-    next
-      show "s = s3 on set keep"
-        using ih1 texec_t_arg fresh_not_in_keep make_nth_fresh_def snoc.prems(6) by fastforce
-    next
-      have 1: "map (\<lambda>i. to_imp_tc f_args crgt bs (?xs' ! i) st ((ts_arg @ [t_arg]) ! i)) [0..<length (ts_arg @ [t_arg])]
-        = map (\<lambda>i. to_imp_tc f_args crgt bs (?xs ! i) st (ts_arg ! i)) [0..<length ts_arg] @ [?c2]"
-        using xs' x unfolding make_n_fresh_def apply simp apply (subst nth_append)+ by simp
-
-      thm t_seqs'_append
-      have "f_c \<turnstile> (?c1;; ?c2,s) \<Rightarrow>\<^bsup>z1 + z2\<^esup> s3" using ih1 texec_t_arg tbig_step_t.tSeq by blast
-      then have "f_c \<turnstile> (t_seqs' (map (\<lambda>i. to_imp_tc f_args crgt bs (?xs ! i) st (ts_arg ! i)) [0..<length ts_arg] @ [?c2]),s) \<Rightarrow>\<^bsup>z1 + z2\<^esup>  s3"
-        apply (subst t_seqs'_append[symmetric]) apply (subst (2) t_seqs_def) apply simp apply (subst tbig_step_t_tSeq_assoc) using tbig_step_t.tSeq by fastforce
-      with 1 show "f_c \<turnstile> (t_seqs' (map (\<lambda>i. to_imp_tc f_args crgt bs (?xs' ! i) st ((ts_arg @ [t_arg]) ! i)) [0..<length (ts_arg @ [t_arg])]),s) \<Rightarrow>\<^bsup>z1 + z2\<^esup>  s3"
-        by metis
-    qed
-  qed (simp_all add: lengths)
-
-  moreover have lll: "length ts = length (args_from_crgt crgt gr)"
-    using hCall.prems unfolding compiler_args_invar_def by simp
-  ultimately obtain z1 s2 where exec_c1: "f_c \<turnstile> (?c1,s) \<Rightarrow>\<^bsup>z1\<^esup> s2" and "lookups ?xs s2 = vs" and s2: "s = s2 on set keep"
-    using hCall.prems unfolding compiler_args_invar_def by blast
-
-
-  (* part 2: copying from temporaries to argument registers *)
-
-  have lll2: "length ?xs = length (args_from_crgt crgt gr)"
-    using lll unfolding make_n_fresh_def by simp
-
-  have "set (args_from_crgt crgt gr) \<subseteq> set keep"
-    using hCall.prems unfolding compiler_args_invar_def reserved_regs_def by simp
-  then have ddd: "distinct (?xs @ args_from_crgt crgt gr)"
-    apply simp using hCall.prems make_n_fresh_not_in_keep unfolding compiler_args_invar_def apply simp
-    apply (rule Int_emptyI) by blast
-
-  thm copy_list_sem
-  thm copy_list_sem[where s = s2 and f = f_c and xs = ?xs and ys = "args_from_crgt crgt gr", OF lll2 ddd]
-
-  obtain s3 where "f_c \<turnstile> (t_seqs'
-               (map (\<lambda>i. (args_from_crgt crgt gr ! i) ::= A (V (make_n_fresh keep ''Call.x.'' (length ts) ! i)))
-                 [0..<length (make_n_fresh keep ''Call.x.'' (length ts))]),
-              s2) \<Rightarrow>\<^bsup>Suc (2 * length (make_n_fresh keep ''Call.x.'' (length ts)))\<^esup>  s3"
-      "lookups ?xs s2 = lookup_args crgt gr s3 " and s3: "s2 = s3 on - set (args_from_crgt crgt gr)"
-    using copy_list_sem[OF lll2 ddd] by blast
-  then obtain z2 where exec_c2: "f_c \<turnstile> (?c2, s2) \<Rightarrow>\<^bsup>z2\<^esup> s3"
-    unfolding make_n_fresh_def by simp
-
-
-  (* part 3: calling g *)
-
-  let ?gcom = "com_from_crgt crgt gr" and ?gret = "ret_from_crgt crgt gr" and ?gv = "f_from_frgt frgt gr (lookup_args crgt gr s3)"
-  have "terminates_with_res_IMP ?gcom s3 ?gret ?gv" using hCall.prems unfolding relate_rgt_correctness_def by simp
-  then obtain z3 s4c where "(?gcom, s3) \<Rightarrow>\<^bsup>z3\<^esup> s4c" "s4c ?gret = ?gv"
-    unfolding terminates_with_res_IMP_def terminates_with_res_pred_time_IMP_def terminates_with_pred_time_IMP_def by blast
-  then obtain s4 where exec_c3: "f_c \<turnstile> (?c3, s3) \<Rightarrow>\<^bsup>z3\<^esup> s4" and s4: "s4 = s3(?gret := ?gv)" using tbig_step_t.tCall by fastforce
-
-  have vfrom: "v = f_from_frgt frgt gr (lookup_args crgt gr s3)"
-    by (metis \<open>(g, T_g) = frgt gr\<close> \<open>g vs = v\<close> \<open>lookups ?xs s2 = lookup_args crgt gr s3\<close>
-        \<open>lookups ?xs s2 = vs\<close> fst_conv) (* TODO clean *)
-
-
-  (* part 4: copying to r *)
-
-  term ?c4
-  let ?s5 = "s4(r := aval (A (V ?gret)) s4)"
-  obtain z4 where exec_c4: "f_c \<turnstile> (?c4, s4) \<Rightarrow>\<^bsup>z4\<^esup> ?s5" by blast
-  then have s5: "?s5 = s4(r := v)" using vfrom s4 by simp
-
-
-  (* putting it together *)
-
-  have "f_c \<turnstile> (?c1;; ?c2;; ?c3;; ?c4, s) \<Rightarrow>\<^bsup>z1 + z2 + z3 + z4\<^esup> ?s5"
-    using exec_c1 exec_c2 exec_c3 exec_c4 by blast
-
-  have "?s5 r = v" using s5 by simp
-
-  have "s = s2 on set keep" using s2 .
-  have "set keep \<subseteq> - set (args_from_crgt crgt gr)"
-    using hCall.prems unfolding compiler_args_invar_def reserved_regs_def 
-(* not equal on all of keep! have to fix lemma *) sorry
-  have "s2 = s3 on set keep" using s3 using hCall.prems unfolding compiler_args_invar_def reserved_regs_def 
-  have "s = ?s5 on set keep - {r}" using s2 s3 s4 s5 apply simp
-  
-
-  thm hCall_case[OF hCall.prems(2)]
-  have ?case
-  apply (simp only: to_imp_tc.simps Let_def split_beta mapi_map cc_call_helper[symmetric])
-  proof (repeat \<open>rule exI\<close>; repeat \<open>rule conjI\<close>)
-    apply (subst sym[OF cc_call_helper]) sorry
-
-
-
-  have tsi_in_ts: "ts ! i \<in> set ts" if "i < length ts" for i using that by simp
-  (* have 8: "P (ts ! i)" if "i < length ts" "\<forall>t\<in>set ts. P t" for P i using that by auto *)
-
-  have no_tails: "\<not> HOL_TCN_Timing.tails (ts ! i)" if "i < length ts" for i using hCall that by auto
-
-  have calls_subset: "set (calls (ts ! i)) \<subseteq> set (calls (hCall gr ts))" if "i < length ts" for i using hCall tsi_in_ts that by fastforce
-
-  have args_invar: "compiler_args_invar f_args crgt bs keep (ts ! i)" if "i < length ts" for i
-  unfolding compiler_args_invar_def proof (repeat \<open>rule conjI\<close>)
-    show "HOL_TCN_Timing.invar (ts ! i)" using no_tails_invar no_tails that by blast
-  next
-    have "set (reserved_regs f_args crgt bs (ts ! i)) \<subseteq> set (reserved_regs f_args crgt bs (hCall gr ts))"
-      unfolding reserved_regs_def using calls_subset that by fastforce
-    then show "set (reserved_regs f_args crgt bs (ts ! i)) \<subseteq> set keep"
-      using hCall unfolding compiler_args_invar_def by auto
-  next
-    show "distinct f_args" using hCall compiler_args_invar_def by simp
-  next
-    show "\<forall>g\<in>set (calls (ts ! i)). distinct (args_from_crgt crgt g)"
-      using hCall calls_subset that unfolding compiler_args_invar_def by blast
-  qed
-
-  
-(* 
-  have no_tails: "\<not> HOL_TCN_Timing.tails (ts ! i)"
-    and args_invar: "compiler_args_invar f_args crgt bs keep (ts ! i)"
-    (* and "set (calls (ts ! i)) \<subseteq> set (calls (hCall gr ts))" *)
-    if "i < length ts" for i
-    (* using hCall tsi_in_ts that by auto *)
-  proof (goal_cases)
-    case 1 then show ?case using hCall tsi_in_ts that by auto
-  next
-    case 2
-    then show ?case sorry
-  qed
-    show "\<not> HOL_TCN_Timing.tails (ts ! i)"
-    (* have tsi_in_ts: "ts ! i \<in> set ts" using that by simp *)
-    
-
-  have "set (calls (ts ! i)) \<subseteq> set (calls (hCall gr ts))" if "i < length ts" for i using hCall tsi_in_ts that by fastforce
-  then have args_invar: "compiler_args_invar f_args crgt bs keep (ts ! i)" if "i < length ts" for i
-    using hCall tsi_in_ts that unfolding compiler_args_invar_def reserved_regs_def apply simp
-
-  show ?case
-    apply (simp add: Let_def split_beta mapi_map del: One_nat_def) *)
-    
-    sorry (* TODO :< *)
 next
   case (hTAIL x)
   then show ?case by simp
 qed
+
+
+
+
+
+
+
+
+
+
 
 
 (*
@@ -1029,7 +784,6 @@ qed
 *)
 
 lemma
-  assumes compiler_correct_nt_: True
   assumes "t_imp = to_imp_tc f_args crgt bs r keep t"
   assumes "well_formed_comp f_args crgt bs keep t"
   assumes "well_encoded_comp f_args bs vs_arg vs_b s"
