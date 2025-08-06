@@ -5,7 +5,8 @@ begin
 unbundle tcom_syntax
 unbundle no com'_syntax
 
-type_synonym trace = "nat \<times> (com \<times> state) list"
+type_synonym call_trace = "(com \<times> state) list"
+type_synonym trace = "nat \<times> call_trace"
 
 (* interp_trace k T z \<longrightarrow> z is the running time of the trace T, plus k *)
 definition "interp_trace k T z \<equiv>
@@ -31,14 +32,31 @@ tSeq:
    \<Longrightarrow> (tSeq c1 c2,s1) \<Rightarrow>\<^bsup>(k, T)\<^esup> (s3, l)" |
 tIfTrue:
   "\<lbrakk>s b \<noteq> 0; (c1,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l); k' = k + 1\<rbrakk>
-   \<Longrightarrow> (IF b\<noteq>0 THEN c1 ELSE c2,s1) \<Rightarrow>\<^bsup>(k', T)\<^esup> (t, l)" |
+   \<Longrightarrow> (IF b\<noteq>0 THEN c1 ELSE c2,s) \<Rightarrow>\<^bsup>(k', T)\<^esup> (t, l)" |
 tIfFalse:
   "\<lbrakk>s b = 0; (c2,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l); k' = k + 1\<rbrakk>
-   \<Longrightarrow> (IF b\<noteq>0 THEN c1 ELSE c2,s1) \<Rightarrow>\<^bsup>(k', T)\<^esup> (t, l)" |
+   \<Longrightarrow> (IF b\<noteq>0 THEN c1 ELSE c2,s) \<Rightarrow>\<^bsup>(k', T)\<^esup> (t, l)" |
 tCall: "\<lbrakk>(C,s) \<Rightarrow>\<^bsup>z \<^esup> t\<rbrakk> \<Longrightarrow> (tCall C r,s) \<Rightarrow>\<^bsup>(0, [(C,s)])\<^esup> (s(r := t r), False)" |
 tTail: "(tTAIL,s) \<Rightarrow>\<^bsup>(5, [])\<^esup> (s, True)"
 
 lemmas ttrace_to_leaf_induct = ttrace_to_leaf.induct[split_format(complete)]
+
+lemma trace_nontail_has_bigstep:
+  assumes "(c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l)" "\<not> l"
+  shows "\<exists>z. f \<turnstile> (c,s) \<Rightarrow>\<^bsup> z \<^esup> t"
+  using assms by (induction rule: ttrace_to_leaf_induct) auto
+
+lemma bigstep_has_trace_nontail:
+  assumes "\<not> tails c"
+  assumes "f \<turnstile> (c,s) \<Rightarrow>\<^bsup> z \<^esup> t"
+  assumes "\<not> l"
+  shows "\<exists>k T. (c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l)" 
+  using assms(2,1,3) apply (induction rule: tbig_step_t_induct)
+  using ttrace_to_leaf.intros apply auto oops
+  
+
+
+
 
 lemma trace_nontail_to_semantics0:
   assumes "(c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l)" "\<not> l"

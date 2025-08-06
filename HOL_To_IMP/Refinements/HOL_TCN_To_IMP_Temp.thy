@@ -289,7 +289,7 @@ abbreviation "calls_r t \<equiv> set (map fst (calls t))"
 lemma Un_Diff_cancel1: "A \<union> B - A = B - A" for A B :: "'a set"
   by blast
 
-theorem compiler_correct_nt:
+theorem compiler_correct_no_tails:
   assumes "\<not> tails t"
   assumes "(f,frgt) \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup>z\<^esup> v"
   assumes "compiler_args_invar crgt f_args bs keep t"
@@ -306,6 +306,8 @@ using assms proof (induction t arbitrary: vs_b z v bs keep s r crgt)
   let ?t1_c = "to_imp_tc f_args crgt bs ?r1 keep t1"
   let ?t2_c = "to_imp_tc f_args crgt (?r1 # bs) r (?r1 # keep) t2"
 
+  (* solve assumptions and obtain IH for t1 (and solve some assumptions for t2 at the same time, where convenient) *)
+
   have no_tails: "\<not> HOL_TCN_Timing.tails t1" "\<not> HOL_TCN_Timing.tails t2" using hLet by simp_all
 
   obtain z1 v1 z2 where
@@ -314,6 +316,17 @@ using assms proof (induction t arbitrary: vs_b z v bs keep s r crgt)
 
   have args_invar1: "compiler_args_invar crgt f_args bs keep t1"
     using hLet.prems compiler_args_invar_subset[where t' = "LET t1 IN t2"] by simp
+
+  have rel_rgt: "relate_rgt_correctness frgt crgt (calls_r t1)" "relate_rgt_correctness frgt crgt (calls_r t2)"
+    using hLet unfolding relate_rgt_correctness_def by simp_all
+
+  have rel_state1: "relate_exec_state f_args bs vs_arg vs_b s" using hLet by blast
+
+  obtain z1_c s2 where ih1:
+      "f_c \<turnstile> (?t1_c, s) \<Rightarrow>\<^bsup>z1_c\<^esup> s2" "s2 ?r1 = v1" "s2 = s on set f_args \<union> set bs \<union> set keep - {?r1}"
+    using hLet.IH(1) no_tails(1) inv(1) args_invar1 rel_rgt(1) rel_state1 by blast
+
+  (* solve assumptions and obtain IH for t2 *)
 
   have "?r1 \<notin> set f_args"
     apply (rule contra_subsetD[OF _ fresh_not_in_stale])
@@ -326,15 +339,6 @@ using assms proof (induction t arbitrary: vs_b z v bs keep s r crgt)
   ultimately have args_invar2: "compiler_args_invar crgt f_args (?r1 # bs) (?r1 # keep) t2"
     using hLet.prems(3) unfolding compiler_args_invar_def by auto
 
-  have rel_rgt: "relate_rgt_correctness frgt crgt (calls_r t1)" "relate_rgt_correctness frgt crgt (calls_r t2)"
-    using hLet unfolding relate_rgt_correctness_def by simp_all
-
-  have rel_state1: "relate_exec_state f_args bs vs_arg vs_b s" using hLet by blast
-
-  obtain z1_c s2 where ih1:
-      "f_c \<turnstile> (?t1_c, s) \<Rightarrow>\<^bsup>z1_c\<^esup> s2" "s2 ?r1 = v1" "s2 = s on set f_args \<union> set bs \<union> set keep - {?r1}"
-    using hLet.IH(1) no_tails(1) inv(1) args_invar1 rel_rgt(1) rel_state1 by blast
-
   have s_like_s2: "s2 = s on set f_args \<union> set bs \<union> set keep" (* TODO *)
     by (smt (verit) DiffI Un_iff eq_on_def fresh_not_in_stale ih1(3) set_append singletonD stale_registers_def)
   then have rel_state2: "relate_exec_state f_args (?r1 # bs) vs_arg (v1 # vs_b) s2"
@@ -344,6 +348,8 @@ using assms proof (induction t arbitrary: vs_b z v bs keep s r crgt)
       "f_c \<turnstile> (?t2_c, s2) \<Rightarrow>\<^bsup>z2_c\<^esup>  s3" "s3 r = v"
       "s3 = s2 on set f_args \<union> set (?r1 # bs) \<union> set (?r1 # keep) - {r}"
     using hLet.IH(2) no_tails(2) inv(2) args_invar2 rel_rgt(2) rel_state2 by blast
+
+  (* put it together *)
 
   have s2_like_s3: "s3 = s2 on set f_args \<union> set bs \<union> set keep - {r}"
     using Un_Diff ih2(3) by auto
@@ -474,14 +480,14 @@ next
   let ?c1 = "t_seqs' (generate (\<lambda>i. to_imp_tc f_args crgt bs (?xs ! i) (?xs @ keep) (ts ! i)) (length ts))"
 
 
-  have 1: "length vs = length ts" "length ?xs = length ts"
+  have "length vs = length ts" "length ?xs = length ts"
     using lengths unfolding make_n_fresh_def generate_def by simp_all
-  moreover have 2: "relate_exec_state f_args bs vs_arg vs_b s" using hCall by blast
-  moreover have 3: "distinct ?xs" using distinct_make_n_fresh by blast
-  moreover have 4: "set ?xs \<subseteq> set (?xs @ keep)" by simp
-  moreover have 5: "set f_args \<inter>\<^sub>\<emptyset> set ?xs" "set bs \<inter>\<^sub>\<emptyset> set ?xs"
+  moreover have "relate_exec_state f_args bs vs_arg vs_b s" using hCall by blast
+  moreover have "distinct ?xs" using distinct_make_n_fresh by blast
+  moreover have "set ?xs \<subseteq> set (?xs @ keep)" by simp
+  moreover have "set f_args \<inter>\<^sub>\<emptyset> set ?xs" "set bs \<inter>\<^sub>\<emptyset> set ?xs"
     unfolding stale_registers_def using make_n_fresh_not_in_stale by fastforce+
-  moreover have 6: "\<exists>z_c s'. f_c \<turnstile> (to_imp_tc f_args crgt bs (?xs ! i) (?xs @ keep) (ts ! i), s) \<Rightarrow>\<^bsup>z_c\<^esup>  s' \<and>
+  moreover have "\<exists>z_c s'. f_c \<turnstile> (to_imp_tc f_args crgt bs (?xs ! i) (?xs @ keep) (ts ! i), s) \<Rightarrow>\<^bsup>z_c\<^esup>  s' \<and>
        s' (?xs ! i) = (vs ! i) \<and> s' = s on set f_args \<union> set bs \<union> set (?xs @ keep) - {?xs ! i}"
     if "i < length ts" "relate_exec_state f_args bs vs_arg vs_b s" for i s
   proof (rule hCall.IH)
@@ -494,7 +500,7 @@ next
     have "set (call_registers crgt (ts ! i)) \<subseteq> set (call_registers crgt (hCall gr ts))"
       using call_registers_set that by fastforce
     then have "set ?xs \<inter>\<^sub>\<emptyset> set (call_registers crgt (ts ! i))"
-      unfolding stale_registers_def using 1 make_n_fresh_not_in_stale by fastforce
+      unfolding stale_registers_def using lengths make_n_fresh_not_in_stale by fastforce
     moreover have "set ?xs \<inter>\<^sub>\<emptyset> set f_args"
       unfolding stale_registers_def using make_n_fresh_not_in_stale by fastforce
     moreover from that have "compiler_args_invar crgt f_args bs keep (ts ! i)"
@@ -507,7 +513,6 @@ next
   next
     from that show "relate_exec_state f_args bs vs_arg vs_b s" by blast
   qed
-  thm compiled_list_bigstep
 
   ultimately obtain z1 s2 where exec_c1: "f_c \<turnstile> (?c1, s) \<Rightarrow>\<^bsup>z1\<^esup>  s2"
       "lookups ?xs s2 = vs" "s2 = s on set f_args \<union> set bs \<union> set (?xs @ keep) - set ?xs"
@@ -594,312 +599,174 @@ qed
 
 
 
+definition rel_trace_call :: "com_registry \<Rightarrow> fun_ref \<Rightarrow> nat list \<Rightarrow> com \<Rightarrow> state \<Rightarrow> bool" where
+  "rel_trace_call crgt gr gargs gcom gs \<longleftrightarrow> com_from_crgt crgt gr = gcom \<and> lookup_args crgt gr gs = gargs"
+definition rel_trace_calls :: "com_registry \<Rightarrow> HOL_TCN_Timing.trace \<Rightarrow> IMP_Tailcall_Traces.call_trace \<Rightarrow> bool" where
+  "rel_trace_calls crgt hT cT \<longleftrightarrow>
+    length hT = length cT \<and>
+    list_all (\<lambda>((gr,gargs),(gcom,gs)). rel_trace_call crgt gr gargs gcom gs) (zip hT cT)"
+(* "rel_trace_calls crgt hT cT \<longleftrightarrow>
+    length hT = length cT \<and>
+    (\<forall>i < length hT. let (gr, gargs) = hT ! i; (gcom, gs) = cT ! i in
+                     rel_trace_call crgt gr gargs gcom gs)" *)
+fun rel_leaf_state :: "com_registry \<Rightarrow> vname list \<Rightarrow> vname \<Rightarrow> leaf_state \<Rightarrow> state \<Rightarrow> bool \<Rightarrow> bool" where
+  "rel_leaf_state crgt _      r (Value v) s l \<longleftrightarrow> \<not> l \<and> s       r        = v " |
+  "rel_leaf_state crgt f_args _ (Tail vs) s l \<longleftrightarrow>   l \<and> lookups f_args s = vs"
+
+definition rel_trace_to_leaf ::
+    "com_registry \<Rightarrow> vname list \<Rightarrow> vname \<Rightarrow>
+      HOL_TCN_Timing.trace \<Rightarrow> leaf_state \<Rightarrow>
+        IMP_Tailcall_Traces.call_trace \<Rightarrow> state \<Rightarrow> bool \<Rightarrow> bool" where
+  "rel_trace_to_leaf crgt f_args r hT hl cT s cl \<longleftrightarrow>
+    rel_trace_calls crgt hT cT \<and> rel_leaf_state crgt f_args r hl s cl"
+
+(* lemma
+  assumes "length xs = length ys"
+  shows "(\<forall>i<length xs. P (xs ! i) (ys ! i)) = list_all (\<lambda>(x, y). P x y) (zip xs ys)"
+   apply (induction rule: snoc_list_induct2[OF assms])  *)
+
+lemma rel_trace_append:
+  assumes "rel_trace_calls crgt hT1 cT1"
+  assumes "rel_trace_to_leaf crgt f_args r hT2 hl cT2 s cl"
+  shows "rel_trace_to_leaf crgt f_args r (hT1 @ hT2) hl (cT1 @ cT2) s cl"
+  using assms unfolding rel_trace_to_leaf_def rel_trace_calls_def by auto
 
 
+term "undefined :: HOL_TCN_Timing.trace"
+term "undefined :: IMP_Tailcall_Traces.trace"
+term htrace_to_leaf
+term ttrace_to_leaf
 
 
+thm compiler_correct_no_tails
+thm trace_val_to_semantics
 
+theorem compiler_rel_trace:
+  fixes hT :: HOL_TCN_Timing.trace
+  assumes "invar t"
+  assumes "frgt \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup>hT \<^esup> hl"
+  assumes "compiler_args_invar crgt f_args bs keep t"
+  assumes "relate_rgt_correctness frgt crgt (calls_r t)"
+  assumes "relate_exec_state f_args bs vs_arg vs_b s"
+  shows "\<exists>k cT cl s'.
+    (to_imp_tc f_args crgt bs r keep t,s)\<Rightarrow>\<^bsup>(k, cT)\<^esup> (s',cl)
+    \<and> rel_trace_to_leaf crgt f_args r hT hl cT s' cl"
+using assms(2) assms(1,3-) proof (induction arbitrary: bs keep s r crgt rule: htrace_to_leaf_induct)
+  case (hLet frgt t1 vs_b vs_arg T1 v1 t2 T2 l2 T)
 
+  let ?r1 = "fresh' (stale_registers f_args crgt bs keep LET t1 IN t2) ''Let.x''"
+  let ?c1 = "to_imp_tc f_args crgt bs ?r1 keep t1"
+  let ?c2 = "to_imp_tc f_args crgt (?r1 # bs) r (?r1 # keep) t2"
 
+  (* assumptions and IH for t1 (and some stuff for t2) *)
 
+  have no_tails1: "\<not> HOL_TCN_Timing.tails t1" using hLet by simp
+  have invar: "HOL_TCN_Timing.invar t1" "HOL_TCN_Timing.invar t2" using hLet by simp_all
 
-(*
+  have args_invar1: "compiler_args_invar crgt f_args bs keep t1"
+    using hLet.prems compiler_args_invar_subset[where t' = "LET t1 IN t2"] by simp
 
-(* TODO: this should (just?) use the small step semantics instead !!!! *)
-(* state, term, constants, calls, new state, tail call *)
-inductive tto_end :: "state \<Rightarrow> tcom \<Rightarrow> nat \<Rightarrow> (com \<times> state) list \<Rightarrow> state \<Rightarrow> bool \<Rightarrow> bool" where
-  "tto_end s tSKIP (Suc 0) [] s False" |
-  "tto_end s (tAssign x a) (Suc (Suc 0)) [] (s(x := aval a s)) False" |
-  "\<lbrakk>tto_end s1 c1 k1 gs1 s2 False; tto_end s2 c2 k2 gs2 s3 l2; k = k1 + k2; gs = gs1 @ gs2\<rbrakk>
-    \<Longrightarrow> tto_end s1 (tSeq c1 c2) k gs s3 l2" | (* l1 = False ? *)
-  "\<lbrakk>s b \<noteq> 0; tto_end s c1 x gs t l; y = x + 1\<rbrakk> \<Longrightarrow> tto_end s (tIf b c1 c2) y gs t l" |
-  "\<lbrakk>s b = 0; tto_end s c2 x gs t l; y = x + 1\<rbrakk> \<Longrightarrow> tto_end s (tIf b c1 c2) y gs t l" |
-  "\<lbrakk>(C,s) \<Rightarrow>\<^bsup>z \<^esup> t\<rbrakk> \<Longrightarrow> tto_end s (tCall C r) 0 [(C,s)] (s(r := t r)) False" |
-  "tto_end s tTAIL 5 [] s True"
+  have rel_rgt: "relate_rgt_correctness frgt crgt (calls_r t1)" "relate_rgt_correctness frgt crgt (calls_r t2)"
+    using hLet unfolding relate_rgt_correctness_def by simp_all
 
-*)
+  have rel_state1: "relate_exec_state f_args bs vs_arg vs_b s" using hLet by blast
 
+  from hLet.hyps obtain f z1 where "(f,frgt) \<turnstile> (t1,vs_b,vs_arg) \<Rightarrow>\<^bsup>z1\<^esup> v1"
+    using trace_val_to_semantics by blast
+  then obtain f_c z1_c s2 where corr1:
+      "f_c \<turnstile> (?c1,s) \<Rightarrow>\<^bsup>z1_c\<^esup> s2" "s2 ?r1 = v1"
+      "s2 = s on set f_args \<union> set bs \<union> set keep - {?r1}"
+    using compiler_correct_no_tails[where t = t1] no_tails1 args_invar1 rel_rgt(1) rel_state1 by blast
 
-(*
-lemma tto_end_tseqs:
-  assumes "\<forall>i \<le> length cs. tto_end s (cs ! i) (ks ! i) (gss ! i)"
-  shows True *)
+  obtain k1 cT1 s2' cl1 where ih1:
+      "(?c1,s)\<Rightarrow>\<^bsup>(k1,cT1)\<^esup> (s2',cl1)" "rel_trace_to_leaf crgt f_args ?r1 T1 (Value v1) cT1 s2' cl1"
+    using hLet.IH(1) invar(1) args_invar1 rel_rgt(1) rel_state1 by blast
+  then have [simp]: "\<not> cl1" unfolding rel_trace_to_leaf_def by simp
 
-fun tcalls where
-  "tcalls (tSeq c1 c2) = tcalls c1 @ tcalls c2" |
-  "tcalls (tIf x c1 c2) = tcalls c1 @ tcalls c2" |
-  "tcalls (tCall C r) = [C]" |
-  "tcalls _ = []"
+  have [simp]: "s2' = s2"
+    using corr1(1) trace_nontail_has_bigstep[OF ih1(1) \<open>\<not> cl1\<close>] determ(2) by blast
 
-(*
-definition "truntime_reg gs T_g = (\<forall>C \<in> gs. \<forall>s. \<exists>t. (C,s) \<Rightarrow>\<^bsup> T_g C s \<^esup> t)"
-definition "tinterp_time2 T_g k gs = k + sum_map (\<lambda>(C,s). T_g C s) gs"
+  (* assumptions and IH for t2 *)
 
-lemma tinterp_time2_nil: "tinterp_time2 T_g k [] = k" unfolding tinterp_time2_def by simp
+  have "?r1 \<notin> set f_args"
+    apply (rule contra_subsetD[OF _ fresh_not_in_stale])
+    unfolding stale_registers_def by simp
+  moreover have "?r1 \<notin> set (call_registers crgt t2)"
+    apply (rule contra_subsetD[OF _ fresh_not_in_stale])
+    using call_registers_set unfolding stale_registers_def by auto
+  moreover have "compiler_args_invar crgt f_args bs keep t2"
+    using hLet.prems compiler_args_invar_subset[where t' = "LET t1 IN t2"] by simp
+  ultimately have args_invar2: "compiler_args_invar crgt f_args (?r1 # bs) (?r1 # keep) t2"
+    using hLet.prems(3) unfolding compiler_args_invar_def by auto
 
-theorem tto_end_non_tail:
-  fixes p :: tcom
-  assumes "truntime_reg (set (tcalls p)) T_g"
-  assumes "tto_end s p k gs t l"
-  assumes "l = False"
-  shows "tp \<turnstile> (p,s) \<Rightarrow>\<^bsup>tinterp_time2 T_g k gs\<^esup> t"
-using assms(2,1,3) proof (induction rule: tto_end.induct)
-  case (1 s)
-  then show ?case using tinterp_time2_nil tSkip by metis
+  have s_like_s2: "s2 = s on set f_args \<union> set bs \<union> set keep" (* TODO *)
+    by (smt (verit) DiffI Un_iff eq_on_def fresh_not_in_stale corr1(3) set_append singletonD stale_registers_def)
+  then have rel_state2: "relate_exec_state f_args (?r1 # bs) vs_arg (v1 # vs_b) s2"
+    using hLet.prems(4) unfolding relate_exec_state_def using corr1 by fastforce
+
+  obtain k2 cT2 s3' cl2 where ih2:
+      "(?c2,s2)\<Rightarrow>\<^bsup>(k2,cT2)\<^esup> (s3',cl2)" "rel_trace_to_leaf crgt f_args r T2 l2 cT2 s3' cl2"
+    using hLet.IH(2) invar(2) args_invar2 rel_rgt(2) rel_state2 by blast
+
+  (* putting it together *)
+
+  show ?case unfolding to_imp_tc.simps Let_def
+  proof (repeat \<open>rule exI\<close>; repeat \<open>rule conjI\<close>)
+    show "(?c1;; ?c2,s) \<Rightarrow>\<^bsup>(k1 + k2, cT1 @ cT2)\<^esup> (s3', cl2)"
+      using ttrace_to_leaf.tSeq ih1(1)[simplified \<open>\<not> cl1\<close> \<open>s2' = s2\<close>] ih2(1) by blast
+  next
+    show "rel_trace_to_leaf crgt f_args r T l2 (cT1 @ cT2) s3' cl2"
+      using hLet.hyps(3) rel_trace_append ih1(2) ih2(2)
+      unfolding rel_trace_to_leaf_def by blast
+  qed
 next
-  case (2 s x a) show ?case using tinterp_time2_nil tAssign by metis
-next
-  case (3 s1 c1 k1 gs1 s2 c2 k2 gs2 s3 l2 k gs)
-
-  have *: "tinterp_time2 T_g k gs = tinterp_time2 T_g k1 gs1 + tinterp_time2 T_g k2 gs2"
-    unfolding tinterp_time2_def using \<open>k = k1 + k2\<close> \<open>gs = gs1 @ gs2\<close> by simp
-
-  have **: "truntime_reg (set (tcalls c1)) T_g" "truntime_reg (set (tcalls c2)) T_g"
-    using "3.prems" unfolding truntime_reg_def by auto
-  
-  from 3 * ** show ?case by blast
-next
-  case (4 s b c1 x gs t l y c2)
-  then have "truntime_reg (set (tcalls c1)) T_g" unfolding truntime_reg_def by auto
-  with 4 show ?case unfolding tinterp_time2_def by auto
-next
-  case (5 s b c2 x gs t l y c1)
-  then have "truntime_reg (set (tcalls c2)) T_g" unfolding truntime_reg_def by auto
-  with 5 show ?case unfolding tinterp_time2_def by auto
-next
-  case (6 C s z t r)
+  case (hLetBound n vs_b _ _)
   show ?case
-    apply (rule tCall) unfolding tinterp_time2_def apply simp
-    using 6 unfolding truntime_reg_def using bigstep_det by force (* TODO: cleanup *)
+  proof (repeat \<open>rule exI\<close>; repeat \<open>rule conjI\<close>)
+    have "aval (A (V (bs ! n))) s = vs_b ! n" using hLetBound unfolding relate_exec_state_def by auto
+    then show "(to_imp_tc f_args crgt bs r keep (hLetBound n), s) \<Rightarrow>\<^bsup>(Suc (Suc 0), [])\<^esup> (s(r := vs_b ! n), False)"
+      unfolding to_imp_tc.simps using ttrace_to_leaf.tAssign by metis
+  next
+    show "rel_trace_to_leaf crgt f_args r [] (Value (vs_b ! n)) [] (s(r := vs_b ! n)) False"
+      unfolding rel_trace_to_leaf_def rel_trace_calls_def rel_trace_call_def by simp
+  qed
 next
-  case (7 s)
-  then show ?case by blast
-qed
-
-theorem tto_end_tail:
-  fixes p1 p2 :: tcom
-  assumes "truntime_reg (set (tcalls p1)) T_g"
-  assumes "p2 \<turnstile> (p1,s1) \<Rightarrow>\<^bsup>z\<^esup> t"
-  assumes "tto_end s1 p1 k gs s2 l"
-  assumes "l = True"
-  shows "\<exists>z2. z = tinterp_time2 T_g k gs + z2 \<and> p2 \<turnstile> (p2,s2) \<Rightarrow>\<^bsup>z2\<^esup> t"
-using assms(3,1,2,4) proof (induction arbitrary: z rule: tto_end.induct)
-  case (1 s) then show ?case by blast
+  case (hArg n vs_arg _ _)
+  show ?case
+  proof (repeat \<open>rule exI\<close>; repeat \<open>rule conjI\<close>)
+    have "aval (A (V (f_args ! n))) s = vs_arg ! n" using hArg unfolding relate_exec_state_def by auto
+    then show "(to_imp_tc f_args crgt bs r keep (hArg n), s) \<Rightarrow>\<^bsup>(Suc (Suc 0), [])\<^esup> (s(r := vs_arg ! n), False)"
+      unfolding to_imp_tc.simps using ttrace_to_leaf.tAssign by metis
+  next
+    show "rel_trace_to_leaf crgt f_args r [] (Value (vs_arg ! n)) [] (s(r := vs_arg ! n)) False"
+      unfolding rel_trace_to_leaf_def rel_trace_calls_def rel_trace_call_def by simp
+  qed
 next
-  case (2 s x a) then show ?case by blast
+  case (hNumber frgt n _ _)
+  show ?case
+  proof (repeat \<open>rule exI\<close>; repeat \<open>rule conjI\<close>)
+    have "aval (A (N n)) s = n" by auto
+    then show "(to_imp_tc f_args crgt bs r keep (hNumber n), s) \<Rightarrow>\<^bsup>(Suc (Suc 0), [])\<^esup> (s(r := n), False)"
+      unfolding to_imp_tc.simps using ttrace_to_leaf.tAssign by metis
+  next
+    show "rel_trace_to_leaf crgt f_args r [] (Value n) [] (s(r := n)) False"
+      unfolding rel_trace_to_leaf_def rel_trace_calls_def rel_trace_call_def by simp
+  qed
 next
-  case (3 s1 c1 k1 gs1 s2 c2 k2 gs2 s3 l2 k gs)
-
-  have *: "tinterp_time2 T_g k gs = tinterp_time2 T_g k1 gs1 + tinterp_time2 T_g k2 gs2"
-    unfolding tinterp_time2_def using \<open>k = k1 + k2\<close> \<open>gs = gs1 @ gs2\<close> by simp
-  have **: "truntime_reg (set (tcalls c1)) T_g" "truntime_reg (set (tcalls c2)) T_g"
-    using "3.prems" unfolding truntime_reg_def by auto
-
-  have "p2 \<turnstile> (c1,s1) \<Rightarrow>\<^bsup>tinterp_time2 T_g k1 gs1\<^esup>  s2" using tto_end_non_tail ** 3 by blast
-  then obtain y where tSeq_inv:
-    "z = tinterp_time2 T_g k1 gs1 + y"
-    "p2 \<turnstile> (c1, s1) \<Rightarrow>\<^bsup>tinterp_time2 T_g k1 gs1\<^esup> s2"
-    "p2 \<turnstile> (c2, s2) \<Rightarrow>\<^bsup>y\<^esup> t"
-    using tSeq_tE "3.prems" tdeterm by metis
-  then obtain z2 where "y = tinterp_time2 T_g k2 gs2 + z2" "p2 \<turnstile> (p2, s3) \<Rightarrow>\<^bsup>z2\<^esup> t"
-    using "3.IH" \<open>l2 = True\<close> ** by blast
-  then show ?case using tSeq_inv * by simp
-next
-  case (4 s b c1 x gs t l y c2)
-  then have "truntime_reg (set (tcalls c1)) T_g" unfolding truntime_reg_def apply simp by blast
-  with 4 show ?case unfolding tinterp_time2_def by auto
-next
-  case (5 s b c2 x gs t l y c1)
-  then have "truntime_reg (set (tcalls c2)) T_g" unfolding truntime_reg_def apply simp by blast
-  with 5 show ?case unfolding tinterp_time2_def by auto
-next
-  case (6 C s z t r)
-  then show ?case by blast
-next
-  case (7 s)
-  then show ?case using tinterp_time2_nil by force
-qed
-
-lemma tto_end_struct_k:
-  assumes "tto_end s c k gs t l"
-  shows "k \<le> tstruct_k c"
-  using assms by (induction rule: tto_end.induct) simp_all
-
-thm tto_end_non_tail tto_end_tail *)
-
-find_theorems "map fst"
-lemma
-  assumes compiler_correct_nt_: True
-  fixes t_imp f_args crgt frgt bs r keep t vs_b vs_arg
-  defines "t_imp \<equiv> to_imp_tc f_args crgt bs r keep t"
-  assumes "t_time \<equiv> time_to_tail frgt vs_b vs_arg t"
-  assumes "well_formed_comp f_args crgt bs keep t"
-  assumes "well_encoded_comp f_args bs vs_arg vs_b s"
-  (* assumes "called_correctness crgt frgt t" *)
-  shows "\<exists>k Cs.
-    (\<exists>t l. tto_end s t_imp k Cs t l)
-    \<and> length Cs = length t_time
-    \<and> (\<forall>((C,s), (g,vs_arg_g)) \<in> set (zip Cs t_time).
-          C = com_from_crgt crgt g \<and> vs_arg_g = lookup_args crgt g s)"
-using assms(2-4) proof (induction t arbitrary: t_imp t_time bs r keep vs_b s)
-  case (hLet t1 t2)
+  case (hIfTrue frgt t1 bs xs T1 v1 t2 T2 l2 T t3)
   then show ?case sorry
 next
-  case (hLetBound x)
+  case (hIfFalse frgt t1 bs xs T1 v1 t3 T3 l3 T t2)
   then show ?case sorry
 next
-  case (hArg x)
+  case (hCall g T_g frgt gr vs ts Ts bs xs T v)
   then show ?case sorry
 next
-  case (hNumber x)
-  then show ?case sorry
-next
-  case (hIf t1 t2 t3)
-  then show ?case sorry
-next
-  case (hCall g ts)
-  let ?xs = "make_n_fresh (length ts) keep ''Call.x.''"
-  let ?cs1 = "mapi (\<lambda>i t. to_imp_tc f_args crgt bs (?xs ! i) (?xs @ keep) t) ts"
-  let ?cs2 = "mapi (\<lambda>i t. tAssign (args_from_crgt crgt g ! i) (A (V (?xs ! i)))) ts"
-  let ?call = "tSeq (tCall (com_from_crgt crgt g) (ret_from_crgt crgt g)) (tAssign r (A (V (ret_from_crgt crgt g))))"
-
-  have "t_imp = t_seqs (?cs1 @ ?cs2) ?call" using hCall by (simp add: Let_def split_beta)
-
-  let ?x = "\<lambda>s. f_from_reg frgt g (lookup_args crgt g s)"
-  have "tto_end s ?call 2 [(com_from_crgt crgt g,s)] (s(ret_from_crgt crgt g := ?x s, r := ?x s)) False" for s
-    sorry
-
-  then show ?case sorry
-next
-  case (hTAIL x)
+  case (hTail vs ts Ts frgt bs xs T)
   then show ?case sorry
 qed
 
-
-
-
-    (* \<and> (\<forall>((C,s), (g,vs_arg_g)) \<in> set (zip gs (time_to_tail frgt vs_b vs_arg t)). *)
-          (* C = com_from_crgt crgt g \<and> vs_arg_g = lookup_args crgt g s)" *)
-
-*)
-
-lemma
-  assumes "t_imp = to_imp_tc f_args crgt bs r keep t"
-  assumes "well_formed_comp f_args crgt bs keep t"
-  assumes "well_encoded_comp f_args bs vs_arg vs_b s"
-  assumes "called_correctness crgt frgt t"
-  shows "\<exists>k z.
-    ttime_to_tail s t_imp (k + z)
-    \<and> k \<le> tstruct_k t_imp
-    \<and> z \<le> tinterp_time frgt crgt (time_to_tail frgt vs_b vs_arg t)"
-using assms(2-5) proof (induction t arbitrary: t_imp bs r keep vs_b s)
-  case (hLet t1 t2)
-  thm hLet.prems(1)[simplified]
-  thm hLet.IH(1) hLet.IH(2)
-
-  thm hLet.prems
-
-  let ?x_var = "fresh' keep ''Let.x''"
-  let ?t_imp1 = "to_imp_tc f_args crgt bs ?x_var keep t1"
-
-  have wf1: "well_formed_comp f_args crgt bs keep t1" using hLet.prems(2)
-    unfolding well_formed_comp_def using non_tail_tailrec apply auto apply (simp only: reserved_regs_def h_calls.simps map_append)
-    by auto
-  then obtain k1 z1 where k1z1:
-      "ttime_to_tail s ?t_imp1 (k1 + z1)"
-      "k1 \<le> tstruct_k ?t_imp1"
-      "z1 \<le> tinterp_time frgt crgt (time_to_tail frgt vs_b vs_arg t1)"
-    using hLet.IH(1)[where t_imp = ?t_imp1 and s = s and bs = bs and vs_b = vs_b and r = ?x_var and keep = keep] hLet.prems
-    unfolding called_correctness_def by auto
-
-  have ob1: "non_tail t1" using hLet unfolding well_formed_comp_def by simp
-  have ob2: "well_encoded_comp f_args bs vs_arg vs_b s" using hLet by simp
-  obtain f y1 s1
-      where t1s1: "f \<turnstile> (?t_imp1,s) \<Rightarrow>\<^bsup>y1\<^esup> s1"
-      and s1_xvar: "s1 ?x_var = eval_non_tail frgt vs_b vs_arg t1"
-      and s1: "s = s1 on (Set.remove ?x_var (set keep))"
-    using compiler_correct_nt[OF ob1 wf1 ob2, simplified] by blast
-
-  have "tailrec t1" using well_formed_comp_def wf1 by blast
-  then have inv: "invar ?t_imp1" using to_imp_invar by blast
-  have y1: "y1 = k1 + z1" using ttime_non_tail[OF inv t1s1] sorry (* ttime_to_tail for non-tail MUST INVESTIGATE AND WRITE LEMMA *)
-
-  let ?t_imp2 = "to_imp_tc f_args crgt (?x_var # bs) r (?x_var # keep) t2"
-  have "tailrec t2" using hLet unfolding well_formed_comp_def by simp
-
-  have t2_1: "well_formed_comp f_args crgt (?x_var # bs) (?x_var # keep) t2"
-    using hLet.prems(2) unfolding well_formed_comp_def apply auto sorry (* almost sub-term *)
-  have "set f_args \<subseteq> Set.remove ?x_var (set keep)" using fresh_not_in_keep
-    unfolding remove_def apply simp using hLet.prems(2) unfolding well_formed_comp_def reserved_regs_def by simp
-  then have t2_2_1: "lookups f_args s1 = vs_arg"
-    apply (subst lookups_eq_on[where s = s, symmetric])
-    using s1 apply blast using hLet.prems(3) unfolding well_encoded_comp_def by blast
-  have "set bs \<subseteq> Set.remove ?x_var (set keep)" using fresh_not_in_keep
-    unfolding remove_def apply simp using hLet.prems(2) unfolding well_formed_comp_def reserved_regs_def by simp
-  then have t2_2_2: "lookups (?x_var # bs) s1 = eval_non_tail frgt vs_b vs_arg t1 # vs_b" apply auto
-    using s1_xvar apply blast
-    apply (subst lookups_eq_on[where s = s, symmetric])
-    using s1 apply blast using hLet.prems(3) unfolding well_encoded_comp_def by blast
-  from t2_2_1 t2_2_2 have t2_2: "well_encoded_comp f_args (?x_var # bs) vs_arg (eval_non_tail frgt vs_b vs_arg t1 # vs_b) s1"
-    unfolding well_encoded_comp_def by simp
-  have t2_3: "called_correctness crgt frgt t2" using hLet.prems(4) unfolding called_correctness_def by auto
-  obtain k2 z2 where k2z2:
-      "ttime_to_tail s1 ?t_imp2 (k2 + z2)"
-      "k2 \<le> tstruct_k ?t_imp2"
-      "z2 \<le> tinterp_time frgt crgt (time_to_tail frgt (eval_non_tail frgt vs_b vs_arg t1 # vs_b) vs_arg t2)"
-    using hLet.IH(2)[where t_imp = ?t_imp2 and r = r and s = s1 and bs = "?x_var # bs"
-      and vs_b = "eval_non_tail frgt vs_b vs_arg t1 # vs_b" and keep = "?x_var # keep", OF _ t2_1 t2_2 t2_3, simplified]
-    by blast
-
-  from t1s1 k2z2
-  have "ttime_to_tail s t_imp (y1 + (k2 + z2))" using hLet.prems(1) apply simp unfolding Let_def apply (rule ttime_to_tail.intros(3)) by auto
-  moreover have "y1 + (k2 + z2) = (k1 + k2) + (z1 + z2)" using y1 by linarith
-  moreover have "k1 + k2 \<le> tstruct_k t_imp" using hLet.prems(1) apply simp unfolding Let_def using k1z1 k2z2 by simp
-  moreover have "z1 + z2 \<le> tinterp_time frgt crgt (time_to_tail frgt vs_b vs_arg (hLet t1 t2))"
-    apply simp using k1z1 k2z2 unfolding tinterp_time_def by simp
-
-  ultimately show ?case by auto
-
-    (* idea: - solve premises of IH for t1, get k1 and z1 as structural/functional times for compiled t1
-               AND use compiler correctness to obtain y1 and s1 as run time and updated state of compiled t1
-             - show y1 = k1 + z1 using ttime_to_tail non_tail lemma for compiled t1
-             - ... *)
-next
-  case (hLetBound n)
-  then have t_imp: "t_imp = tAssign r (A (V (bs ! n)))" by simp
-
-  from t_imp have k: "ttime_to_tail s t_imp (2 + 0)" using ttime_to_tail.intros by simp
-  from t_imp have z: "2 \<le> tstruct_k t_imp" by simp
-
-  from k z show ?case by blast
-next
-  case (hArg n)
-  then have t_imp: "t_imp = tAssign r (A (V (f_args ! n)))" by simp
-
-  from t_imp have k: "ttime_to_tail s t_imp (2 + 0)" using ttime_to_tail.intros by simp
-  from t_imp have z: "2 \<le> tstruct_k t_imp" by simp
-
-  from k z show ?case by blast
-next
-  case (hNumber n) (* then show ?case using ttime_to_tail.intros by fastforce *)
-  then have t_imp: "t_imp = tAssign r (A (N n))" by simp
-
-  from t_imp have k: "ttime_to_tail s t_imp (2 + 0)" using ttime_to_tail.intros by simp
-  from t_imp have z: "2 \<le> tstruct_k t_imp" by simp
-
-  from k z show ?case by blast
-next
-  case (hIf t1 t2 t3)
-  then show ?case sorry
-next
-  case (hCall g ts)
-  then show ?case sorry
-next
-  case (hTAIL ts)
-  then show ?case sorry
-qed
-
-lemma "\<exists>c. \<forall>s. tstruct_k t_imp + something \<le> c * interp_time frgt (time_to_tail frgt vs_b vs_arg t)" oops
+(* lemma "\<exists>c. \<forall>s. tstruct_k t_imp + something \<le> c * interp_time frgt (time_to_tail frgt vs_b vs_arg t)" oops *)
 (* in fact, we can calculate c as the max of the structural-constant-factor and all T_f_const-ants or so *)
 
 end

@@ -150,6 +150,7 @@ lemma interp_trace_concat_is_sum_map:
   unfolding interp_trace_def by (induction xss) auto
 
 datatype leaf_state = Value nat | Tail "nat list"
+print_theorems
 
 inductive
   htrace_to_leaf :: "fun_registry \<Rightarrow> thol \<times> nat list \<times> nat list \<Rightarrow> trace \<Rightarrow> leaf_state \<Rightarrow> bool"  ("_ \<turnstile> _ \<Rightarrow>\<^bsup>_\<^esup>  _" 55)
