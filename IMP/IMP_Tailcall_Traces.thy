@@ -39,7 +39,17 @@ tIfFalse:
 tCall: "\<lbrakk>(C,s) \<Rightarrow>\<^bsup>z \<^esup> t\<rbrakk> \<Longrightarrow> (tCall C r,s) \<Rightarrow>\<^bsup>(0, [(C,s)])\<^esup> (s(r := t r), False)" |
 tTail: "(tTAIL,s) \<Rightarrow>\<^bsup>(5, [])\<^esup> (s, True)"
 
+declare ttrace_to_leaf.intros[intro]
 lemmas ttrace_to_leaf_induct = ttrace_to_leaf.induct[split_format(complete)]
+
+inductive_cases tSkip_traceE[elim!]: "(tSKIP,s) \<Rightarrow>\<^bsup>T \<^esup> l"
+inductive_cases tAssign_traceE[elim!]: "(x ::= a,s) \<Rightarrow>\<^bsup>T \<^esup> l"
+inductive_cases tSeq_traceE[elim!]: "(c1;;c2,s1) \<Rightarrow>\<^bsup>T \<^esup> l"
+inductive_cases tIf_traceE[elim!]: "(IF b \<noteq>0 THEN c1 ELSE c2,s) \<Rightarrow>\<^bsup>T \<^esup> l"
+inductive_cases tCall_traceE[elim!]: "(CALL C RETURN v,s) \<Rightarrow>\<^bsup>T \<^esup> l"
+
+inductive_cases tTail_traceE[elim]: "(tTAIL,s) \<Rightarrow>\<^bsup>T \<^esup> l" (* not safe ? *)
+
 
 lemma trace_nontail_has_bigstep:
   assumes "(c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l)" "\<not> l"

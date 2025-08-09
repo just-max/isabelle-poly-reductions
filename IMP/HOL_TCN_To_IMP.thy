@@ -5,12 +5,8 @@ begin
 
 unbundle no com_syntax and thol_syntax and tcom_syntax
 
-(* function name \<Rightarrow> (argument registers' names \<times> IMP command \<times> return register's name *)
-type_synonym com_registry = "fun_ref \<Rightarrow> (vname list \<times> com \<times> vname)"
-abbreviation "args_from_crgt (crgt :: com_registry) name \<equiv> fst (crgt name)"
-abbreviation "com_from_crgt (crgt :: com_registry) name \<equiv> fst (snd (crgt name))"
-abbreviation "ret_from_crgt (crgt :: com_registry) name \<equiv> snd (snd (crgt name))"
-(* TODO: use these abbrev. *)
+
+(* general stuff *)
 
 definition "null = (\<lambda>_. undefined)"
 
@@ -25,12 +21,25 @@ lemma generate_cong[fundef_cong]:
 lemma generate_snoc: "generate f (Suc n) = generate f n @ [f n]"
   unfolding generate_def by auto
 
+(*
 lemma generate_of_snoc: "generate (\<lambda>i. f i ((xs @ [x]) ! i)) (length xs) = generate (\<lambda>i. f i (xs ! i)) (length xs)"
   unfolding generate_def using nth_append_left by fastforce
 
 lemma generate_of_snoc':
   assumes "n = length xs" shows "generate (\<lambda>i. f i ((xs @ [x]) ! i)) n = generate (\<lambda>i. f i (xs ! i)) n"
   using assms generate_of_snoc[where f = f] by blast
+*)
+
+abbreviation "concat_map f xs \<equiv> concat (map f xs)"
+
+
+(* command registries *)
+
+(* function name \<Rightarrow> (argument registers' names \<times> IMP command \<times> return register's name *)
+type_synonym com_registry = "fun_ref \<Rightarrow> (vname list \<times> com \<times> vname)"
+abbreviation "args_from_crgt (crgt :: com_registry) name \<equiv> fst (crgt name)"
+abbreviation "com_from_crgt (crgt :: com_registry) name \<equiv> fst (snd (crgt name))"
+abbreviation "ret_from_crgt (crgt :: com_registry) name \<equiv> snd (snd (crgt name))"
 
 
 (* fresh *)
@@ -53,156 +62,208 @@ lemma make_n_fresh_not_in_stale: "set (make_n_fresh stale name n) \<inter> set s
 
 value "make_n_fresh [''f.args.2.0'', ''f.args.2.1'', ''f.args.3.0''] ''f.args.'' 5"
 
-
+(*
 lemma inj_inj_on: fixes A assumes "inj f" shows "inj_on f A" using assms inj_on_subset by auto
-(* lemma inj_neq: fixes A assumes "inj_on f A" "x \<noteq> y" "x \<in> A" "y \<in> A" shows "f x \<noteq> f y" using assms  *)
-  (* thm inj_on_contraD[where A = UNIV, simplified] *)
 lemma none_equal_not_in: fixes A shows "(\<forall>y\<in>A. x \<noteq> y) \<longleftrightarrow> x \<notin> A" by blast
 lemma some_equal_in: fixes A shows "(\<exists>y\<in>A. x = y) \<longleftrightarrow> x \<in> A" by blast
-
-(*
-find_theorems "_ \<notin> _" "inj_on"
-
-lemma fixes A assumes "inj_on f (insert x A)" "x \<notin> A" shows "f x \<notin> f ` A" using assms by blast *)
+*)
 
 
-(* t_seqs *)
+(* command sequences *)
 
 lemma tbig_step_t_tSeq_assoc:
   (* from Compile_HOL_Nat_To_IMP *)
   shows "C \<turnstile> (c1 ;; (c2 ;; c3), s) \<Rightarrow>\<^bsup>t\<^esup> s' \<longleftrightarrow> C \<turnstile> (c1 ;; c2 ;; c3, s) \<Rightarrow>\<^bsup>t\<^esup> s'"
   by auto
 
+lemma ttrace_to_leaf_tSeq_assoc:
+  shows "(c1 ;; (c2 ;; c3), s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l) \<longleftrightarrow> (c1 ;; c2 ;; c3, s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l)"
+  by fastforce
+
+(*
 lemma tbig_step_t_tSeq_Skip_id1[simp]: "f \<turnstile> (tSKIP;; c, s) \<Rightarrow>\<^bsup>Suc z\<^esup> t \<longleftrightarrow> f \<turnstile> (c, s) \<Rightarrow>\<^bsup>z\<^esup> t"
   by fastforce
 
 lemma tbig_step_t_tSeq_Skip_id2[simp]: "f \<turnstile> (c;; tSKIP, s) \<Rightarrow>\<^bsup>Suc z\<^esup> t \<longleftrightarrow> f \<turnstile> (c, s) \<Rightarrow>\<^bsup>z\<^esup> t"
   by fastforce
+*)
 
-definition "t_seqs ts = foldr tSeq ts"
-abbreviation "t_seqs' ts \<equiv> t_seqs ts tSKIP"
-value "t_seqs ([c1, c2, c3]) c4"
+(* sequencing commands *)
 
-lemma t_seqs_nil[simp]: "t_seqs [] c = c" unfolding t_seqs_def by simp
-lemma t_seqs_cons[simp]: "t_seqs (c1 # cs) c = c1;; t_seqs cs c" unfolding t_seqs_def by simp
+fun mk_seqs where
+  "mk_seqs [] = tSKIP" |
+  "mk_seqs (t0 # ts) = foldl tSeq t0 ts"
 
-lemma t_seqs_append[simp]: "t_seqs (cs1 @ cs2) c = t_seqs cs1 (t_seqs cs2 c)"
-  by (induction cs1) auto
+value "mk_seqs []"
+value "mk_seqs [c1, c2, c3]"
+value "mk_seqs (c1 # c2 # c3 # cs)"
 
-lemmas t_seqs_rewrite = t_seqs_nil t_seqs_cons t_seqs_append
+lemma mk_seqs_append:
+  assumes "cs1 \<noteq> []"
+  shows "mk_seqs (cs1 @ cs2) = mk_seqs (mk_seqs cs1 # cs2)"
+  using assms by (induction cs1) auto
 
-lemma t_seqs_Seq: "f \<turnstile> (t_seqs cs (c1;; c2),s) \<Rightarrow>\<^bsup>z\<^esup> t \<longleftrightarrow> f \<turnstile> (t_seqs cs c1;; c2,s) \<Rightarrow>\<^bsup>z\<^esup> t"
-  by (induction cs arbitrary: s z) fastforce+
+(* disassembling command sequences *)
 
-lemma t_seqs'_snoc: "f \<turnstile> (t_seqs' (cs @ [c]),s) \<Rightarrow>\<^bsup>Suc z\<^esup> t \<longleftrightarrow> f \<turnstile> (t_seqs cs c,s) \<Rightarrow>\<^bsup>z\<^esup> t"
-  using t_seqs_Seq by simp
+fun seqs where
+  "seqs (c1 ;; c2) = seqs c1 @ seqs c2" |
+  "seqs t = [t]"
 
-lemma t_seqs'_t_seqs:
-  shows "f \<turnstile> (t_seqs' cs;; c,s) \<Rightarrow>\<^bsup>Suc z\<^esup> t \<longleftrightarrow> f \<turnstile> (t_seqs cs c,s) \<Rightarrow>\<^bsup>z\<^esup> t"
-proof
-  assume "f \<turnstile> (t_seqs cs c, s) \<Rightarrow>\<^bsup>z\<^esup> t" then show "f \<turnstile> (t_seqs' cs;; c, s) \<Rightarrow>\<^bsup>Suc z\<^esup> t"
-    by (induction cs arbitrary: s z) fastforce+
-next
-  assume "f \<turnstile> (t_seqs' cs;; c, s) \<Rightarrow>\<^bsup>Suc z\<^esup> t"
-  then show "f \<turnstile> (t_seqs cs c, s) \<Rightarrow>\<^bsup>z\<^esup> t"
-  proof (induction cs arbitrary: s z)
-    case Nil then show ?case by auto
-  next
-    case (Cons c1 cs)
-    then have "f \<turnstile> (c1;; (t_seqs' cs;; c), s) \<Rightarrow>\<^bsup>Suc z\<^esup>  t" using tbig_step_t_tSeq_assoc by simp
-    then obtain z1 s2 z2 where "f \<turnstile> (c1, s) \<Rightarrow>\<^bsup>z1\<^esup> s2" "f \<turnstile> (t_seqs' cs;; c, s2) \<Rightarrow>\<^bsup>Suc z2\<^esup> t" "Suc z = z1 + Suc z2"
-      using bigstep_progressE tSeq_tE by metis
-    then show ?case using Cons.IH by auto
-  qed
+value "seqs (''x'' ::= A (N 1);; IF ''x''\<noteq>0 THEN tSKIP ELSE tSKIP;; ''x'' ::= A (N 3))"
+
+fun is_seq where
+  "is_seq (_;; _) \<longleftrightarrow> True" |
+  "is_seq _ \<longleftrightarrow> False"
+
+lemmas is_seq_seqE[elim] = is_seq.elims(2)
+
+lemma seqs_not_nil[simp]: "seqs c \<noteq> []" by (induction c) auto
+
+lemma seqs_idem: "c \<in> set (seqs cs) \<Longrightarrow> seqs c = [c]"
+  by (induction cs rule: seqs.induct) auto
+
+lemma seqs_idem'[simp]: "concat_map seqs (seqs cs) = seqs cs"
+  by (induction cs rule: seqs.induct) auto
+
+lemma length_seqs_Seq_gt_one: "length (seqs (c1;; c2)) > 1"
+proof-
+  have "length (seqs c1) > 0" "length (seqs c2) > 0" using seqs_not_nil by simp_all
+  then have "length (seqs c1) + length (seqs c2) > 1" by linarith
+  then show "length (seqs (c1;; c2)) > 1" by simp
 qed
 
-lemma t_seqs'_append: "f \<turnstile> (t_seqs' cs1;; t_seqs' cs2,s) \<Rightarrow>\<^bsup>Suc z\<^esup> t \<longleftrightarrow> f \<turnstile> (t_seqs' (cs1 @ cs2),s) \<Rightarrow>\<^bsup>z\<^esup> t"
-  using t_seqs'_t_seqs by simp
-
-lemma t_seqs_append_t_seqs': "f \<turnstile> (t_seqs' cs1;; t_seqs' cs2;; c,s) \<Rightarrow>\<^bsup>Suc (Suc z)\<^esup> t \<longleftrightarrow> f \<turnstile> (t_seqs (cs1 @ cs2) c,s) \<Rightarrow>\<^bsup>z\<^esup> t"
-  apply (induction cs1)
-  apply (simp add: t_seqs'_t_seqs tbig_step_t_tSeq_assoc[symmetric])
-  apply (simp add: t_seqs'_append)
-  apply (metis t_seqs'_t_seqs t_seqs_cons)
-  done
-
-lemmas tbig_step_t_t_seqs_rewrite = t_seqs_Seq t_seqs'_snoc t_seqs'_t_seqs t_seqs'_append t_seqs_append_t_seqs'
-
-(* lemma foldr1_append: assumes "xs \<noteq> []" "ys \<noteq> []" shows "foldr1 f (xs @ ys) = foldr tSeq xs (foldr1 tSeq ys)" *)
-
-lemma invar_tseqs[simp]:
-  assumes "\<forall>t \<in> set xs. \<not> IMP_Tailcall.tails t" "IMP_Tailcall.invar x"
-  shows "IMP_Tailcall.invar (t_seqs xs x)"
-  unfolding t_seqs_def using assms by (induction xs) simp_all
-lemma non_tails_tseqs[simp]:
-  assumes "\<forall>t \<in> set xs. \<not> IMP_Tailcall.tails t" "\<not> IMP_Tailcall.tails x"
-  shows "\<not> IMP_Tailcall.tails (t_seqs xs x)"
-  unfolding t_seqs_def using assms by (induction xs) simp_all
-(* lemma non_tails_tseqs_append: assumes "\<not> tails (t_seqs xs)" "\<not> tails (t_seqs ys)" shows "\<not> tails (t_seqs (xs @ ys) x)" *)
-  (* using assms unfolding t_seqs_def foldr1_def apply (induction xs) apply simp_all *)
-  (* apply (cases xs) unfolding t_seqs_def foldr1_def apply simp *)
-  (* apply (cases ys) *)
-  (* apply simp sledgehammer *)
-   (* apply (induction xs) unfolding t_seqs_def foldr1_def apply simp_all *)
-
-(*
-abbreviation "mapi' n ys f xs \<equiv> snd (fold (\<lambda>x (i, ys). (i + 1, ys @ [f i x])) xs (n, ys))"
-abbreviation "mapi \<equiv> mapi' 0 []"
-
-lemma mapi'_map:
-  "mapi' (length ys) ys f xs = ys @ map (\<lambda>i. f i (xs ! (i - length ys))) [length ys..<length ys + length xs]"
-proof (induction xs arbitrary: ys)
-  case (Cons x xs)
-  let ?y = "f (length ys) x"
-  have "ys @ map (\<lambda>i. f i ((x # xs) ! (i - length ys))) [length ys..<length ys + length (x # xs)] =
-      ys @ ?y # map (\<lambda>i. f i ((x # xs) ! (i - length ys))) [Suc (length ys) ..< length ys + length (x # xs)]"
-    using upt_rec by simp
-  also have "... = ys @ ?y # map (\<lambda>i. f i (xs ! (i - Suc (length ys)))) [Suc (length ys)..<length ys + length (x # xs)]"
-    by (simp add: nth_Cons')
-  also have "... = mapi' (length ys) ys f (x # xs)" using Cons[where ys = "ys @ [?y]"] by simp
-  finally show ?case by fastforce
-qed simp
-
-corollary mapi_map: "mapi f xs = map (\<lambda>i. f i (xs ! i)) [0..<length xs]"
-  using mapi'_map[where ys = "[]" and f = f and xs = xs] by simp
-
-lemma mapi'_map2: "mapi' (length ys) ys f xs = ys @ map2 f [length ys..<length ys + length xs] xs"
-proof (induction xs arbitrary: ys)
-  case (Cons x xs)
-  have "[length ys..<length ys + length (x # xs)]
-        = length ys # [Suc (length ys)..<length ys + length (x # xs)]"
-    using upt_conv_Cons upt_rec by simp
-  thus ?case using Cons[of "ys @ [f (length ys) x]"] by simp
-qed simp
-
-corollary mapi_map2: "mapi f xs = map2 f [0..<length xs] xs"
-  using mapi'_map2[where ys = "[]" and f = f and xs = xs] by simp
-
-
-lemma map_obtain: assumes "y \<in> set (map f xs)" obtains x where "y = f x" "x \<in> set xs" using assms by auto
-
-lemma mapi_obtain:
-  assumes "y \<in> set (mapi f xs)"
-  obtains i x where "y = f i x" "i < length xs" "x \<in> set xs"
+lemma seqs_not_seq_singleton[simp]: "\<not> is_seq c \<Longrightarrow> seqs c = [c]" by (cases c) simp_all
+lemma seqs_seq_not_singleton[simp]: "seqs (c1;; c2) \<noteq> [c]"
 proof-
-  from assms have "y \<in> set (map2 f [0..<length xs] xs)" by (simp only: mapi_map2)
-  then obtain i1 x1 where 1: "y = f i1 x1" "(i1, x1) \<in> set (zip [0..<length xs] xs)" by auto
-  then have "i1 \<in> set [0..<length xs]" and 3: "x1 \<in> set xs" using in_set_zipE by meson+
-  then have 2: "i1 < length xs" by simp
-  from 1 2 3 show thesis using that[where i = i1 and x = x1] by simp
-qed *)
+  have "length (seqs (c1;; c2)) \<noteq> length [c]" using length_seqs_Seq_gt_one[of c1 c2] by simp
+  then show "seqs (c1;; c2) \<noteq> [c]" by metis
+qed
 
-abbreviation "concat_map f xs \<equiv> concat (map f xs)"
+lemma not_seq_singleton_iff: "\<not> is_seq c \<longleftrightarrow> (\<exists>c'. seqs c = [c'])"
+  using seqs_seq_not_singleton by (cases c) simp_all
+
+lemma seqs_singletonE[elim]:
+  assumes "seqs c = [c']" shows "c = c'"
+proof (cases "is_seq c")
+  assume "is_seq c"
+  with assms have False using not_seq_singleton_iff by metis
+  then show ?thesis by blast
+next
+  assume "\<not> is_seq c"
+  then show ?thesis using assms seqs_not_seq_singleton by simp
+qed
+
+(* seqs/mk_seqs interaction *)
+
+abbreviation "linearize c \<equiv> mk_seqs (seqs c)"
+
+lemma seqs_mk_seqs[simp]: "cs \<noteq> [] \<Longrightarrow> seqs (mk_seqs cs) = concat_map seqs cs"
+proof-
+  have *: "seqs (foldl tSeq c cs) = seqs c @ concat_map seqs cs" for c cs
+    by (induction cs arbitrary: c) auto
+  then show "cs \<noteq> [] \<Longrightarrow> seqs (mk_seqs cs) = concat_map seqs cs"
+    by (cases cs) auto
+qed
+
+lemma linearize_idem[simp]: "linearize (linearize c) = linearize c" by simp
+
+lemma linearize_eq_seqs_eq_iff[simp]: "linearize c = linearize c' \<longleftrightarrow> seqs c = seqs c'"
+proof
+  assume "linearize c = linearize c'"
+  then show "seqs c = seqs c'"
+    using seqs_idem' seqs_mk_seqs seqs_not_nil by metis
+qed simp
+
+(* seqs/mk_seqs and bigstep *)
+
+lemma mk_seqs_append_bigstep:
+  assumes "cs1 \<noteq> []" "cs2 \<noteq> []"
+  shows "f \<turnstile> (mk_seqs (cs1 @ cs2),s) \<Rightarrow>\<^bsup>z\<^esup> t \<longleftrightarrow> f \<turnstile> (mk_seqs cs1;; mk_seqs cs2,s) \<Rightarrow>\<^bsup>z\<^esup> t"
+  using assms(2,1) tbig_step_t_tSeq_assoc mk_seqs_append
+  by (induction cs2 arbitrary: z t rule: rev_nonempty_induct) auto
+
+lemma linearize_bigstep:
+  shows "f \<turnstile> (c,s) \<Rightarrow>\<^bsup>z\<^esup> t \<longleftrightarrow> f \<turnstile> (linearize c,s) \<Rightarrow>\<^bsup>z\<^esup> t"
+  using mk_seqs_append_bigstep by (induction c arbitrary: s z t) auto
+
+lemma same_linearize_bigstep:
+  fixes c c' :: tcom
+  assumes "linearize c = linearize c'"
+  shows "f \<turnstile> (c,s) \<Rightarrow>\<^bsup>z\<^esup> t \<longleftrightarrow> f \<turnstile> (c',s) \<Rightarrow>\<^bsup>z\<^esup> t"
+  using assms linearize_bigstep by metis
+
+theorem same_seqs_bigstep:
+  fixes c c' :: tcom
+  assumes "seqs c = seqs c'"
+  shows "f \<turnstile> (c,s) \<Rightarrow>\<^bsup>z\<^esup> t \<longleftrightarrow> f \<turnstile> (c',s) \<Rightarrow>\<^bsup>z\<^esup> t"
+  using assms linearize_bigstep by metis
+  (* using assms same_linearize_bigstep linearize_eq_seqs_eq_iff by blast *)
+
+(* seqs/mk_seqs and traces *)
+
+lemma mk_seqs_append_trace:
+  assumes "cs1 \<noteq> []" "cs2 \<noteq> []"
+  shows "(mk_seqs (cs1 @ cs2),s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l) \<longleftrightarrow> (mk_seqs cs1;; mk_seqs cs2,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l)"
+using assms(2) proof (induction cs2 arbitrary: k T t l rule: rev_nonempty_induct)
+  case (single x)
+  then show ?case using mk_seqs_append assms by simp
+next
+  case (snoc x xs)
+  then show ?case using assms apply (simp add: mk_seqs_append ttrace_to_leaf_tSeq_assoc)
+    using ttrace_to_leaf_tSeq_assoc
+    by (smt (z3) tSeq_traceE ttrace_to_leaf.tSeq)
+(* TODO clean up... *)
+qed
+
+lemma linearize_trace:
+  shows "(c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l) \<longleftrightarrow> (linearize c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l)"
+  using mk_seqs_append_trace by (induction c arbitrary: s k T t l) auto
+
+lemma same_linearize_trace:
+  fixes c c' :: tcom
+  assumes "linearize c = linearize c'"
+  shows "(c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l) \<longleftrightarrow> (c',s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l)"
+  using assms linearize_trace by metis
+
+theorem same_seqs_trace:
+  fixes c c' :: tcom
+  assumes "seqs c = seqs c'"
+  shows "(c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l) \<longleftrightarrow> (c',s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l)"
+  using assms linearize_trace by metis
+
+(* invariants and mk_seq *)
+
+lemma rev_induct_list012 [case_names nil single snoc]:
+  assumes nil: "P []"
+    and single: "\<And>x. P [x]"
+    and snoc: "\<And>zs y x. \<lbrakk> P zs; P (zs @ [y]) \<rbrakk> \<Longrightarrow> P ((zs @ [y]) @ [x])"
+  shows "P xs"
+proof (induction "rev xs" arbitrary: xs rule: induct_list012)
+  case (3 x y zs)
+  then have "P (rev zs)" "P (rev zs @ [y])" by simp_all
+  with snoc have "P ((rev zs @ [y]) @ [x])" by blast
+  then show "P xs" using \<open>x # y # zs = rev xs\<close>[symmetric] by simp
+qed (auto simp add: nil single)
+
+lemma invar_mk_seqs[simp]:
+  assumes "\<forall>c \<in> set cs. \<not> IMP_Tailcall.tails c" "IMP_Tailcall.invar c"
+  shows "IMP_Tailcall.invar (mk_seqs (cs @ [c]))"
+  using assms mk_seqs_append by (induction cs rule: rev_induct_list012) (simp_all del: append_assoc)
+lemma non_tails_mk_seqs[simp]:
+  assumes "\<forall>c \<in> set cs. \<not> IMP_Tailcall.tails c"
+  shows "\<not> IMP_Tailcall.tails (mk_seqs cs)"
+  using assms mk_seqs_append by (induction cs rule: rev_induct_list012) (simp_all del: append_assoc)
+
+
+(* compiler! *)
 
 definition "call_registers crgt t =
-  concat_map (args_from_crgt crgt o fst) (calls t) @ map (ret_from_crgt crgt o fst) (calls t)"
-  (* concat_map ((\<lambda>gr. ret_from_crgt crgt gr # args_from_crgt crgt gr) o fst) (calls t)" *)
+  concat_map (\<lambda>g. args_from_crgt crgt g @ [ret_from_crgt crgt g]) (calls' t)"
 
-lemma call_registers_set:
+(* lemma call_registers_set:
     "set (call_registers crgt t) =
-     (\<Union>gr\<in>fst ` set (calls t). set (args_from_crgt crgt gr) \<union> {ret_from_crgt crgt gr})"
-  apply (induction t)
-  unfolding call_registers_def split_beta by auto
+      (\<Union>g\<in>set (calls' t). set (args_from_crgt crgt g) \<union> {ret_from_crgt crgt g})"
+  apply (induction t) unfolding call_registers_def by auto *)
 
 definition "stale_registers f_args crgt bs keep t = f_args @ bs @ keep @ call_registers crgt t"
 
@@ -237,28 +298,12 @@ fun to_imp_tc ::
          xs = make_n_fresh (stale_registers f_args crgt bs keep (hCall g ts)) ''Call.x.'' (length ts);
          cs1 = generate (\<lambda>i. to_imp_tc f_args crgt bs (xs ! i) (xs @ keep) (ts ! i)) (length ts);
          cs2 = generate (\<lambda>i. (g_args ! i) ::= A (V (xs ! i))) (length ts)
-      in t_seqs' cs1;; t_seqs' cs2;; tCall c_g g_ret;; r ::= A (V g_ret))" |
+      in mk_seqs cs1;; mk_seqs cs2;; tCall c_g g_ret;; r ::= A (V g_ret))" |
   "to_imp_tc f_args crgt bs r keep (hTAIL ts) =
     (let xs = make_n_fresh (stale_registers f_args crgt bs keep (hTAIL ts)) ''TAIL.x.'' (length ts);
          cs1 = generate (\<lambda>i. to_imp_tc f_args crgt bs (xs ! i) (xs @ keep) (ts ! i)) (length ts);
          cs2 = generate (\<lambda>i. (f_args ! i) ::= A (V (xs ! i))) (length ts)
-      in t_seqs' cs1;; t_seqs' cs2;; tTAIL)"
-
-
-lemma to_imp_nontail: "\<not> HOL_TCN_Timing.tails t \<Longrightarrow> \<not> IMP_Tailcall.tails (to_imp_tc f_args crgt bs r keep t)"
-  by (induction t arbitrary: bs r keep) (simp_all add: Let_def split_beta generate_def)
-
-lemma to_imp_invar: "HOL_TCN_Timing.invar t \<Longrightarrow> IMP_Tailcall.invar (to_imp_tc f_args crgt bs r keep t)"
-  by (induction t arbitrary: bs r keep) (simp_all add: Let_def split_beta generate_def to_imp_nontail)
-
-(* 
-definition "reserved_regs f_args crgt bs t =
-    (f_args @ bs @ concat (map (args_from_crgt crgt o fst) (calls t)) @ map (ret_from_crgt crgt o fst) (calls t))"
-
-(* mark argument/return registers of all called functions and of f itself as stale *)
-definition "to_imp_tc' f_args crgt bs r t =
-  to_imp_tc f_args crgt bs r (reserved_regs f_args crgt bs t) t"
-(* TODO: right-assoc ? *) *)
+      in mk_seqs cs1;; mk_seqs cs2;; tTAIL)"
 
 definition "h_let_1 = hLet (hNumber 7) (hLetBound 0)"
 value "to_imp_tc [] null [] ''r'' [] h_let_1"
@@ -269,5 +314,37 @@ value "to_imp_tc [] (null(''g'' := ([''g.x1'', ''g.x2''], Assign ''g.r'' (A (V '
 definition "com_plus = ([''plus.x'', ''plus.y''], Assign ''plus.ret'' (Plus (V ''plus.x'') (V ''plus.y'')), ''plus.ret'')"
 definition "h_sum3 = hLet (hCall ''plus'' [hArg 0, hArg 1]) (hCall ''plus'' [hLetBound 0, hArg 2])"
 value "to_imp_tc [''x'', ''y'', ''z''] (null(''plus'' := com_plus)) [] ''r'' [] h_sum3"
+
+
+lemma to_imp_nontail: "\<not> HOL_TCN_Timing.tails t \<Longrightarrow> \<not> IMP_Tailcall.tails (to_imp_tc f_args crgt bs r keep t)"
+  by (induction t arbitrary: bs r keep) (simp_all add: Let_def split_beta generate_def)
+
+lemma to_imp_invar: "HOL_TCN_Timing.invar t \<Longrightarrow> IMP_Tailcall.invar (to_imp_tc f_args crgt bs r keep t)"
+  by (induction t arbitrary: bs r keep) (simp_all add: Let_def split_beta generate_def to_imp_nontail)
+
+lemma "IMP_Tailcall.num_commands (to_imp_tc f_args crgt bs r keep t) \<le> 7 * HOL_TCN_Timing.num_commands t"
+proof (induction t arbitrary: bs r keep)
+  case (hIf t1 t2 t3)
+  then show ?case unfolding to_imp_tc.simps Let_def
+    apply simp
+    by (meson add_mono_thms_linordered_semiring(1) trans_le_add2)
+next
+  case (hLet t1 t2)
+  then show ?case unfolding to_imp_tc.simps Let_def
+    apply simp
+    by (meson add_le_mono trans_le_add2) (* ... *)
+next
+  case (hCall gr ts)
+  then show ?case
+    apply (induction ts) unfolding to_imp_tc.simps Let_def generate_def split_beta apply simp
+    unfolding to_imp_tc.simps Let_def generate_def split_beta
+    apply simp sorry
+next
+  case (hTAIL ts)
+  then show ?case
+    apply (induction ts) unfolding to_imp_tc.simps Let_def generate_def split_beta apply simp
+    unfolding to_imp_tc.simps Let_def generate_def split_beta
+    apply simp sorry (* TODO *)
+qed (simp_all add: Let_def split_beta generate_def)
 
 end

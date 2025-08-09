@@ -31,9 +31,6 @@ notation hLet ("LET _ IN _") and
          hIf ("(IF _/\<noteq>0 THEN _/ ELSE _)"  [0, 0, 61] 61)
 end
 
-(* find_consts "('a \<Rightarrow> 'b set) \<Rightarrow> 'b set" *)
-
-(* TODO: could maybe return a set *)
 fun calls where
   "calls (LET t1 IN t2) = calls t1 @ calls t2" |
   "calls (hLetBound _) = []" |
@@ -42,6 +39,53 @@ fun calls where
   "calls (IF t1\<noteq>0 THEN t2 ELSE t3) = calls t1 @ calls t2 @ calls t3" |
   "calls (hCall f ts) = (f, ts) # concat (map calls ts)" |
   "calls (hTAIL ts) = concat (map calls ts)"
+
+lemma calls_subset_let[simp]:
+  shows "set (calls t1) \<subseteq> set (calls (LET t1 IN t2))"
+    and "set (calls t2) \<subseteq> set (calls (LET t1 IN t2))"
+  by simp_all
+
+lemma calls_subset_if[simp]:
+  shows "set (calls t1) \<subseteq> set (calls (IF t1\<noteq>0 THEN t2 ELSE t3))" 
+    "set (calls t2) \<subseteq> set (calls (IF t1\<noteq>0 THEN t2 ELSE t3))"
+    "set (calls t3) \<subseteq> set (calls (IF t1\<noteq>0 THEN t2 ELSE t3))"
+  by auto
+
+lemma calls_subset_call[simp]:
+  shows "(f, ts) \<in> set (calls (hCall f ts))" 
+    and "\<And>t. t \<in> set ts \<Longrightarrow> set (calls t) \<subseteq> set (calls (hCall f ts))"
+  by auto
+
+lemma calls_subset_tail[simp]:
+    "\<And>t. t \<in> set ts \<Longrightarrow> set (calls t) \<subseteq> set (calls (hTAIL ts))"
+  by auto
+
+definition "calls' = map fst o calls"
+lemma calls'_set: "set (calls' t) = fst ` set (calls t)" unfolding calls'_def by simp
+(* lemma calls'_subset:
+  assumes "set (calls t) \<subseteq> set (calls t')"
+  shows "set (calls' t) \<subseteq> set (calls' t')"
+  using calls'_set assms by blast *)
+
+(* lemma in_calls_in_calls': "(g,ts) \<in> set (calls t) \<Longrightarrow> g \<in> set (calls' t)" using calls'_set by force *)
+
+definition "calls_n = map (\<lambda>(gr, ts). (gr, length ts)) o calls"
+lemma calls_n_set: "set (calls_n t) = (\<lambda>(gr, ts). (gr, length ts)) ` set (calls t)" unfolding calls_n_def by simp
+(*lemma in_calls_in_calls_n: "(g,ts) \<in> set (calls t) \<Longrightarrow> (g,length ts) \<in> set (calls_n t)" using calls_n_set by force *)
+
+
+(* 
+lemma calls_calls: "calls t = map fst (calls t)" (* lemma? change def. of calls?.... *)
+proof-
+  have "map calls ts = map (map fst) (map calls ts)"
+    if "\<And>x. x \<in> set ts \<Longrightarrow> calls x = map fst (calls x)" for ts
+    using that by simp
+  then have "concat (map calls ts) = map fst (concat (map calls ts))"
+    if "\<And>x. x \<in> set ts \<Longrightarrow> calls x = map fst (calls x)" for ts
+    using map_concat that by metis
+  then show "calls t = map fst (calls t)"
+    by (induction t rule: calls.induct) auto
+qed *)
 
 (* function name \<Rightarrow> (function \<times> timing function) *)
 type_synonym fun_registry = "fun_ref \<Rightarrow> ((nat list \<Rightarrow> nat) \<times> (nat list \<Rightarrow> nat))"
@@ -75,12 +119,11 @@ hTAIL: "\<lbrakk>length zs = length ts; length vs = length ts;
           z'' = sum_list zs + z' + 1\<rbrakk>
           \<Longrightarrow> (f,frgt) \<turnstile> (hTAIL ts,bs,xs) \<Rightarrow>\<^bsup>z''\<^esup> v'"
 
-print_theorems
-
-(* code_pred [show_modes] hbig_step_t . (* can't handle the universal quantifier *) *)
-
+(* code_pred [show_modes] hbig_step_t . (* can't handle the universal quantifier? *) *)
+declare hbig_step_t.intros[intro]
 lemmas hbig_step_t_induct = hbig_step_t.induct[split_format(complete)]
 
+(* names? tE, case, stepE, ... *)
 inductive_cases hLet_case [elim!]: "env \<turnstile> (hLet t1 t2,bs,xs) \<Rightarrow>\<^bsup>z\<^esup> v"
 inductive_cases hLetBound_case [elim!]: "env \<turnstile> (hLetBound n,bs,xs) \<Rightarrow>\<^bsup>z\<^esup> v"
 inductive_cases hArg_case [elim!]: "env \<turnstile> (hArg n,bs,xs) \<Rightarrow>\<^bsup>z\<^esup> v"
@@ -88,7 +131,24 @@ inductive_cases hNumber_case [elim!]: "env \<turnstile> (hNumber n,bs,xs) \<Righ
 inductive_cases hIf_case [elim!]: "env \<turnstile> (hIf t1 t2 t3,bs,xs) \<Rightarrow>\<^bsup>z\<^esup> v"
 inductive_cases hCall_case [elim!]: "(f,frgt) \<turnstile> (hCall g ts,bs,xs) \<Rightarrow>\<^bsup>z\<^esup> v"
 inductive_cases hTAIL_case [elim!]: "(f,frgt) \<turnstile> (hTAIL ts,bs,xs) \<Rightarrow>\<^bsup>z\<^esup> v"
-lemmas hbig_step_t_cases = hLet_case hLetBound_case hArg_case hNumber_case hIf_case hCall_case hTAIL_case
+
+fun num_commands :: "thol \<Rightarrow> nat" where
+  "num_commands (LET t1 IN t2) = num_commands t1 + num_commands t2 + 1" |
+  "num_commands (hLetBound _) = 1" |
+  "num_commands (hArg n) = 1" |
+  "num_commands (hNumber n) = 1" |
+  "num_commands (IF t1\<noteq>0 THEN t2 ELSE t3) = num_commands t1 + num_commands t2 + num_commands t3 + 1" |
+  "num_commands (hCall g ts) = sum_map num_commands ts + 1" |
+  "num_commands (hTAIL ts) = sum_map num_commands ts + 1"
+
+lemma num_commands_size: "num_commands t \<le> 3 * size t + 1"
+proof (induction t)
+  case (hCall gr ts)
+  then show ?case by (induction ts) fastforce+
+next
+  case (hTAIL ts)
+  then show ?case by (induction ts) fastforce+
+qed simp_all
 
 
 lemma determ:
@@ -134,6 +194,29 @@ fun invar where
 
 lemma no_tails_invar[simp]: "\<not> tails t \<Longrightarrow> invar t" by (induction t) auto
 
+(* elim! ? what does it all mean... *)
+lemma invar_let[elim]:
+  assumes "invar LET t1 IN t2"
+  shows "invar t1" "invar t2"
+  using assms by simp_all
+
+(* lemma invar_if[elim]:
+  assumes "invar (IF t1\<noteq>0 THEN t2 ELSE t3)"
+  shows "invar t1" "invar t2" "invar t3"
+  using assms by simp_all *)
+
+lemma invar_call[elim]:
+  assumes "invar (hCall gr ts)"
+  assumes "i < length ts"
+  shows "invar (ts ! i)"
+  using assms by simp_all
+
+lemma invar_tail[elim]:
+  assumes "invar (hTAIL ts)"
+  assumes "i < length ts"
+  shows "invar (ts ! i)"
+  using assms by simp_all
+
 
 (* traces *)
 
@@ -178,7 +261,16 @@ hTail:
     T = concat Ts\<rbrakk>
    \<Longrightarrow> frgt \<turnstile> (hTAIL ts,bs,xs) \<Rightarrow>\<^bsup>T\<^esup> Tail vs"
 
+declare htrace_to_leaf.intros[intro]
 lemmas htrace_to_leaf_induct = htrace_to_leaf.induct[split_format(complete)]
+
+inductive_cases hLet_traceE [elim!]: "frgt \<turnstile> (LET t1 IN t2,bs,xs) \<Rightarrow>\<^bsup>T :: trace\<^esup> l"
+inductive_cases hLetBound_traceE [elim!]: "frgt \<turnstile> (hLetBound n,bs,xs) \<Rightarrow>\<^bsup>T :: trace\<^esup> l"
+inductive_cases hArg_traceE [elim!]: "frgt \<turnstile> (hArg n,bs,xs) \<Rightarrow>\<^bsup>T :: trace\<^esup> l"
+inductive_cases hNumber_traceE [elim!]: "frgt \<turnstile> (hNumber n,bs,xs) \<Rightarrow>\<^bsup>T :: trace\<^esup> l"
+inductive_cases hIf_traceE [elim!]: "frgt \<turnstile> (IF t1\<noteq>0 THEN t2 ELSE t3,bs,xs) \<Rightarrow>\<^bsup>T :: trace\<^esup> l"
+inductive_cases hCall_traceE [elim!]: "frgt \<turnstile> (hCall g ts,bs,xs) \<Rightarrow>\<^bsup>T :: trace\<^esup> l"
+inductive_cases hTAIL_traceE [elim!]: "frgt \<turnstile> (hTAIL ts,bs,xs) \<Rightarrow>\<^bsup>T :: trace\<^esup> l"
 
 
 (* relating traces to the semantics
@@ -222,7 +314,7 @@ using assms proof (induction arbitrary: v rule: htrace_to_leaf_induct)
   qed (simp_all add: hCall)
 qed (auto simp add: interp_trace_def hbig_step_t.intros)
 
-theorem trace_val_to_semantics:
+theorem trace_val_to_semantics: (* to_bigstep *)
   assumes "frgt \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup>T\<^esup> Value v"
   shows "(f,frgt) \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup> interp_trace frgt T \<^esup> v"
   using assms trace_val_to_semantics0 by blast
@@ -306,12 +398,12 @@ lemma sem_to_trace_non_tailE:
   assumes "(f,frgt) \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup> z \<^esup> v"
   obtains T :: trace where "frgt \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup>T\<^esup> Value v" "interp_trace frgt T = z"
   using assms(2,1) apply (induction rule: hbig_step_t_induct)
-  apply (metis HOL_TCN_Timing.tails.simps(2) htrace_to_leaf.hLet interp_trace_append)
+  apply (metis tails.simps(2) htrace_to_leaf.hLet interp_trace_append)
   apply (metis htrace_to_leaf.hLetBound interp_trace_def list.map(1) sum_list.Nil)
   apply (metis htrace_to_leaf.hArg interp_trace_def list.map(1) sum_list.Nil)
   apply (metis htrace_to_leaf.hNumber interp_trace_def list.map(1) sum_list.Nil)
-  apply (metis HOL_TCN_Timing.tails.simps(3) htrace_to_leaf.hIfTrue interp_trace_append)
-  apply (metis HOL_TCN_Timing.tails.simps(3) htrace_to_leaf.hIfFalse interp_trace_append)
+  apply (metis tails.simps(3) htrace_to_leaf.hIfTrue interp_trace_append)
+  apply (metis tails.simps(3) htrace_to_leaf.hIfFalse interp_trace_append)
   oops (* TODO *)
 
 lemma sem_to_trace_inductionI:
