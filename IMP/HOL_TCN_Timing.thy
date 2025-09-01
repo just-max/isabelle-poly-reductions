@@ -25,6 +25,8 @@ datatype
   | hIf thol thol thol
   | hCall fun_ref "thol list"
   | hTAIL "thol list"
+(* Idea: nat \<Rightarrow> thol for arguments instead of nat list. Then, in an (isabelle) context fix
+   per-function a number of arguments. *)
 
 open_bundle thol_syntax begin
 notation hLet ("LET _ IN _") and
@@ -109,11 +111,11 @@ hIfTrue: "\<lbrakk>env \<turnstile> (t1,bs,xs) \<Rightarrow>\<^bsup>z1\<^esup> v
           \<Longrightarrow> env \<turnstile> (IF t1\<noteq>0 THEN t2 ELSE t3,bs,xs) \<Rightarrow>\<^bsup>z\<^esup> v2" |
 hIfFalse: "\<lbrakk>env \<turnstile> (t1,bs,xs) \<Rightarrow>\<^bsup>z1\<^esup> v1; v1 = 0; env \<turnstile> (t3,bs,xs) \<Rightarrow>\<^bsup>z2\<^esup> v2; z = z1+z2\<rbrakk>
           \<Longrightarrow> env \<turnstile> (IF t1\<noteq>0 THEN t2 ELSE t3,bs,xs) \<Rightarrow>\<^bsup>z\<^esup> v2" |
-hCall: "\<lbrakk>(g, T_g) = frgt gr; length zs = length ts; length vs = length ts;
+hCall: "\<lbrakk>length zs = length ts; length vs = length ts;
           \<forall>i < length ts. (f,frgt) \<turnstile> (ts ! i, bs, xs) \<Rightarrow>\<^bsup>zs ! i\<^esup> vs ! i;
-          g vs = v'; z' = sum_list zs + T_g vs\<rbrakk>
+          v' = f_from_frgt frgt gr vs; z' = sum_list zs + T_f_from_frgt frgt gr vs\<rbrakk>
           \<Longrightarrow> (f,frgt) \<turnstile> (hCall gr ts,bs,xs) \<Rightarrow>\<^bsup>z'\<^esup> v'" |
-hTAIL: "\<lbrakk>length zs = length ts; length vs = length ts;
+hTail: "\<lbrakk>length zs = length ts; length vs = length ts;
           \<forall>i < length ts. (f,frgt) \<turnstile> (ts ! i, bs, xs) \<Rightarrow>\<^bsup>zs ! i\<^esup> vs ! i;
           (f,frgt) \<turnstile> (f,[],vs) \<Rightarrow>\<^bsup>z'\<^esup> v';
           z'' = sum_list zs + z' + 1\<rbrakk>
@@ -220,23 +222,39 @@ lemma invar_tail[elim]:
 
 (* traces *)
 
-type_synonym trace = "(fun_ref \<times> nat list) list"
+type_synonym call_trace = "(fun_ref \<times> nat list) list"  (* called function, arguments *)
+type_synonym trace = "nat \<times> call_trace"  (* number of recursive calls \<times> call trace *)
 
 definition "interp_trace_item frgt g vs_arg_g = T_f_from_frgt frgt g vs_arg_g"
-definition "interp_trace frgt = sum_map (\<lambda>(g, vs_arg_g). interp_trace_item frgt g vs_arg_g)"
+definition "interp_trace frgt n T = n + sum_map (\<lambda>(g, vs_arg_g). interp_trace_item frgt g vs_arg_g) T"
 
 lemma interp_trace_append[simp]:
-  "interp_trace frgt (xs @ ys) = interp_trace frgt xs + interp_trace frgt ys"
+  "interp_trace frgt (n1 + n2) (T1 @ T2) = interp_trace frgt n1 T1 + interp_trace frgt n2 T2"
+  unfolding interp_trace_def by simp
+lemma interp_trace_append_nt1[simp]:
+  "interp_trace frgt n (T1 @ T2) = interp_trace frgt 0 T1 + interp_trace frgt n T2"
   unfolding interp_trace_def by simp
 lemma interp_trace_concat_is_sum_map:
-  "interp_trace frgt (concat xss) = sum_map (interp_trace frgt) xss"
+  "interp_trace frgt n (concat xss) = n + sum_map (interp_trace frgt 0) xss"
   unfolding interp_trace_def by (induction xss) auto
+
+lemma interp_trace_nil[simp]:
+  "interp_trace frgt n [] = n"
+  unfolding interp_trace_def by simp
+
+lemma interp_trace_n:
+  "interp_trace frgt n T = interp_trace frgt 0 T + n"
+  unfolding interp_trace_def by simp
+
+lemma interp_trace_singleton[simp]: "interp_trace frgt n [(g, vs_arg_g)] = n + T_f_from_frgt frgt g vs_arg_g"
+  unfolding interp_trace_def interp_trace_item_def by simp
+
 
 datatype leaf_state = Value nat | Tail "nat list"
 print_theorems
 
 inductive
-  htrace_to_leaf :: "fun_registry \<Rightarrow> thol \<times> nat list \<times> nat list \<Rightarrow> trace \<Rightarrow> leaf_state \<Rightarrow> bool"  ("_ \<turnstile> _ \<Rightarrow>\<^bsup>_\<^esup>  _" 55)
+  htrace_to_leaf :: "fun_registry \<Rightarrow> thol \<times> nat list \<times> nat list \<Rightarrow> call_trace \<Rightarrow> leaf_state \<Rightarrow> bool"  ("_ \<turnstile> _ \<Rightarrow>\<^bsup>_\<^esup>  _" 55)
 where
 hLet:
   "\<lbrakk>frgt \<turnstile> (t1,bs,xs) \<Rightarrow>\<^bsup>T1\<^esup> Value v1; frgt \<turnstile> (t2,v1#bs,xs) \<Rightarrow>\<^bsup>T2\<^esup> l2; T = T1@T2\<rbrakk>
@@ -251,9 +269,9 @@ hIfFalse:
   "\<lbrakk>frgt \<turnstile> (t1,bs,xs) \<Rightarrow>\<^bsup>T1\<^esup> Value v1; v1 = 0; frgt \<turnstile> (t3,bs,xs) \<Rightarrow>\<^bsup>T3\<^esup> l3; T = T1@T3\<rbrakk>
    \<Longrightarrow> frgt \<turnstile> (IF t1\<noteq>0 THEN t2 ELSE t3,bs,xs) \<Rightarrow>\<^bsup>T\<^esup> l3" |
 hCall:
-  "\<lbrakk>(g, T_g) = frgt gr; length vs = length ts; length Ts = length ts;
+  "\<lbrakk>length vs = length ts; length Ts = length ts;
     \<forall>i < length ts. frgt \<turnstile> (ts ! i,bs,xs) \<Rightarrow>\<^bsup>Ts ! i\<^esup> Value (vs ! i);
-    T = concat Ts @ [(gr,vs)]; v = g vs\<rbrakk>
+    T = concat Ts @ [(gr,vs)]; v = f_from_frgt frgt gr vs\<rbrakk>
    \<Longrightarrow> frgt \<turnstile> (hCall gr ts,bs,xs) \<Rightarrow>\<^bsup>T\<^esup> Value v" |
 hTail:
   "\<lbrakk>length vs = length ts; length Ts = length ts;
@@ -264,13 +282,13 @@ hTail:
 declare htrace_to_leaf.intros[intro]
 lemmas htrace_to_leaf_induct = htrace_to_leaf.induct[split_format(complete)]
 
-inductive_cases hLet_traceE [elim!]: "frgt \<turnstile> (LET t1 IN t2,bs,xs) \<Rightarrow>\<^bsup>T :: trace\<^esup> l"
-inductive_cases hLetBound_traceE [elim!]: "frgt \<turnstile> (hLetBound n,bs,xs) \<Rightarrow>\<^bsup>T :: trace\<^esup> l"
-inductive_cases hArg_traceE [elim!]: "frgt \<turnstile> (hArg n,bs,xs) \<Rightarrow>\<^bsup>T :: trace\<^esup> l"
-inductive_cases hNumber_traceE [elim!]: "frgt \<turnstile> (hNumber n,bs,xs) \<Rightarrow>\<^bsup>T :: trace\<^esup> l"
-inductive_cases hIf_traceE [elim!]: "frgt \<turnstile> (IF t1\<noteq>0 THEN t2 ELSE t3,bs,xs) \<Rightarrow>\<^bsup>T :: trace\<^esup> l"
-inductive_cases hCall_traceE [elim!]: "frgt \<turnstile> (hCall g ts,bs,xs) \<Rightarrow>\<^bsup>T :: trace\<^esup> l"
-inductive_cases hTAIL_traceE [elim!]: "frgt \<turnstile> (hTAIL ts,bs,xs) \<Rightarrow>\<^bsup>T :: trace\<^esup> l"
+inductive_cases hLet_trace_leafE [elim!]: "frgt \<turnstile> (LET t1 IN t2,bs,xs) \<Rightarrow>\<^bsup>T :: call_trace\<^esup> l"
+inductive_cases hLetBound_trace_leafE [elim!]: "frgt \<turnstile> (hLetBound n,bs,xs) \<Rightarrow>\<^bsup>T :: call_trace\<^esup> l"
+inductive_cases hArg_trace_leafE [elim!]: "frgt \<turnstile> (hArg n,bs,xs) \<Rightarrow>\<^bsup>T :: call_trace\<^esup> l"
+inductive_cases hNumber_trace_leafE [elim!]: "frgt \<turnstile> (hNumber n,bs,xs) \<Rightarrow>\<^bsup>T :: call_trace\<^esup> l"
+inductive_cases hIf_trace_leafE [elim!]: "frgt \<turnstile> (IF t1\<noteq>0 THEN t2 ELSE t3,bs,xs) \<Rightarrow>\<^bsup>T :: call_trace\<^esup> l"
+inductive_cases hCall_trace_leafE [elim!]: "frgt \<turnstile> (hCall g ts,bs,xs) \<Rightarrow>\<^bsup>T :: call_trace\<^esup> l"
+inductive_cases hTAIL_trace_leafE [elim!]: "frgt \<turnstile> (hTAIL ts,bs,xs) \<Rightarrow>\<^bsup>T :: call_trace\<^esup> l"
 
 
 (* relating traces to the semantics
@@ -295,276 +313,428 @@ We show: if there is a semantics, either:
 - there exists a corresponding trace to a value (i.e. no tail call occurs), or
 - there exists a trace to Tail xs', and from f/[]/xs' a semantics to a value.
 
+TODO: update this comment. We do basically this, but instead of doing case 2 relative to
+the bigstep semantics, we do it with the "full" traces.
+
 *)
 
-lemma trace_val_to_semantics0:
-  assumes "frgt \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup>(T :: trace)\<^esup> l" "l = Value v"
-  shows "(f,frgt) \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup> interp_trace frgt T \<^esup> v"
+
+lemma nontail_trace_leaf_no_tail:
+  fixes T :: call_trace
+  assumes "\<not> tails t" "frgt \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>T\<^esup> l" shows "\<exists>v. l = Value v"
+  using assms by (induction t arbitrary: bs xs T) auto
+
+lemma trace_leaf_nontail_bigstep:
+  fixes T :: call_trace
+  assumes "frgt \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>T\<^esup> l" "l = Value v"
+  shows "(f, frgt) \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>interp_trace frgt 0 T\<^esup> v"
 using assms proof (induction arbitrary: v rule: htrace_to_leaf_induct)
-  case (hCall g T_g frgt gr vs ts Ts bs xs T v)
-  let ?zs = "map (interp_trace frgt) Ts"
-  show ?case
-  proof
-    have "interp_trace frgt [(gr,vs)] = T_g vs"
-      unfolding interp_trace_def interp_trace_item_def using hCall split_from_frgt by simp
-    then show "interp_trace frgt T = sum_list ?zs + T_g vs"
-      using hCall interp_trace_concat_is_sum_map interp_trace_append by simp
-  next
-    show "g vs = v" using hCall by simp
-  qed (simp_all add: hCall)
-qed (auto simp add: interp_trace_def hbig_step_t.intros)
-
-theorem trace_val_to_semantics: (* to_bigstep *)
-  assumes "frgt \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup>T\<^esup> Value v"
-  shows "(f,frgt) \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup> interp_trace frgt T \<^esup> v"
-  using assms trace_val_to_semantics0 by blast
-
-
-lemma trace_tail_to_semantics0:
-  assumes "frgt \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup>(T :: trace)\<^esup> l" "l = Tail xs'"
-  assumes "invar t"
-  assumes "(f,frgt) \<turnstile> (f,[],xs') \<Rightarrow>\<^bsup>z\<^esup> v"
-  shows "(f,frgt) \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup> interp_trace frgt T + z + 1 \<^esup> v"
-  (* TODO: could probably get this proof a bit shorter/cleaner, OK for now *)
-using assms proof (induction arbitrary: rule: htrace_to_leaf_induct)
   case (hLet frgt t1 bs xs T1 v1 t2 T2 l2 T)
-  show ?case
-  proof
-    show "interp_trace frgt T + z + 1 = (interp_trace frgt T1) + (interp_trace frgt T2 + z + 1)"
-      using hLet interp_trace_append by simp
-  next
-    show "(f, frgt) \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup>interp_trace frgt T1\<^esup> v1"
-      using hLet trace_val_to_semantics by simp
-  next
-    show "(f, frgt) \<turnstile> (t2, v1 # bs, xs) \<Rightarrow>\<^bsup>interp_trace frgt T2 + z + 1\<^esup>  v"
-      using hLet by simp
-  qed
+  with interp_trace_append_nt1 show ?case by blast
 next
   case (hIfTrue frgt t1 bs xs T1 v1 t2 T2 l2 T t3)
-  show ?case
-  proof (rule hbig_step_t.hIfTrue)
-    show "(f, frgt) \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup>interp_trace frgt T1\<^esup> v1"
-      using hIfTrue trace_val_to_semantics by simp
-  next
-    show "v1 \<noteq> 0" using hIfTrue by simp
-  next
-    show "(f, frgt) \<turnstile> (t2, bs, xs) \<Rightarrow>\<^bsup>interp_trace frgt T2 + z + 1\<^esup> v" using hIfTrue by simp
-  next
-    show "interp_trace frgt T + z + 1 = (interp_trace frgt T1) + (interp_trace frgt T2 + z + 1)"
-      using hIfTrue by simp
-  qed
+  with interp_trace_append_nt1 show ?case by blast
 next
   case (hIfFalse frgt t1 bs xs T1 v1 t3 T3 l3 T t2)
-  show ?case
-  proof (rule hbig_step_t.hIfFalse)
-    show "(f, frgt) \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup>interp_trace frgt T1\<^esup> v1"
-      using hIfFalse trace_val_to_semantics by simp
+  with interp_trace_append_nt1 show ?case by blast
+next
+  case (hCall vs ts Ts frgt bs xs T gr v)
+
+  let ?zs = "map (interp_trace frgt 0) Ts"
+  have len_zs: "length ?zs = length ts" using hCall by simp
+
+  show ?case proof (rule hbig_step_t.hCall)
+    show "\<forall>i<length ts. (f, frgt) \<turnstile> (ts ! i, bs, xs) \<Rightarrow>\<^bsup>?zs ! i\<^esup>  vs ! i"
+      using \<open>length Ts = length ts\<close> hCall.IH nth_map by simp
   next
-    show "v1 = 0" using hIfFalse by simp
+    show "interp_trace frgt 0 T = sum_map (interp_trace frgt 0) Ts + T_f_from_frgt frgt gr vs"
+      using \<open>T = concat Ts @ [(gr, vs)]\<close> interp_trace_concat_is_sum_map by simp
   next
-    show "(f, frgt) \<turnstile> (t3, bs, xs) \<Rightarrow>\<^bsup>interp_trace frgt T3 + z + 1\<^esup> v" using hIfFalse by simp
-  next
-    show "interp_trace frgt T + z + 1 = (interp_trace frgt T1) + (interp_trace frgt T3 + z + 1)"
-      using hIfFalse by simp
-  qed
+    show "v = f_from_frgt frgt gr vs"
+      using hCall by blast
+  qed (auto simp add: hCall)
 next
   case (hTail vs ts Ts frgt bs xs T)
-  let ?zs = "map (interp_trace frgt) Ts"
-  show ?case
-  proof
-    show "interp_trace frgt T + z + 1 = sum_list ?zs + z + 1"
-      using hTail interp_trace_concat_is_sum_map interp_trace_append by simp
-  next show "\<forall>i<length ts. (f, frgt) \<turnstile> (ts ! i, bs, xs) \<Rightarrow>\<^bsup>?zs ! i\<^esup> vs ! i"
-      using hTail[simplified] nth_map trace_val_to_semantics by simp
-  next show "length vs = length ts" using hTail by simp
-  next show "(f, frgt) \<turnstile> (f, [], vs) \<Rightarrow>\<^bsup>z\<^esup> v" using hTail by simp
-  next show "length (map (interp_trace frgt) Ts) = length ts" using hTail by simp
-  qed
-qed simp_all
+  then show ?case by simp
+qed auto
 
-theorem trace_tail_to_semantics:
-  assumes "invar t"
-  assumes "frgt \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup>T\<^esup> Tail xs'"
-  assumes "(f,frgt) \<turnstile> (f,[],xs') \<Rightarrow>\<^bsup>z\<^esup> v"
-  shows "(f,frgt) \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup> interp_trace frgt T + z + 1 \<^esup> v"
-  using assms trace_tail_to_semantics0 by blast
-
-
-(* semantics \<longrightarrow> trace *)
-
-
-lemma sem_to_trace_non_tailE:
-  assumes "\<not> tails t"
-  assumes "(f,frgt) \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup> z \<^esup> v"
-  obtains T :: trace where "frgt \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup>T\<^esup> Value v" "interp_trace frgt T = z"
-  using assms(2,1) apply (induction rule: hbig_step_t_induct)
-  apply (metis tails.simps(2) htrace_to_leaf.hLet interp_trace_append)
-  apply (metis htrace_to_leaf.hLetBound interp_trace_def list.map(1) sum_list.Nil)
-  apply (metis htrace_to_leaf.hArg interp_trace_def list.map(1) sum_list.Nil)
-  apply (metis htrace_to_leaf.hNumber interp_trace_def list.map(1) sum_list.Nil)
-  apply (metis tails.simps(3) htrace_to_leaf.hIfTrue interp_trace_append)
-  apply (metis tails.simps(3) htrace_to_leaf.hIfFalse interp_trace_append)
-  oops (* TODO *)
-
-lemma sem_to_trace_inductionI:
-  assumes "P' \<or> (\<exists>xs'. Q1' xs' \<and> Q2' xs')"
-  assumes "P' \<Longrightarrow> P T"
-  assumes "\<And>xs'. Q1' xs' \<Longrightarrow> Q1 T xs'"
-  assumes "\<And>xs'. Q2' xs' \<Longrightarrow> Q2 T xs'"
-  shows "\<exists>T. P T \<or> (\<exists>xs'. Q1 T xs' \<and> Q2 T xs')"
-  using assms by blast
-
-(* oops
-lemma sem_to_traceE:
-  assumes "invar t"
-  assumes "(f,frgt) \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup>z\<^esup> v"
-  shows "\<exists>T.
-    (frgt \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup>T\<^esup> Value v) \<or>
-    (\<exists>xs'. frgt \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup>T\<^esup> Tail xs'
-           \<and> (f,frgt) \<turnstile> (f,[],xs') \<Rightarrow>\<^bsup>z - interp_trace frgt T - 1\<^esup> v)"
-using assms(2,1) proof (induction rule: hbig_step_t_induct)
+lemma bigstep_nontail_trace_leaf:
+  fixes z :: nat and v :: nat
+  assumes "(f, frgt) \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>z\<^esup> v" "\<not> tails t"
+  shows "\<exists>T. interp_trace frgt 0 T = z \<and> frgt \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>T\<^esup> Value v"
+using assms proof (induction rule: hbig_step_t_induct)
   case (hLet f frgt t1 bs xs z1 v1 t2 z2 v z)
+  from hLet nontail_trace_leaf_no_tail obtain T1 where 1:
+    "interp_trace frgt 0 T1 = z1" "frgt \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup>T1\<^esup> Value v1" by fastforce
+  from hLet obtain T2 where 2:
+    "interp_trace frgt 0 T2 = z2" "frgt \<turnstile> (t2, v1 # bs, xs) \<Rightarrow>\<^bsup>T2\<^esup> Value v" by auto
 
-  from sem_to_trace_non_tailE hLet.hyps(1) obtain T1 where
-    T1: "frgt \<turnstile> (t1,bs,xs) \<Rightarrow>\<^bsup>T1\<^esup> Value v1" "interp_trace frgt T1 = z1"
-    using hLet.prems invar.simps by blast
-  from hLet.IH(2) obtain T2 where
-      "(frgt \<turnstile> (t2,v1#bs,xs) \<Rightarrow>\<^bsup>T2\<^esup> Value v) \<or>
-       (\<exists>xs'. frgt \<turnstile> (t2,v1#bs,xs) \<Rightarrow>\<^bsup>T2\<^esup> Tail xs' \<and>
-              (f, frgt) \<turnstile> (f,[],xs') \<Rightarrow>\<^bsup>z2 - interp_trace frgt T2 - 1\<^esup> v)"
-    using hLet.prems by auto
-  then show ?case proof (rule sem_to_trace_inductionI)
-    assume "frgt \<turnstile> (t2,v1#bs,xs) \<Rightarrow>\<^bsup>T2\<^esup> Value v"
-    then show "frgt \<turnstile> (LET t1 IN t2,bs,xs) \<Rightarrow>\<^bsup>T1@T2\<^esup> Value v"
-      using T1 htrace_to_leaf.intros by simp
-  next
-    fix xs'
-    assume "frgt \<turnstile> (t2, v1 # bs, xs) \<Rightarrow>\<^bsup>T2\<^esup>  Tail xs'"
-    then show "frgt \<turnstile> (LET t1 IN t2, bs, xs) \<Rightarrow>\<^bsup>T1@T2\<^esup>  Tail xs'"
-      using T1 htrace_to_leaf.intros by simp
-  next
-    fix xs'
-    assume "(f, frgt) \<turnstile> (f, [], xs') \<Rightarrow>\<^bsup>z2 - interp_trace frgt T2 - 1\<^esup>  v"
-    then show "(f, frgt) \<turnstile> (f, [], xs') \<Rightarrow>\<^bsup>z - interp_trace frgt (T1 @ T2) - 1\<^esup>  v"
-      using hLet T1 htrace_to_leaf.intros interp_trace_append by simp
-  qed
+  from \<open>z = z1 + z2\<close> 1 2 have "interp_trace frgt 0 (T1 @ T2) = z" by simp
+  moreover from 1 2 have "frgt \<turnstile> (LET t1 IN t2, bs, xs) \<Rightarrow>\<^bsup>T1 @ T2\<^esup> Value v" by blast
+  ultimately show ?case by blast
 next
-  case (hLetBound n bs a b xs)
-  then have "b \<turnstile> (hLetBound n, bs, xs) \<Rightarrow>\<^bsup> [] \<^esup> Value (bs ! n)" using htrace_to_leaf.intros by simp
-  then show ?case by blast
+  case hLetBound
+  then show ?case by force
 next
-  case (hArg n xs a b bs)
-  then have "b \<turnstile> (hArg n, bs, xs) \<Rightarrow>\<^bsup> [] \<^esup> Value (xs ! n)" using htrace_to_leaf.intros by simp
-  then show ?case by blast
+  case hArg
+  then show ?case by force
 next
-  case (hNumber a b n bs xs)
-  then have "b \<turnstile> (hNumber n, bs, xs) \<Rightarrow>\<^bsup> [] \<^esup> Value n" using htrace_to_leaf.intros by simp
-  then show ?case by blast
+  case hNumber
+  then show ?case by force
 next
   case (hIfTrue f frgt t1 bs xs z1 v1 t2 z2 v2 z t3)
-  from sem_to_trace_non_tailE hIfTrue.hyps(1) obtain T1 where
-    T1: "frgt \<turnstile> (t1,bs,xs) \<Rightarrow>\<^bsup>T1\<^esup> Value v1" "interp_trace frgt T1 = z1"
-    using hIfTrue.prems invar.simps by blast
-  from hIfTrue.IH(2) obtain T2 where
-      "(frgt \<turnstile> (t2,bs,xs) \<Rightarrow>\<^bsup>T2\<^esup> Value v2) \<or>
-       (\<exists>xs'. frgt \<turnstile> (t2,bs,xs) \<Rightarrow>\<^bsup>T2\<^esup> Tail xs' \<and>
-              (f, frgt) \<turnstile> (f,[],xs') \<Rightarrow>\<^bsup>z2 - interp_trace frgt T2 - 1\<^esup> v2)"
-    using hIfTrue.prems by auto
-  then show ?case proof (rule sem_to_trace_inductionI)
-    assume "frgt \<turnstile> (t2,bs,xs) \<Rightarrow>\<^bsup>T2\<^esup> Value v2"
-    then show "frgt \<turnstile> (IF t1\<noteq>0 THEN t2 ELSE t3,bs,xs) \<Rightarrow>\<^bsup>T1@T2\<^esup> Value v2"
-      using hIfTrue T1 htrace_to_leaf.intros by simp
-  next
-    fix xs'
-    assume "frgt \<turnstile> (t2,bs,xs) \<Rightarrow>\<^bsup>T2\<^esup> Tail xs'"
-    then show "frgt \<turnstile> (IF t1\<noteq>0 THEN t2 ELSE t3,bs,xs) \<Rightarrow>\<^bsup>T1@T2\<^esup> Tail xs'"
-      using hIfTrue T1 htrace_to_leaf.intros by simp
-  next
-    fix xs'
-    assume "(f,frgt) \<turnstile> (f,[],xs') \<Rightarrow>\<^bsup>z2 - interp_trace frgt T2 - 1\<^esup>  v2"
-    then show "(f,frgt) \<turnstile> (f,[],xs') \<Rightarrow>\<^bsup>z - interp_trace frgt (T1@T2) - 1\<^esup> v2"
-      using hIfTrue T1 htrace_to_leaf.intros interp_trace_append by simp
-  qed
+  from hIfTrue nontail_trace_leaf_no_tail obtain T1 where 1:
+    "interp_trace frgt 0 T1 = z1" "frgt \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup>T1\<^esup> Value v1" by fastforce
+  from hIfTrue obtain T2 where 2:
+    "interp_trace frgt 0 T2 = z2" "frgt \<turnstile> (t2, bs, xs) \<Rightarrow>\<^bsup>T2\<^esup> Value v2" by auto
+  from \<open>z = z1 + z2\<close> 1 2 have "interp_trace frgt 0 (T1 @ T2) = z" by simp
+  moreover from \<open>v1 \<noteq> 0\<close> 1 2 have "frgt \<turnstile> (IF t1\<noteq>0 THEN t2 ELSE t3, bs, xs) \<Rightarrow>\<^bsup>T1 @ T2\<^esup> Value v2" by blast
+  ultimately show ?case by blast
 next
   case (hIfFalse f frgt t1 bs xs z1 v1 t3 z2 v2 z t2)
-  from sem_to_trace_non_tailE hIfFalse.hyps(1) obtain T1 where
-    T1: "frgt \<turnstile> (t1,bs,xs) \<Rightarrow>\<^bsup>T1\<^esup> Value v1" "interp_trace frgt T1 = z1"
-    using hIfFalse.prems invar.simps by blast
-  from hIfFalse.IH(2) obtain T2 where
-      "(frgt \<turnstile> (t3,bs,xs) \<Rightarrow>\<^bsup>T2\<^esup> Value v2) \<or>
-       (\<exists>xs'. frgt \<turnstile> (t3,bs,xs) \<Rightarrow>\<^bsup>T2\<^esup> Tail xs' \<and>
-              (f,frgt) \<turnstile> (f,[],xs') \<Rightarrow>\<^bsup>z2 - interp_trace frgt T2 - 1\<^esup> v2)"
-    using hIfFalse.prems by auto
-  then show ?case proof (rule sem_to_trace_inductionI)
-    assume "frgt \<turnstile> (t3,bs,xs) \<Rightarrow>\<^bsup>T2\<^esup> Value v2"
-    then show "frgt \<turnstile> (IF t1\<noteq>0 THEN t2 ELSE t3,bs,xs) \<Rightarrow>\<^bsup>T1@T2\<^esup> Value v2"
-      using hIfFalse T1 htrace_to_leaf.intros by simp
-  next
-    fix xs'
-    assume "frgt \<turnstile> (t3,bs,xs) \<Rightarrow>\<^bsup>T2\<^esup> Tail xs'"
-    then show "frgt \<turnstile> (IF t1\<noteq>0 THEN t2 ELSE t3,bs,xs) \<Rightarrow>\<^bsup>T1@T2\<^esup> Tail xs'"
-      using hIfFalse T1 htrace_to_leaf.intros by simp
-  next
-    fix xs'
-    assume "(f,frgt) \<turnstile> (f,[],xs') \<Rightarrow>\<^bsup>z2 - interp_trace frgt T2 - 1\<^esup>  v2"
-    then show "(f,frgt) \<turnstile> (f,[],xs') \<Rightarrow>\<^bsup>z - interp_trace frgt (T1@T2) - 1\<^esup> v2"
-      using hIfFalse T1 htrace_to_leaf.intros interp_trace_append by simp
-  qed
+  from hIfFalse nontail_trace_leaf_no_tail obtain T1 where 1:
+    "interp_trace frgt 0 T1 = z1" "frgt \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup>T1\<^esup> Value v1" by fastforce
+  from hIfFalse obtain T2 where 2:
+    "interp_trace frgt 0 T2 = z2" "frgt \<turnstile> (t3, bs, xs) \<Rightarrow>\<^bsup>T2\<^esup> Value v2" by auto
+  from \<open>z = z1 + z2\<close> 1 2 have "interp_trace frgt 0 (T1 @ T2) = z" by simp
+  moreover from \<open>v1 = 0\<close> 1 2 have "frgt \<turnstile> (IF t1\<noteq>0 THEN t2 ELSE t3, bs, xs) \<Rightarrow>\<^bsup>T1 @ T2\<^esup> Value v2" by blast
+  ultimately show ?case by blast
 next
-  case (hCall g T_g frgt gr zs ts vs f bs xs v' z')
-  then show ?case sorry (* TODO *)
+  case (hCall zs ts vs f frgt bs xs v' gr z')
+  let ?P = "\<lambda>i T. interp_trace frgt 0 T = zs ! i \<and> frgt \<turnstile> (ts ! i, bs, xs) \<Rightarrow>\<^bsup>T\<^esup> Value (vs ! i)"
+  let ?Ts = "map (\<lambda>i. SOME T. ?P i T) [0..<length ts]"
+  let ?T = "concat ?Ts @ [(gr, vs)]"
+
+  have P: "i<length ts \<Longrightarrow> \<exists>T. ?P i T" for i using hCall nontail_trace_leaf_no_tail by fastforce
+
+  from P have *: "i<length ts \<Longrightarrow> interp_trace frgt 0 (SOME T. ?P i T) = zs ! i" for i
+    using someI2_ex[where P = "?P i"] by fast
+  have **: "length (map (interp_trace frgt 0) ?Ts) = length zs" using hCall by simp
+  from * nth_equalityI[OF **] have "map (interp_trace frgt 0) ?Ts = zs" by simp
+  then have "interp_trace frgt 0 ?T = z'"
+    using interp_trace_concat_is_sum_map hCall by simp
+
+  moreover have "frgt \<turnstile> (hCall gr ts, bs, xs) \<Rightarrow>\<^bsup>?T\<^esup> Value v'"
+  proof (rule htrace_to_leaf.hCall)
+    from P have "i<length ts \<Longrightarrow> frgt \<turnstile> (ts ! i, bs, xs) \<Rightarrow>\<^bsup>SOME T. ?P i T\<^esup> Value (vs ! i)" for i
+      using someI2_ex[where P = "?P i"] by fast
+    then show "\<forall>i<length ts. frgt \<turnstile> (ts ! i, bs, xs) \<Rightarrow>\<^bsup>?Ts ! i\<^esup> Value (vs ! i)" by simp
+  qed (simp_all add: hCall)
+
+  ultimately show ?case by blast
 next
-  case (hTAIL zs ts vs f frgt bs xs z' v' z'')
-  then show ?case sorry
+  case (hTail zs ts vs f frgt bs xs z' v' z'')
+  then show ?case by simp
 qed
 
-(* TODO is this better *)
-lemma sem_to_traceE':
+
+inductive
+  htrace_to_end :: "thol \<times> fun_registry \<Rightarrow> thol \<times> nat list \<times> nat list \<Rightarrow> trace \<Rightarrow> nat \<Rightarrow> bool"  ("_ \<turnstile> _ \<Rightarrow>\<^bsup>_\<^esup>  _" 55)
+where
+hLet:
+  "\<lbrakk>env \<turnstile> (t1,bs,xs) \<Rightarrow>\<^bsup>(0, T1)\<^esup> v1; env \<turnstile> (t2,v1#bs,xs) \<Rightarrow>\<^bsup>(k, T2)\<^esup> v2; T = T1@T2\<rbrakk>
+   \<Longrightarrow> env \<turnstile> (LET t1 IN t2,bs,xs) \<Rightarrow>\<^bsup>(k, T)\<^esup> v2" |
+hLetBound: "k < length bs \<Longrightarrow> env \<turnstile> (hLetBound k,bs,xs) \<Rightarrow>\<^bsup>(0, [])\<^esup> bs ! k" |
+hArg: "k < length xs \<Longrightarrow> env \<turnstile> (hArg k,bs,xs) \<Rightarrow>\<^bsup>(0, [])\<^esup> xs ! k" |
+hNumber: "env \<turnstile> (hNumber k,bs,xs) \<Rightarrow>\<^bsup>(0, [])\<^esup> k" |
+hIfTrue:
+  "\<lbrakk>env \<turnstile> (t1,bs,xs) \<Rightarrow>\<^bsup>(0, T1)\<^esup> v1; v1 \<noteq> 0; env \<turnstile> (t2,bs,xs) \<Rightarrow>\<^bsup>(k, T2)\<^esup> v2; T = T1@T2\<rbrakk>
+   \<Longrightarrow> env \<turnstile> (IF t1\<noteq>0 THEN t2 ELSE t3,bs,xs) \<Rightarrow>\<^bsup>(k, T)\<^esup> v2" |
+hIfFalse:
+  "\<lbrakk>env \<turnstile> (t1,bs,xs) \<Rightarrow>\<^bsup>(0, T1)\<^esup> v1; v1 = 0; env \<turnstile> (t3,bs,xs) \<Rightarrow>\<^bsup>(k, T3)\<^esup> v3; T = T1@T3\<rbrakk>
+   \<Longrightarrow> env \<turnstile> (IF t1\<noteq>0 THEN t2 ELSE t3,bs,xs) \<Rightarrow>\<^bsup>(k, T)\<^esup> v3" |
+hCall:
+  "\<lbrakk>length vs = length ts; length Ts = length ts;
+    \<forall>i < length ts. (f,frgt) \<turnstile> (ts ! i,bs,xs) \<Rightarrow>\<^bsup>(0, Ts ! i)\<^esup> vs ! i;
+    T = concat Ts @ [(gr,vs)]; v = f_from_frgt frgt gr vs\<rbrakk>
+   \<Longrightarrow> (f,frgt) \<turnstile> (hCall gr ts,bs,xs) \<Rightarrow>\<^bsup>(0, T)\<^esup> v" |
+hTail:
+  "\<lbrakk>length vs = length ts; length Ts = length ts;
+    \<forall>i < length ts. (f,frgt) \<turnstile> (ts ! i,bs,xs) \<Rightarrow>\<^bsup>(0, Ts ! i)\<^esup> vs ! i;
+    (f,frgt) \<turnstile> (f,[],vs) \<Rightarrow>\<^bsup>(n', T')\<^esup> v';
+    T = concat Ts @ T'; k = n' + 1\<rbrakk>
+   \<Longrightarrow> (f,frgt) \<turnstile> (hTAIL ts,bs,xs) \<Rightarrow>\<^bsup>(k, T)\<^esup> v'"
+
+declare htrace_to_end.intros[intro]
+lemmas htrace_to_end_induct = htrace_to_end.induct[split_format(complete)]
+
+inductive_cases hLet_trace_endE [elim!]: "env \<turnstile> (LET t1 IN t2,bs,xs) \<Rightarrow>\<^bsup>(k, T)\<^esup> v"
+inductive_cases hLetBound_trace_endE [elim!]: "env \<turnstile> (hLetBound n,bs,xs) \<Rightarrow>\<^bsup>(k, T)\<^esup> v"
+inductive_cases hArg_trace_endE [elim!]: "env \<turnstile> (hArg n,bs,xs) \<Rightarrow>\<^bsup>(k, T)\<^esup> v"
+inductive_cases hNumber_trace_endE [elim!]: "env \<turnstile> (hNumber n,bs,xs) \<Rightarrow>\<^bsup>(k, T)\<^esup> v"
+inductive_cases hIf_trace_endE [elim!]: "env \<turnstile> (IF t1\<noteq>0 THEN t2 ELSE t3,bs,xs) \<Rightarrow>\<^bsup>(k, T)\<^esup> v"
+inductive_cases hCall_trace_endE [elim!]: "(f,frgt) \<turnstile> (hCall g ts,bs,xs) \<Rightarrow>\<^bsup>(k, T)\<^esup> v"
+inductive_cases hTAIL_trace_endE [elim!]: "(f,frgt) \<turnstile> (hTAIL ts,bs,xs) \<Rightarrow>\<^bsup>(k, T)\<^esup> v"
+
+(* relating full traces and bigstep *)
+
+lemma nontail_trace_end_no_tail:
+  assumes "\<not> tails t" "(f, frgt) \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>(n, T)\<^esup> v" shows "n = 0"
+  using assms by (induction t arbitrary: bs xs T) auto
+
+lemma trace_end_bigstep:
+  fixes T :: call_trace and v :: nat
+  assumes "(f, frgt) \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>(n, T)\<^esup> v"
+  shows "(f, frgt) \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>interp_trace frgt n T\<^esup> v"
+using assms proof (induction rule: htrace_to_end_induct)
+  case (hLet a b t1 bs xs T1 v1 t2 n T2 v2 T)
+  with interp_trace_append_nt1 show ?case by blast
+next
+  case hLetBound
+  then show ?case by fastforce
+next
+  case hArg
+  then show ?case by fastforce
+next
+  case hNumber
+  then show ?case by fastforce
+next
+  case hIfTrue
+  with interp_trace_append_nt1 show ?case by blast
+next
+  case hIfFalse
+  with interp_trace_append_nt1 show ?case by blast
+next
+  case (hCall vs ts Ts f frgt bs xs T gr v)
+
+  let ?zs = "map (interp_trace frgt 0) Ts"
+  have len_zs: "length ?zs = length ts" using hCall by simp
+
+  show ?case proof (rule hbig_step_t.hCall)
+    show "\<forall>i<length ts. (f, frgt) \<turnstile> (ts ! i, bs, xs) \<Rightarrow>\<^bsup>?zs ! i\<^esup>  vs ! i"
+      using \<open>length Ts = length ts\<close> hCall.IH nth_map by simp
+  next
+    show "interp_trace frgt 0 T = sum_map (interp_trace frgt 0) Ts + T_f_from_frgt frgt gr vs"
+      using \<open>T = concat Ts @ [(gr, vs)]\<close> interp_trace_concat_is_sum_map by simp
+  qed (simp_all add: hCall)
+next
+  case (hTail vs ts Ts f frgt bs xs n' T' v' T n)
+
+  let ?zs = "map (interp_trace frgt 0) Ts"
+  have len_zs: "length ?zs = length ts" using hTail by simp
+    
+  show ?case proof (rule hbig_step_t.hTail)
+    show "\<forall>i<length ts. (f, frgt) \<turnstile> (ts ! i, bs, xs) \<Rightarrow>\<^bsup>?zs ! i\<^esup>  vs ! i"
+      using \<open>length Ts = length ts\<close> hTail.IH nth_map by simp
+  next
+    show "interp_trace frgt n T = sum_map (interp_trace frgt 0) Ts + interp_trace frgt n' T' + 1"
+      apply (subst (2) interp_trace_n)
+      apply (subst interp_trace_n)
+      using \<open>T = concat Ts @ T'\<close> \<open>n = n' + 1\<close> interp_trace_concat_is_sum_map apply simp
+      done
+  qed (simp_all add: hTail)
+qed
+
+lemma bigstep_trace_end:
+  fixes z :: nat and v :: nat
+  assumes "(f, frgt) \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>z\<^esup> v"
+  assumes "invar t" "invar f"
+  shows "\<exists>k T. interp_trace frgt k T = z \<and> (f, frgt) \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>(k, T)\<^esup> v"
+using assms proof (induction rule: hbig_step_t_induct)
+  case (hLet f frgt t1 bs xs z1 v1 t2 z2 v z)
+  from hLet nontail_trace_end_no_tail obtain T1 where 1:
+    "interp_trace frgt 0 T1 = z1" "(f, frgt) \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup>(0, T1)\<^esup> v1" by fastforce
+  from hLet obtain k2 T2 where 2:
+    "interp_trace frgt k2 T2 = z2" "(f, frgt) \<turnstile> (t2, v1 # bs, xs) \<Rightarrow>\<^bsup>(k2, T2)\<^esup> v" by auto
+
+  from \<open>z = z1 + z2\<close> 1 2 have "interp_trace frgt k2 (T1 @ T2) = z" by simp
+  moreover from 1 2 have "(f, frgt) \<turnstile> (LET t1 IN t2, bs, xs) \<Rightarrow>\<^bsup>(k2, T1 @ T2)\<^esup>  v" by blast
+  ultimately show ?case by blast
+next
+  case hLetBound
+  then show ?case by force
+next
+  case hArg
+  then show ?case by force
+next
+  case hNumber
+  then show ?case by force
+next
+  case (hIfTrue f frgt t1 bs xs z1 v1 t2 z2 v2 z t3)
+  from hIfTrue nontail_trace_end_no_tail obtain T1 where 1:
+    "interp_trace frgt 0 T1 = z1" "(f, frgt) \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup>(0, T1)\<^esup>  v1" by fastforce
+  from hIfTrue obtain k2 T2 where 2:
+    "interp_trace frgt k2 T2 = z2" "(f, frgt) \<turnstile> (t2, bs, xs) \<Rightarrow>\<^bsup>(k2, T2)\<^esup>  v2" by auto
+  from \<open>z = z1 + z2\<close> 1 2 have "interp_trace frgt k2 (T1 @ T2) = z" by simp
+  moreover from \<open>v1 \<noteq> 0\<close> 1 2 have "(f, frgt) \<turnstile> (IF t1\<noteq>0 THEN t2 ELSE t3, bs, xs) \<Rightarrow>\<^bsup>(k2, T1 @ T2)\<^esup>  v2" by blast
+  ultimately show ?case by blast
+next
+  case (hIfFalse f frgt t1 bs xs z1 v1 t3 z2 v2 z t2)
+  from hIfFalse nontail_trace_end_no_tail obtain T1 where 1:
+    "interp_trace frgt 0 T1 = z1" "(f, frgt) \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup>(0, T1)\<^esup>  v1" by fastforce
+  from hIfFalse obtain k2 T2 where 2:
+    "interp_trace frgt k2 T2 = z2" "(f, frgt) \<turnstile> (t3, bs, xs) \<Rightarrow>\<^bsup>(k2, T2)\<^esup>  v2" by auto
+  from \<open>z = z1 + z2\<close> 1 2 have "interp_trace frgt k2 (T1 @ T2) = z" by simp
+  moreover from \<open>v1 = 0\<close> 1 2 have "(f, frgt) \<turnstile> (IF t1\<noteq>0 THEN t2 ELSE t3, bs, xs) \<Rightarrow>\<^bsup>(k2, T1 @ T2)\<^esup>  v2" by blast
+  ultimately show ?case by blast
+next
+  case (hCall zs ts vs f frgt bs xs v' gr z')
+  let ?P = "\<lambda>i T. interp_trace frgt 0 T = zs ! i \<and> (f, frgt) \<turnstile> (ts ! i, bs, xs) \<Rightarrow>\<^bsup>(0, T)\<^esup>  vs ! i"
+  let ?Ts = "map (\<lambda>i. SOME T. ?P i T) [0..<length ts]"
+  let ?T = "concat ?Ts @ [(gr, vs)]"
+
+  have P: "i<length ts \<Longrightarrow> \<exists>T. ?P i T" for i using hCall nontail_trace_end_no_tail by fastforce
+
+  from P have *: "i<length ts \<Longrightarrow> interp_trace frgt 0 (SOME T. ?P i T) = zs ! i" for i
+    using someI2_ex[where P = "?P i"] by fast
+  have **: "length (map (interp_trace frgt 0) ?Ts) = length zs" using hCall by simp
+  from * nth_equalityI[OF **] have "map (interp_trace frgt 0) ?Ts = zs" by simp
+  then have "interp_trace frgt 0 ?T = z'"
+    using interp_trace_concat_is_sum_map hCall by simp
+
+  moreover have "(f, frgt) \<turnstile> (hCall gr ts, bs, xs) \<Rightarrow>\<^bsup>(0, ?T)\<^esup> v'"
+  proof (rule htrace_to_end.hCall)
+    from P have "i<length ts \<Longrightarrow> (f, frgt) \<turnstile> (ts ! i, bs, xs) \<Rightarrow>\<^bsup>(0, SOME T. ?P i T)\<^esup>  vs ! i" for i
+      using someI2_ex[where P = "?P i"] by fast
+    then show "\<forall>i<length ts. (f, frgt) \<turnstile> (ts ! i, bs, xs) \<Rightarrow>\<^bsup>(0, ?Ts ! i)\<^esup>  vs ! i" by simp
+  qed (simp_all add: hCall)
+
+  ultimately show ?case by blast
+next
+  case (hTail zs ts vs f frgt bs xs z' v' z'')
+  then obtain k T where kT: "interp_trace frgt k T = z'" "(f, frgt) \<turnstile> (f, [], vs) \<Rightarrow>\<^bsup>(k, T)\<^esup>  v'" by auto
+
+  let ?P = "\<lambda>i T. interp_trace frgt 0 T = zs ! i \<and> (f, frgt) \<turnstile> (ts ! i, bs, xs) \<Rightarrow>\<^bsup>(0, T)\<^esup>  vs ! i"
+  let ?Ts = "map (\<lambda>i. SOME T. ?P i T) [0..<length ts]"
+  let ?T = "concat ?Ts @ T"
+
+  have P: "i<length ts \<Longrightarrow> \<exists>T. ?P i T" for i using hTail nontail_trace_end_no_tail by fastforce
+
+  from P have *: "i<length ts \<Longrightarrow> interp_trace frgt 0 (SOME T. ?P i T) = zs ! i" for i
+    using someI2_ex[where P = "?P i"] by fast
+  have **: "length (map (interp_trace frgt 0) ?Ts) = length zs" using hTail by simp
+  from * nth_equalityI[OF **] have interp_Ts: "map (interp_trace frgt 0) ?Ts = zs" by simp
+
+  have "interp_trace frgt (k + 1) ?T = interp_trace frgt 0 (concat ?Ts) + interp_trace frgt k T + 1"
+    unfolding interp_trace_def by simp (* meh *)
+  also have "... = sum_list zs + z' + 1" using interp_trace_concat_is_sum_map kT interp_Ts by simp
+  also have "... = z''" using hTail by simp
+  finally have "interp_trace frgt (k + 1) ?T = z''" .
+
+  moreover have "(f, frgt) \<turnstile> (hTAIL ts, bs, xs) \<Rightarrow>\<^bsup>(k + 1, ?T)\<^esup> v'"
+  proof (rule htrace_to_end.hTail)
+    from P have "i<length ts \<Longrightarrow> (f, frgt) \<turnstile> (ts ! i, bs, xs) \<Rightarrow>\<^bsup>(0, SOME T. ?P i T)\<^esup>  vs ! i" for i
+      using someI2_ex[where P = "?P i"] by fast
+    then show "\<forall>i<length ts. (f, frgt) \<turnstile> (ts ! i, bs, xs) \<Rightarrow>\<^bsup>(0, ?Ts ! i)\<^esup>  vs ! i" by simp
+  qed (simp_all add: hTail kT)
+
+  ultimately show ?case by (metis (lifting))
+qed
+
+
+(* relating partial and full traces *)
+
+lemma trace_leaf_no_tail_trace_end:
+  fixes l :: leaf_state
+  assumes "frgt \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>T\<^esup> l" "l = Value v"
+  shows "(f, frgt) \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>(0, T)\<^esup> v"
+  using assms by (induction arbitrary: v rule: htrace_to_leaf_induct) blast+
+
+lemma trace_leaf_tail_trace_end:
+  fixes l :: leaf_state
+  assumes  "frgt \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>T1\<^esup> l" "l = Tail ts"
+  assumes "(f, frgt) \<turnstile> (f, [], ts) \<Rightarrow>\<^bsup>(k, T2)\<^esup> v"
+  shows "(f, frgt) \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>(k + 1, T1 @ T2)\<^esup> v"
+using assms proof (induction (* arbitrary: ts *) rule: htrace_to_leaf_induct)
+  case hLet
+  with trace_leaf_no_tail_trace_end show ?case by fastforce
+next
+  case hIfTrue
+  with trace_leaf_no_tail_trace_end show ?case by fastforce
+next
+  case hIfFalse
+  with trace_leaf_no_tail_trace_end show ?case by fastforce
+next
+  case hTail
+  with trace_leaf_no_tail_trace_end show ?case by blast
+qed simp_all
+
+
+lemma trace_end_nontail_trace_leaf:
+  assumes "(f, frgt) \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>(0, T)\<^esup> v" "\<not> tails t"
+  shows "frgt \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>T\<^esup> Value v"
+using assms by (induction rule: htrace_to_end_induct) auto
+
+lemma trace_end_trace_leaf:
+  assumes "(f, frgt) \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>(k, T)\<^esup> v"
   assumes "invar t"
-  assumes "(f,frgt) \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup>z\<^esup> v"
-  obtains T where "
-    (frgt \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup>T\<^esup> Value v) \<or>
-    (\<exists>xs'. frgt \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup>T\<^esup> Tail xs'
-           \<and> (f,frgt) \<turnstile> (f,[],xs') \<Rightarrow>\<^bsup>z - interp_trace frgt T - 1\<^esup> v)"
-  using assms sem_to_traceE by blast *)
+  shows "\<exists>T1 l.
+    frgt \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>T1\<^esup> l
+    \<and> (case l of Tail ts \<Rightarrow> (\<exists>T2. (f, frgt) \<turnstile> (f, [], ts) \<Rightarrow>\<^bsup>(k - 1, T2)\<^esup> v)
+               | Value v1 \<Rightarrow> T1 = T \<and> v1 = v)"
+using assms proof (induction rule: htrace_to_end_induct)
+  case (hLet f frgt t1 bs xs T1 v1 t2 k T2 v2 T)
+  from hLet trace_end_nontail_trace_leaf have 1: "frgt \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup>T1\<^esup> Value v1" by simp
+  from hLet obtain T2' l'
+      where 2: "frgt \<turnstile> (t2, v1 # bs, xs) \<Rightarrow>\<^bsup>T2'\<^esup>  l'"
+        and *: "(case l' of Tail ts \<Rightarrow> (\<exists>T3. (f, frgt) \<turnstile> (f, [], ts) \<Rightarrow>\<^bsup>(k - 1, T3)\<^esup>  v2)
+                          | Value v1 \<Rightarrow> T2' = T2 \<and> v1 = v2)"
+    by auto
+  from 1 2 have "frgt \<turnstile> (LET t1 IN t2, bs, xs) \<Rightarrow>\<^bsup>T1 @ T2'\<^esup> l'" by blast
+  moreover from * have
+      "(case l' of Tail ts \<Rightarrow> (\<exists>T3. (f, frgt) \<turnstile> (f, [], ts) \<Rightarrow>\<^bsup>(k - 1, T3)\<^esup>  v2)
+                 | Value v1 \<Rightarrow> T1 @ T2' = T \<and> v1 = v2)"
+    using hLet by (cases l') simp_all
 
-lemma sem_to_trace_existsE:
-  assumes "invar t"
-  assumes "(f,frgt) \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup> z \<^esup> v"
-  obtains T :: trace and l where "frgt \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup>T\<^esup> l"
-  (* using sem_to_traceE assms by blast *)
-  oops
+  ultimately show ?case by blast
+next
+  case hLetBound
+  then show ?case by fastforce
+next
+  case hArg
+  then show ?case by fastforce
+next
+  case hNumber
+  then show ?case by fastforce
+next
+  case (hIfTrue f frgt t1 bs xs T1 v1 t2 k T2 v2 T t3)
+  from hIfTrue trace_end_nontail_trace_leaf have 1: "frgt \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup>T1\<^esup> Value v1" by simp
+  from hIfTrue obtain T2' l'
+      where 2: "frgt \<turnstile> (t2, bs, xs) \<Rightarrow>\<^bsup>T2'\<^esup>  l'"
+        and *: "(case l' of Tail ts \<Rightarrow> (\<exists>T2. (f, frgt) \<turnstile> (f, [], ts) \<Rightarrow>\<^bsup>(k - 1, T2)\<^esup>  v2)
+                          | Value v1 \<Rightarrow> T2' = T2 \<and> v1 = v2)"
+    by auto
+  from 1 2 \<open>v1 \<noteq> 0\<close> have "frgt \<turnstile> (IF t1\<noteq>0 THEN t2 ELSE t3, bs, xs) \<Rightarrow>\<^bsup>T1 @ T2'\<^esup> l'" by blast
+  moreover from * have
+      "(case l' of Tail ts \<Rightarrow> (\<exists>T3. (f, frgt) \<turnstile> (f, [], ts) \<Rightarrow>\<^bsup>(k - 1, T3)\<^esup>  v2)
+                 | Value v1 \<Rightarrow> T1 @ T2' = T \<and> v1 = v2)"
+    using hIfTrue by (cases l') simp_all
 
-(*
-lemma trace_val_from_semantics:
-  assumes "invar t" (* ? *)
-  assumes "(f,frgt) \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup> z \<^esup> v1"
-  assumes "frgt \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup>T\<^esup> Value v2"
-  shows "v1 = v2 \<and> interp_trace frgt T = z"
-  sorry
+  ultimately show ?case by blast
+next
+  case (hIfFalse f frgt t1 bs xs T1 v1 t3 k T3 v3 T t2)
+  from hIfFalse trace_end_nontail_trace_leaf have 1: "frgt \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup>T1\<^esup> Value v1" by simp
+  from hIfFalse obtain T2' l'
+      where 2: "frgt \<turnstile> (t3, bs, xs) \<Rightarrow>\<^bsup>T2'\<^esup>  l'"
+        and *: "(case l' of Tail ts \<Rightarrow> (\<exists>T3. (f, frgt) \<turnstile> (f, [], ts) \<Rightarrow>\<^bsup>(k - 1, T3)\<^esup>  v3)
+                          | Value v1 \<Rightarrow> T2' = T3 \<and> v1 = v3)"
+    by auto
+  from 1 2 \<open>v1 = 0\<close> have "frgt \<turnstile> (IF t1\<noteq>0 THEN t2 ELSE t3, bs, xs) \<Rightarrow>\<^bsup>T1 @ T2'\<^esup> l'" by blast
+  moreover from * have
+      "(case l' of Tail ts \<Rightarrow> (\<exists>T3. (f, frgt) \<turnstile> (f, [], ts) \<Rightarrow>\<^bsup>(k - 1, T3)\<^esup>  v3)
+                 | Value v1 \<Rightarrow> T1 @ T2' = T \<and> v1 = v3)"
+    using hIfFalse by (cases l') simp_all
 
-lemma non_tails_trace: (* useful/meaningful? *)
-  assumes "\<not> tails t"
-  assumes "(f,frgt) \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup> z \<^esup> v"
-  obtains T where "frgt \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup> T \<^esup> Value v" "interp_trace frgt T = z"
-  using trace_exists_non_tail trace_val_from_semantics assms no_tails_invar by blast
+  ultimately show ?case by blast
+next
+  case (hCall vs ts Ts f frgt bs xs T gr v)
 
-lemma trace_tail_from_semantics:
-  assumes "invar t" (* ? *)
-  assumes "(f,frgt) \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup> z \<^esup> v"
-  assumes "frgt \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup>T\<^esup> Tail xs'"
-  shows "(f,frgt) \<turnstile> (f,[],xs') \<Rightarrow>\<^bsup>z - interp_trace frgt T - 1\<^esup> v"
-  sorry
+  have "\<forall>i<length ts. frgt \<turnstile> (ts ! i, bs, xs) \<Rightarrow>\<^bsup>Ts ! i\<^esup>  Value (vs ! i)"
+      using hCall trace_end_nontail_trace_leaf by fastforce
+  then have "frgt \<turnstile> (hCall gr ts, bs, xs) \<Rightarrow>\<^bsup>T\<^esup> Value v" using hCall by blast
 
-lemma trace_from_semantics:
-  assumes "invar t"
-  assumes "(f,frgt) \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup> z \<^esup> v1"
-  assumes "frgt \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup> T :: trace \<^esup> l"
-  shows "(case l of
-      Value v2 \<Rightarrow> v2 = v1
-    | Tail xs' \<Rightarrow> (f,frgt) \<turnstile> (f,[],xs') \<Rightarrow>\<^bsup>z - interp_trace frgt T - 1\<^esup> v)"
-  using trace_val_from_semantics[OF assms(1) assms(2)] trace_tail_from_semantics assms sorry
+  then show ?case using leaf_state.simps(5) by blast
+next
+  case (hTail vs ts Ts f frgt bs xs n' T' v' T k)
 
-*)
+  have "\<forall>i<length ts. frgt \<turnstile> (ts ! i, bs, xs) \<Rightarrow>\<^bsup>Ts ! i\<^esup>  Value (vs ! i)"
+    using hTail trace_end_nontail_trace_leaf by fastforce
+  with hTail have "frgt \<turnstile> (hTAIL ts, bs, xs) \<Rightarrow>\<^bsup>concat Ts\<^esup> Tail vs" by blast
+
+  moreover have "(f, frgt) \<turnstile> (f, [], vs) \<Rightarrow>\<^bsup>(k - 1, T')\<^esup>  v'" using hTail by simp
+
+  ultimately show ?case using leaf_state.simps(6) by blast
+qed
+
 
 end

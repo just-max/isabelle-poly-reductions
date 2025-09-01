@@ -8,16 +8,86 @@ unbundle no com'_syntax
 type_synonym call_trace = "(com \<times> state) list"
 type_synonym trace = "nat \<times> call_trace"
 
-(* interp_trace k T z \<longrightarrow> z is the running time of the trace T, plus k *)
-definition "interp_trace k T z \<equiv>
-  (\<exists>zgs. length zgs = length T
-         \<and> (\<forall>i < length T. \<exists>s'. T ! i \<Rightarrow>\<^bsup>zgs ! i\<^esup> s')
-         \<and> z = sum_list zgs + k)"
+(* interp_trace k T z holds when z is the running time of the trace T, plus k *)
+definition interp_trace :: "nat \<Rightarrow> call_trace \<Rightarrow> nat \<Rightarrow> bool" where
+  "interp_trace k T z \<equiv> (\<exists>zgs.
+     length zgs = length T
+     \<and> (\<forall>i < length T. \<exists>s'. T ! i \<Rightarrow>\<^bsup>zgs ! i\<^esup> s')
+     \<and> z = sum_list zgs + k)"
 
-lemma interp_trace_append[simp]:
+lemma interp_trace_append:
   assumes "interp_trace k1 T1 z1" "interp_trace k2 T2 z2"
   shows "interp_trace (k1 + k2) (T1 @ T2) (z1 + z2)"
-  using assms unfolding interp_trace_def oops (* TODO *)
+proof-
+  from assms obtain zgs1 where 1:
+      "length zgs1 = length T1"
+      "\<forall>i < length T1. \<exists>s'. T1 ! i \<Rightarrow>\<^bsup>zgs1 ! i\<^esup> s'"
+      "z1 = sum_list zgs1 + k1"
+    unfolding interp_trace_def by blast
+  from assms obtain zgs2 where 2:
+      "length zgs2 = length T2"
+      "\<forall>i < length T2. \<exists>s'. T2 ! i \<Rightarrow>\<^bsup>zgs2 ! i\<^esup> s'"
+      "z2 = sum_list zgs2 + k2"
+    unfolding interp_trace_def by blast
+
+  have "length (zgs1 @ zgs2) = length (T1 @ T2)" using 1 2 by simp
+  moreover have "\<exists>s'. (T1 @ T2) ! i \<Rightarrow>\<^bsup>(zgs1 @ zgs2) ! i\<^esup> s'" if "i < length (T1 @ T2)" for i
+  proof (cases "i < length T1")
+    case True
+    then show ?thesis by (simp add: nth_append_left 1)
+  next
+    case False
+    with 1 that have "length T1 \<le> i" "length zgs1 \<le> i" "i - length T1 < length T2" by simp_all
+    with 1 2 False show ?thesis by (simp add: nth_append_right)
+  qed
+  moreover have "z1 + z2 = sum_list (zgs1 @ zgs2) + (k1 + k2)" using 1 2 by simp
+  ultimately show "interp_trace (k1 + k2) (T1 @ T2) (z1 + z2)"
+    unfolding interp_trace_def by blast
+qed
+
+lemma interp_trace_nil[simp]: "interp_trace k [] k" unfolding interp_trace_def by simp
+(* lemma interp_trace_nil'[simp]: "k = z \<Longrightarrow> interp_trace k [] z" unfolding interp_trace_def by simp *)
+lemma interp_trace_nilE[elim]: "interp_trace k [] z \<Longrightarrow> k = z" unfolding interp_trace_def by simp
+(* lemma interp_trace_nil_iff: "interp_trace k [] z \<longleftrightarrow> k = z" unfolding interp_trace_def by fastforce *)
+
+lemma interp_trace_singleton[simp]:
+  assumes "(C, s) \<Rightarrow>\<^bsup>z\<^esup> t"
+  shows "interp_trace k [(C, s)] (z + k)"
+proof-
+  from assms have
+      "length [z] = length [(C, s)]"
+      "\<forall>i < length [(C, s)]. \<exists>s'. [(C, s)] ! i \<Rightarrow>\<^bsup>[z] ! i\<^esup> s'"
+      "z + k = sum_list [z] + k"
+    by auto
+  then show "interp_trace k [(C, s)] (z + k)" unfolding interp_trace_def by blast
+qed
+
+lemmas interp_trace_singleton'[simp] = interp_trace_singleton[where k = 0, simplified add_0_right]
+  
+
+lemma interp_trace_sum[simp]:
+  "interp_trace (k + x) T (z + x) \<longleftrightarrow> interp_trace k T z"
+  unfolding interp_trace_def by simp
+
+lemma interp_trace_determ:
+  assumes "interp_trace k T z1" "interp_trace k T z2"
+  shows "z1 = z2"
+proof-
+  from assms obtain zgs1 where 1:
+      "length zgs1 = length T"
+      "\<forall>i < length T. \<exists>s'. (fst (T ! i), snd (T ! i)) \<Rightarrow>\<^bsup>zgs1 ! i\<^esup> s'"
+      "z1 = sum_list zgs1 + k"
+    unfolding interp_trace_def by fastforce
+  from assms obtain zgs2 where 2:
+      "length zgs2 = length T"
+      "\<forall>i < length T. \<exists>s'. (fst (T ! i), snd (T ! i)) \<Rightarrow>\<^bsup>zgs2 ! i\<^esup> s'"
+      "z2 = sum_list zgs2 + k"
+    unfolding interp_trace_def by fastforce
+  have "\<forall>i < length T. zgs1 ! i = zgs2 ! i" using 1 2 big_step_t_determ2 by blast
+  then have "zgs1 = zgs2" using 1 2 by (simp add: list_eq_iff_nth_eq)
+  then show "z1 = z2" using 1 2 by blast
+qed
+
 
 type_synonym leaf_state = "state \<times> bool"
 
@@ -26,10 +96,10 @@ inductive
   ttrace_to_leaf :: "tcom \<times> state \<Rightarrow> trace \<Rightarrow> leaf_state \<Rightarrow> bool"  ("_ \<Rightarrow>\<^bsup>_\<^esup>  _" 55)
 where
 tSkip: "(tSKIP,s) \<Rightarrow>\<^bsup>(Suc 0, [])\<^esup> (s, False)" |
-tAssign: "(tAssign x a,s) \<Rightarrow>\<^bsup>(Suc (Suc 0), [])\<^esup> (s(x := aval a s), False)" |
+tAssign: "(x ::= a,s) \<Rightarrow>\<^bsup>(Suc (Suc 0), [])\<^esup> (s(x := aval a s), False)" |
 tSeq:
   "\<lbrakk>(c1,s1) \<Rightarrow>\<^bsup>(k1, T1)\<^esup> (s2, False); (c2,s2) \<Rightarrow>\<^bsup>(k2, T2)\<^esup> (s3, l); k = k1 + k2; T = T1 @ T2\<rbrakk>
-   \<Longrightarrow> (tSeq c1 c2,s1) \<Rightarrow>\<^bsup>(k, T)\<^esup> (s3, l)" |
+   \<Longrightarrow> (c1;; c2,s1) \<Rightarrow>\<^bsup>(k, T)\<^esup> (s3, l)" |
 tIfTrue:
   "\<lbrakk>s b \<noteq> 0; (c1,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l); k' = k + 1\<rbrakk>
    \<Longrightarrow> (IF b\<noteq>0 THEN c1 ELSE c2,s) \<Rightarrow>\<^bsup>(k', T)\<^esup> (t, l)" |
@@ -42,70 +112,303 @@ tTail: "(tTAIL,s) \<Rightarrow>\<^bsup>(5, [])\<^esup> (s, True)"
 declare ttrace_to_leaf.intros[intro]
 lemmas ttrace_to_leaf_induct = ttrace_to_leaf.induct[split_format(complete)]
 
-inductive_cases tSkip_traceE[elim!]: "(tSKIP,s) \<Rightarrow>\<^bsup>T \<^esup> l"
-inductive_cases tAssign_traceE[elim!]: "(x ::= a,s) \<Rightarrow>\<^bsup>T \<^esup> l"
-inductive_cases tSeq_traceE[elim!]: "(c1;;c2,s1) \<Rightarrow>\<^bsup>T \<^esup> l"
-inductive_cases tIf_traceE[elim!]: "(IF b \<noteq>0 THEN c1 ELSE c2,s) \<Rightarrow>\<^bsup>T \<^esup> l"
-inductive_cases tCall_traceE[elim!]: "(CALL C RETURN v,s) \<Rightarrow>\<^bsup>T \<^esup> l"
+inductive_cases tSkip_trace_leafE[elim!]: "(tSKIP,s) \<Rightarrow>\<^bsup>T \<^esup> l"
+inductive_cases tAssign_trace_leafE[elim!]: "(x ::= a,s) \<Rightarrow>\<^bsup>T \<^esup> l"
+inductive_cases tSeq_trace_leafE[elim!]: "(c1;;c2,s1) \<Rightarrow>\<^bsup>T \<^esup> l"
+inductive_cases tIf_trace_leafE[elim!]: "(IF b \<noteq>0 THEN c1 ELSE c2,s) \<Rightarrow>\<^bsup>T \<^esup> l"
+inductive_cases tCall_trace_leafE[elim!]: "(CALL C RETURN v,s) \<Rightarrow>\<^bsup>T \<^esup> l"
 
-inductive_cases tTail_traceE[elim]: "(tTAIL,s) \<Rightarrow>\<^bsup>T \<^esup> l" (* not safe ? *)
+inductive_cases tTail_trace_leafE[elim]: "(tTAIL,s) \<Rightarrow>\<^bsup>T \<^esup> l" (* not safe ? *)
 
 
-lemma trace_nontail_has_bigstep:
+lemma nontail_trace_no_tail:
+  assumes "\<not> tails c" "(c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l)" shows "\<not> l"
+  using assms apply (induction c arbitrary: k T s) by auto blast+
+
+lemma trace_leaf_nontail_bigstep:
   assumes "(c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l)" "\<not> l"
-  shows "\<exists>z. f \<turnstile> (c,s) \<Rightarrow>\<^bsup> z \<^esup> t"
-  using assms by (induction rule: ttrace_to_leaf_induct) auto
+  shows "\<exists>z. interp_trace k T z \<and> f \<turnstile> (c,s) \<Rightarrow>\<^bsup>z\<^esup> t"
+using assms proof (induction rule: ttrace_to_leaf_induct)
+  case tSkip
+  with interp_trace_nil show ?case by blast
+next
+  case tAssign
+  with interp_trace_nil show ?case by blast
+next
+  case tSeq
+  with interp_trace_append show ?case by blast
+next
+  case tIfTrue
+  with interp_trace_sum show ?case by blast
+next
+  case tIfFalse
+  with interp_trace_sum show ?case by blast
+next
+  case tCall
+  with interp_trace_singleton' show ?case by blast
+next
+  case tTail
+  then show ?case by blast
+qed
 
-lemma bigstep_has_trace_nontail:
-  assumes "\<not> tails c"
-  assumes "f \<turnstile> (c,s) \<Rightarrow>\<^bsup> z \<^esup> t"
-  assumes "\<not> l"
-  shows "\<exists>k T. (c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l)" 
-  using assms(2,1,3) apply (induction rule: tbig_step_t_induct)
-  using ttrace_to_leaf.intros apply auto oops
-  
+corollary trace_leaf_nontail_bigstep':
+  assumes "\<not> tails c" "(c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l)"
+  shows "\<exists>z. interp_trace k T z \<and> f \<turnstile> (c,s) \<Rightarrow>\<^bsup>z\<^esup> t"
+  using trace_leaf_nontail_bigstep nontail_trace_no_tail assms by metis
 
 
+lemma bigstep_nontail_trace_leaf:
+  assumes "f \<turnstile> (c,s) \<Rightarrow>\<^bsup>z :: nat\<^esup> t" "\<not> tails c"
+  shows "\<exists>k T. interp_trace k T z \<and> (c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, False)"
+using assms proof (induction rule: tbig_step_t_induct)
+  case tSkip
+  with interp_trace_nil show ?case by blast
+next
+  case tAssign
+  with interp_trace_nil show ?case by blast
+next
+  case tSeq
+  with interp_trace_append show ?case by fastforce
+next
+  case tIfTrue
+  with interp_trace_sum show ?case by fastforce
+next
+  case tIfFalse
+  with interp_trace_sum show ?case by fastforce
+next
+  case tCall
+  with interp_trace_singleton' show ?case by blast
+next
+  case tTail
+  then show ?case by simp
+qed
 
 
-lemma trace_nontail_to_semantics0:
+inductive
+  (* (term, state), (constants, calls), new state *)
+  ttrace_to_end :: "tcom \<Rightarrow> tcom \<times> state \<Rightarrow> trace \<Rightarrow> state \<Rightarrow> bool"  ("_ \<turnstile>_ \<Rightarrow>\<^bsup>_\<^esup>  _" 55)
+where
+tSkip: "c \<turnstile> (tSKIP,s) \<Rightarrow>\<^bsup>(Suc 0, [])\<^esup> s" |
+tAssign: "c \<turnstile> (x ::= a,s) \<Rightarrow>\<^bsup>(Suc (Suc 0), [])\<^esup> s(x := aval a s)" |
+tSeq:
+  (* TODO: would it be a good idea to use ttrace_to_leaf for c1 here ? *)
+  "\<lbrakk>c \<turnstile> (c1,s1) \<Rightarrow>\<^bsup>(k1, T1)\<^esup> s2; c \<turnstile> (c2,s2) \<Rightarrow>\<^bsup>(k2, T2)\<^esup> s3; k = k1 + k2; T = T1 @ T2\<rbrakk>
+   \<Longrightarrow> c \<turnstile> (c1;; c2,s1) \<Rightarrow>\<^bsup>(k, T)\<^esup> s3" |
+tIfTrue:
+  "\<lbrakk>s b \<noteq> 0; c \<turnstile> (c1,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> t; k' = k + 1\<rbrakk>
+   \<Longrightarrow> c \<turnstile> (IF b\<noteq>0 THEN c1 ELSE c2,s) \<Rightarrow>\<^bsup>(k', T)\<^esup> t" |
+tIfFalse:
+  "\<lbrakk>s b = 0; c \<turnstile> (c2,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> t; k' = k + 1\<rbrakk>
+   \<Longrightarrow> c \<turnstile> (IF b\<noteq>0 THEN c1 ELSE c2,s) \<Rightarrow>\<^bsup>(k', T)\<^esup> t" |
+tCall: "\<lbrakk>(C,s) \<Rightarrow>\<^bsup>z \<^esup> t\<rbrakk> \<Longrightarrow> c \<turnstile> (tCall C r,s) \<Rightarrow>\<^bsup>(0, [(C,s)])\<^esup> s(r := t r)" |
+tTail: "\<lbrakk>c \<turnstile> (c,s) \<Rightarrow>\<^bsup>(k, T) \<^esup> t; k' = k + 5\<rbrakk> \<Longrightarrow> c \<turnstile> (tTAIL,s) \<Rightarrow>\<^bsup>(k', T)\<^esup> t"
+
+declare ttrace_to_end.intros[intro]
+lemmas ttrace_to_end_induct = ttrace_to_end.induct[split_format(complete)]
+
+inductive_cases tSkip_trace_endE[elim!]: "c \<turnstile> (tSKIP,s) \<Rightarrow>\<^bsup>T :: trace\<^esup> t"
+inductive_cases tAssign_trace_endE[elim!]: "c \<turnstile> (x ::= a,s) \<Rightarrow>\<^bsup>T :: trace\<^esup> t"
+inductive_cases tSeq_trace_endE[elim!]: "c \<turnstile> (c1;;c2,s) \<Rightarrow>\<^bsup>T :: trace\<^esup> t"
+inductive_cases tIf_trace_endE[elim!]: "c \<turnstile> (IF b \<noteq>0 THEN c1 ELSE c2,s) \<Rightarrow>\<^bsup>T :: trace\<^esup> t"
+inductive_cases tCall_trace_endE[elim!]: "c \<turnstile> (CALL C RETURN v,s) \<Rightarrow>\<^bsup>T :: trace\<^esup> t"
+
+inductive_cases tTail_trace_endE[elim]: "c \<turnstile> (tTAIL,s) \<Rightarrow>\<^bsup>T :: trace\<^esup> t" (* not safe ? *)
+
+
+(* relating full traces and bigstep *)
+
+lemma trace_end_bigstep:
+  assumes "f \<turnstile> (c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> t"
+  shows "\<exists>z. interp_trace k T z \<and> f \<turnstile> (c,s) \<Rightarrow>\<^bsup>z\<^esup> t"
+using assms proof (induction rule: ttrace_to_end_induct)
+  case tSkip
+  with interp_trace_nil show ?case by blast
+next
+  case tAssign
+  with interp_trace_nil show ?case by blast
+next
+  case tSeq
+  with interp_trace_append show ?case by blast
+next
+  case tIfTrue
+  with interp_trace_sum show ?case by blast
+next
+  case tIfFalse
+  with interp_trace_sum show ?case by blast
+next
+  case tCall
+  with interp_trace_singleton' show ?case by blast
+next
+  case (tTail c s k T t k')
+  then obtain z :: nat where "interp_trace k T z" and *: "c \<turnstile> (c, s) \<Rightarrow>\<^bsup>z\<^esup> t" by blast
+  with tTail have "interp_trace k' T (5 + z)" by (simp add: algebra_simps)
+  with * show ?case by blast
+qed
+
+(* corollary trace_end_bigstepE:
+  assumes "f \<turnstile> (c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> t"
+  obtains z :: nat where "interp_trace k T z" "f \<turnstile> (c,s) \<Rightarrow>\<^bsup>z\<^esup> t"
+  using trace_end_bigstep assms by blast *)
+
+corollary trace_end_bigstep_z:
+  assumes "f \<turnstile> (c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> t" "interp_trace k T z"
+  shows "f \<turnstile> (c,s) \<Rightarrow>\<^bsup>z :: nat\<^esup> t"
+proof-
+  obtain z' :: nat where "interp_trace k T z'" and *: "f \<turnstile> (c,s) \<Rightarrow>\<^bsup>z'\<^esup> t"
+    using assms trace_end_bigstep by blast
+  with assms interp_trace_determ have "z = z'" by blast
+  with * show "f \<turnstile> (c,s) \<Rightarrow>\<^bsup>z :: nat\<^esup> t" by blast
+qed
+
+lemma bigstep_trace_end:
+  assumes "f \<turnstile> (c,s) \<Rightarrow>\<^bsup>z :: nat\<^esup> t"
+  shows "\<exists>k T. interp_trace k T z \<and> f \<turnstile> (c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> t"
+using assms proof (induction rule: tbig_step_t_induct)
+  case tSkip
+  with interp_trace_nil show ?case by blast
+next
+  case tAssign
+  with interp_trace_nil show ?case by blast
+next
+  case tSeq
+  with interp_trace_append show ?case by blast
+next
+  case tIfTrue
+  with interp_trace_sum show ?case by blast
+next
+  case tIfFalse
+  with interp_trace_sum show ?case by blast
+next
+  case tCall
+  with interp_trace_singleton' show ?case by blast
+next
+  case (tTail c s z t)
+  then obtain k T where "interp_trace k T z" and *: "c \<turnstile>(c, s) \<Rightarrow>\<^bsup>(k, T)\<^esup> t" by blast
+  then have "interp_trace (5 + k) T (5 + z)" by (simp add: algebra_simps)
+  with * show ?case by fastforce
+qed
+
+(* corollary bigstep_trace_endE:
+  assumes "f \<turnstile> (c,s) \<Rightarrow>\<^bsup>z :: nat\<^esup> t"
+  obtains k T where "interp_trace k T z" "f \<turnstile> (c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> t"
+  using bigstep_trace_end assms by blast *)
+
+
+(* relating partial and full traces *)
+
+lemma trace_leaf_no_tail_trace_end:
   assumes "(c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l)" "\<not> l"
-  shows "\<exists>z. interp_trace k T z \<and> f \<turnstile> (c,s) \<Rightarrow>\<^bsup> z \<^esup> t"
-  using assms apply (induction arbitrary: rule: ttrace_to_leaf_induct)
-  subgoal unfolding interp_trace_def by force
-  subgoal unfolding interp_trace_def by force
-  using tbig_step_t.intros apply simp
-  oops
+  shows "f \<turnstile> (c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> t"
+using assms by (induction rule: ttrace_to_leaf_induct) blast+
 
-theorem trace_nontail_to_semantics:
-  assumes "(c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, False)"
-  obtains z where "interp_trace k T z" "f \<turnstile> (c,s) \<Rightarrow>\<^bsup> z \<^esup> t"
-  (* using assms trace_nontail_to_semantics0 by blast *)
-  oops
+lemma trace_leaf_tail_trace_end:
+  assumes "(c1,s1) \<Rightarrow>\<^bsup>(k1, T1)\<^esup> (s2, l)" "l"
+  assumes "c2 \<turnstile> (c2,s2) \<Rightarrow>\<^bsup>(k2, T2)\<^esup> s3"
+  shows "c2 \<turnstile> (c1,s1) \<Rightarrow>\<^bsup>(k1 + k2, T1 @ T2)\<^esup> s3"
+using assms proof (induction rule: ttrace_to_leaf_induct)
+  case tSeq
+  with trace_leaf_no_tail_trace_end show ?case by fastforce
+next
+  case tIfTrue
+  then show ?case by fastforce
+next
+  case tIfFalse
+  then show ?case by fastforce
+next
+  case tTail
+  then show ?case by fastforce
+qed simp_all
 
-lemma trace_tail_to_semantics0:
-  assumes "(c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l)" "l"
+
+lemma trace_end_nontail_trace_leaf:
+  assumes "f \<turnstile> (c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> t" "\<not> tails c"
+  shows "(c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, False)"
+using assms proof (induction rule: ttrace_to_end_induct)
+  case tSkip
+  show ?case by blast
+next
+  case tAssign
+  then show ?case by blast
+next
+  case tSeq
+  then show ?case by auto
+next
+  case tIfTrue
+  then show ?case by auto
+next
+  case tIfFalse
+  then show ?case by auto
+next
+  case tCall
+  then show ?case by blast
+next
+  case tTail then show ?case by auto
+qed
+
+lemma trace_end_trace_leaf:
+  assumes "f \<turnstile> (c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> t"
   assumes "invar c"
-  assumes "f \<turnstile> (f,t) \<Rightarrow>\<^bsup>y\<^esup> u"
-  shows "\<exists>x. interp_trace k T x \<and> f \<turnstile> (c,s) \<Rightarrow>\<^bsup> x+y \<^esup> u"
-  oops
+  shows "\<exists>k1 T1 t1 l.
+    (c,s) \<Rightarrow>\<^bsup>(k1, T1)\<^esup> (t1, l)
+    \<and> (if l then (\<exists>k2 T2. f \<turnstile> (f,t1) \<Rightarrow>\<^bsup>(k2, T2)\<^esup> t)
+            else k1 = k \<and> T1 = T \<and> t1 = t)"
+using assms proof (induction rule: ttrace_to_end_induct)
+  case tSkip
+  show ?case by fastforce
+next
+  case tAssign
+  show ?case by fastforce
+next
+  case (tSeq c c1 s1 k1 T1 s2 c2 k2 T2 s3 k T)
+  from tSeq trace_end_nontail_trace_leaf have 1: "(c1, s1) \<Rightarrow>\<^bsup>(k1, T1)\<^esup>  (s2, False)" by simp
+  from tSeq obtain k2' T2' t2' l'
+      where 2: "(c2, s2) \<Rightarrow>\<^bsup>(k2', T2')\<^esup>  (t2', l')"
+        and *: "if l' then \<exists>k3 T3. c \<turnstile>(c, t2') \<Rightarrow>\<^bsup>(k3, T3)\<^esup>  s3
+                else k2' = k2 \<and> T2' = T2 \<and> t2' = s3"
+    by auto
+  from 1 2 have "(c1;; c2, s1) \<Rightarrow>\<^bsup>(k1 + k2', T1 @ T2')\<^esup> (t2', l')" by blast
 
-theorem trace_tail_to_semantics:
-  assumes "invar c"
-  assumes "(c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, True)"
-  assumes "f \<turnstile> (f,t) \<Rightarrow>\<^bsup>y\<^esup> u"
-  obtains x where "interp_trace k T x" "f \<turnstile> (c,s) \<Rightarrow>\<^bsup> x+y \<^esup> u"
-  (* using assms trace_tail_to_semantics0 by blast *)
-  oops
+  with * tSeq show ?case by metis
+next
+  case (tIfTrue s b c c1 k T t k' c2)
+  then obtain k1 T1 t1 l
+    where *: "(c1, s) \<Rightarrow>\<^bsup>(k1, T1)\<^esup>  (t1, l)"
+      and **: "if l then \<exists>k2 T2. c \<turnstile>(c, t1) \<Rightarrow>\<^bsup>(k2, T2)\<^esup>  t
+                 else k1 = k \<and> T1 = T \<and> t1 = t"
+    by auto
 
-(* TODO: prove more things about traces, see HOL-TCN for inspiration *)
+  from * tIfTrue have "(IF b\<noteq>0 THEN c1 ELSE c2, s) \<Rightarrow>\<^bsup>(k1 + 1, T1)\<^esup>  (t1, l)"
+    by blast
+  moreover from ** tIfTrue have
+    "if l then \<exists>k2 T2. c \<turnstile>(c, t1) \<Rightarrow>\<^bsup>(k2, T2)\<^esup> t
+     else k1 + 1 = k' \<and> T1 = T \<and> t1 = t"
+    by simp
 
+  ultimately show ?case by metis
+next
+  case (tIfFalse s b c c2 k T t k' c1)
+  then obtain k1 T1 t1 l
+    where *: "(c2, s) \<Rightarrow>\<^bsup>(k1, T1)\<^esup>  (t1, l)"
+      and **: "if l then \<exists>k2 T2. c \<turnstile>(c, t1) \<Rightarrow>\<^bsup>(k2, T2)\<^esup>  t
+                 else k1 = k \<and> T1 = T \<and> t1 = t"
+    by auto
 
+  from * tIfFalse have "(IF b\<noteq>0 THEN c1 ELSE c2, s) \<Rightarrow>\<^bsup>(k1 + 1, T1)\<^esup>  (t1, l)"
+    by blast
+  moreover from ** tIfFalse have
+    "if l then \<exists>k2 T2. c \<turnstile>(c, t1) \<Rightarrow>\<^bsup>(k2, T2)\<^esup> t
+     else k1 + 1 = k' \<and> T1 = T \<and> t1 = t"
+    by simp
 
-(* assumptions:
-    - variable names of function arguments and return values of
-      called functions and f itself do not conflict
-    - correct number of arguments to call/recurse constructors *)
-
+  ultimately show ?case by metis
+next
+  case (tCall C s z t c r)
+  then have "(CALL C RETURN r, s) \<Rightarrow>\<^bsup>(0, [(C, s)])\<^esup>  (s(r := t r), False)" by blast
+  then show ?case by metis
+next
+  case (tTail c s k T t k')
+  then have "(tTAIL, s) \<Rightarrow>\<^bsup>(5, [])\<^esup>  (s, True)" by blast
+  with tTail show ?case by metis
+qed
 
 end
