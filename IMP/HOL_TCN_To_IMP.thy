@@ -18,8 +18,21 @@ lemma generate_cong[fundef_cong]:
   shows "generate f n = generate g m"
   using assms unfolding generate_def by simp
 
+lemma map_generate_comp: "map g (generate f n) = generate (g o f) n"
+  unfolding generate_def by simp
+
 lemma generate_snoc: "generate f (Suc n) = generate f n @ [f n]"
   unfolding generate_def by auto
+
+lemma generate_length[simp]: "length (generate f n) = n"
+  unfolding generate_def by simp
+
+lemma generate_0_conv[iff]: "generate f n = [] \<longleftrightarrow> n = 0"
+  unfolding generate_def by simp
+
+(* like turning a classic for loop into a for-each loop *)
+lemma generate_nth_is_map[simp]: "generate (\<lambda>i. f (xs ! i)) (length xs) = map f xs"
+  unfolding generate_def by (simp add: map_equality_iff)
 
 (*
 lemma generate_of_snoc: "generate (\<lambda>i. f i ((xs @ [x]) ! i)) (length xs) = generate (\<lambda>i. f i (xs ! i)) (length xs)"
@@ -73,6 +86,7 @@ lemma some_equal_in: fixes A shows "(\<exists>y\<in>A. x = y) \<longleftrightarr
 
 lemma tbig_step_t_tSeq_assoc:
   (* from Compile_HOL_Nat_To_IMP *)
+  fixes t :: nat
   shows "C \<turnstile> (c1 ;; (c2 ;; c3), s) \<Rightarrow>\<^bsup>t\<^esup> s' \<longleftrightarrow> C \<turnstile> (c1 ;; c2 ;; c3, s) \<Rightarrow>\<^bsup>t\<^esup> s'"
   by auto
 
@@ -94,6 +108,8 @@ fun mk_seqs where
   "mk_seqs [] = tSKIP" |
   "mk_seqs (t0 # ts) = foldl tSeq t0 ts"
 
+find_theorems "foldl ?f ?z (_ @ _)"
+
 value "mk_seqs []"
 value "mk_seqs [c1, c2, c3]"
 value "mk_seqs (c1 # c2 # c3 # cs)"
@@ -101,7 +117,12 @@ value "mk_seqs (c1 # c2 # c3 # cs)"
 lemma mk_seqs_append:
   assumes "cs1 \<noteq> []"
   shows "mk_seqs (cs1 @ cs2) = mk_seqs (mk_seqs cs1 # cs2)"
-  using assms by (induction cs1) auto
+  using assms by (cases cs1, cases cs2) simp_all
+
+lemma mk_seqs_snoc:
+  assumes "cs \<noteq> []"
+  shows "mk_seqs (cs @ [c]) = mk_seqs cs;; c"
+  using assms by (cases cs) simp_all
 
 (* disassembling command sequences *)
 
@@ -178,22 +199,26 @@ qed simp
 
 lemma mk_seqs_append_bigstep:
   assumes "cs1 \<noteq> []" "cs2 \<noteq> []"
+  fixes z :: nat
   shows "f \<turnstile> (mk_seqs (cs1 @ cs2),s) \<Rightarrow>\<^bsup>z\<^esup> t \<longleftrightarrow> f \<turnstile> (mk_seqs cs1;; mk_seqs cs2,s) \<Rightarrow>\<^bsup>z\<^esup> t"
   using assms(2,1) tbig_step_t_tSeq_assoc mk_seqs_append
   by (induction cs2 arbitrary: z t rule: rev_nonempty_induct) auto
 
 lemma linearize_bigstep:
+  fixes z :: nat
   shows "f \<turnstile> (c,s) \<Rightarrow>\<^bsup>z\<^esup> t \<longleftrightarrow> f \<turnstile> (linearize c,s) \<Rightarrow>\<^bsup>z\<^esup> t"
   using mk_seqs_append_bigstep by (induction c arbitrary: s z t) auto
 
 lemma same_linearize_bigstep:
   fixes c c' :: tcom
+  fixes z :: nat
   assumes "linearize c = linearize c'"
   shows "f \<turnstile> (c,s) \<Rightarrow>\<^bsup>z\<^esup> t \<longleftrightarrow> f \<turnstile> (c',s) \<Rightarrow>\<^bsup>z\<^esup> t"
   using assms linearize_bigstep by metis
 
 theorem same_seqs_bigstep:
   fixes c c' :: tcom
+  fixes z :: nat
   assumes "seqs c = seqs c'"
   shows "f \<turnstile> (c,s) \<Rightarrow>\<^bsup>z\<^esup> t \<longleftrightarrow> f \<turnstile> (c',s) \<Rightarrow>\<^bsup>z\<^esup> t"
   using assms linearize_bigstep by metis
@@ -201,7 +226,7 @@ theorem same_seqs_bigstep:
 
 (* seqs/mk_seqs and traces *)
 
-lemma mk_seqs_append_trace:
+lemma mk_seqs_append_trace_leaf:
   assumes "cs1 \<noteq> []" "cs2 \<noteq> []"
   shows "(mk_seqs (cs1 @ cs2),s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l) \<longleftrightarrow> (mk_seqs cs1;; mk_seqs cs2,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l)"
 using assms(2) proof (induction cs2 arbitrary: k T t l rule: rev_nonempty_induct)
@@ -211,25 +236,25 @@ next
   case (snoc x xs)
   then show ?case using assms apply (simp add: mk_seqs_append ttrace_to_leaf_tSeq_assoc)
     using ttrace_to_leaf_tSeq_assoc
-    by (smt (z3) tSeq_traceE ttrace_to_leaf.tSeq)
+    by (smt (z3) tSeq_trace_leafE ttrace_to_leaf.tSeq)
 (* TODO clean up... *)
 qed
 
-lemma linearize_trace:
+lemma linearize_trace_leaf:
   shows "(c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l) \<longleftrightarrow> (linearize c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l)"
-  using mk_seqs_append_trace by (induction c arbitrary: s k T t l) auto
+  using mk_seqs_append_trace_leaf by (induction c arbitrary: s k T t l) auto
 
-lemma same_linearize_trace:
+lemma same_linearize_trace_leaf:
   fixes c c' :: tcom
   assumes "linearize c = linearize c'"
   shows "(c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l) \<longleftrightarrow> (c',s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l)"
-  using assms linearize_trace by metis
+  using assms linearize_trace_leaf by metis
 
-theorem same_seqs_trace:
+theorem same_seqs_trace_leaf:
   fixes c c' :: tcom
   assumes "seqs c = seqs c'"
   shows "(c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l) \<longleftrightarrow> (c',s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l)"
-  using assms linearize_trace by metis
+  using assms linearize_trace_leaf by metis
 
 (* invariants and mk_seq *)
 
@@ -316,35 +341,111 @@ definition "h_sum3 = hLet (hCall ''plus'' [hArg 0, hArg 1]) (hCall ''plus'' [hLe
 value "to_imp_tc [''x'', ''y'', ''z''] (null(''plus'' := com_plus)) [] ''r'' [] h_sum3"
 
 
+(* basic relatedness lemmas of to_imp_tc: nontail, invar, and size *)
+
 lemma to_imp_nontail: "\<not> HOL_TCN_Timing.tails t \<Longrightarrow> \<not> IMP_Tailcall.tails (to_imp_tc f_args crgt bs r keep t)"
   by (induction t arbitrary: bs r keep) (simp_all add: Let_def split_beta generate_def)
 
 lemma to_imp_invar: "HOL_TCN_Timing.invar t \<Longrightarrow> IMP_Tailcall.invar (to_imp_tc f_args crgt bs r keep t)"
   by (induction t arbitrary: bs r keep) (simp_all add: Let_def split_beta generate_def to_imp_nontail)
 
+
+lemma num_commands_mk_seqs:
+  assumes "cs \<noteq> []"
+  shows "IMP_Tailcall.num_commands (mk_seqs cs) + 1 = length cs + sum_map IMP_Tailcall.num_commands cs"
+using assms proof (induction cs rule: rev_induct_list012)
+  case (snoc zs y x)
+  have "mk_seqs ((zs @ [y]) @ [x]) = mk_seqs (zs @ [y]);; x" using mk_seqs_snoc by blast
+  then show ?case using snoc.IH by simp
+qed simp_all
+
+(* technical lemma, formulated more generally *)
+lemma sum_map_num_commands_arg_list:
+  fixes g :: "tcom \<Rightarrow> nat"
+  assumes "\<forall>i < length xs. g (f i) \<le> k * h (xs ! i)"
+  shows "sum_map g (generate f (length xs)) \<le> k * sum_map h xs"
+proof-
+  from assms have *: "\<forall>i\<in>set [0..<length xs]. (g o f) i \<le> k * h (xs ! i)" by simp
+
+  have "sum_map g (generate f (length xs)) = sum_list (generate (g o f) (length xs))"
+    by (simp add: map_generate_comp)
+  also have "... \<le> sum_list (generate (\<lambda>i. k * h (xs ! i)) (length xs))"
+    unfolding generate_def using sum_map_mono[OF *] by blast
+  also have "... = k * sum_list (generate (\<lambda>i. h (xs ! i)) (length xs))"
+    unfolding generate_def using sum_list_const_mult by fast
+  also have "... = k * sum_map h xs" by simp
+  finally show ?thesis .
+qed
+
+lemma sum_map_num_commands_copy_list: "sum_map IMP_Tailcall.num_commands (generate (\<lambda>i. (x i) ::= y i) n) = n"
+  unfolding generate_def by (induction n) auto
+
 lemma "IMP_Tailcall.num_commands (to_imp_tc f_args crgt bs r keep t) \<le> 7 * HOL_TCN_Timing.num_commands t"
 proof (induction t arbitrary: bs r keep)
-  case (hIf t1 t2 t3)
-  then show ?case unfolding to_imp_tc.simps Let_def
-    apply simp
-    by (meson add_mono_thms_linordered_semiring(1) trans_le_add2)
-next
   case (hLet t1 t2)
-  then show ?case unfolding to_imp_tc.simps Let_def
-    apply simp
-    by (meson add_le_mono trans_le_add2) (* ... *)
+  have "IMP_Tailcall.num_commands (to_imp_tc f_args crgt bs r keep LET t1 IN t2)
+    \<le> 7 * HOL_TCN_Timing.num_commands t1 + 7 * HOL_TCN_Timing.num_commands t2 + 1"
+    unfolding to_imp_tc.simps Let_def using hLet.IH by (simp add: add_le_mono)
+  also have "... \<le> 7 * HOL_TCN_Timing.num_commands (LET t1 IN t2)" by simp
+  finally show ?case .
+next
+  case (hIf t1 t2 t3)
+  let ?r1 = "fresh' (stale_registers f_args crgt bs keep (IF t1\<noteq>0 THEN t2 ELSE t3)) ''If.x''"
+  have "IMP_Tailcall.num_commands (to_imp_tc f_args crgt bs r keep (IF t1\<noteq>0 THEN t2 ELSE t3))
+    \<le> 7 * HOL_TCN_Timing.num_commands t1 + (7 * HOL_TCN_Timing.num_commands t2 + 7 * HOL_TCN_Timing.num_commands t3) + 2"
+    unfolding to_imp_tc.simps Let_def using hIf.IH by (simp add: add_le_mono)
+  also have "... \<le> 7 * HOL_TCN_Timing.num_commands (IF t1\<noteq>0 THEN t2 ELSE t3)" by simp
+  finally show ?case .
 next
   case (hCall gr ts)
   then show ?case
-    apply (induction ts) unfolding to_imp_tc.simps Let_def generate_def split_beta apply simp
-    unfolding to_imp_tc.simps Let_def generate_def split_beta
-    apply simp sorry
+  proof (cases "ts = []")
+    assume "ts = []"
+    then have *: "generate f (length ts) = []" for f :: "nat \<Rightarrow> 'a" by simp
+    show ?thesis unfolding to_imp_tc.simps Let_def split_beta * by simp
+  next
+    assume *: "ts \<noteq> []"
+
+    let ?xs = "make_n_fresh (stale_registers f_args crgt bs keep (hCall gr ts)) ''Call.x.'' (length ts)"
+    let ?cs1 = "generate (\<lambda>i. to_imp_tc f_args crgt bs (?xs ! i) (?xs @ keep) (ts ! i)) (length ts)"
+    let ?cs2 = "generate (\<lambda>i. (args_from_crgt crgt gr ! i) ::= A (V (?xs ! i))) (length ts)"
+
+    from num_commands_mk_seqs[where cs = ?cs1] sum_map_num_commands_arg_list[where xs = ts] hCall.IH have 1:
+        "IMP_Tailcall.num_commands (mk_seqs ?cs1) + 1 \<le> length ts + 7 * sum_map HOL_TCN_Timing.num_commands ts"
+      using * by simp
+
+    from num_commands_mk_seqs sum_map_num_commands_copy_list have 2:
+        "IMP_Tailcall.num_commands (mk_seqs ?cs2) + 1 = 2 * length ts"
+      unfolding generate_def using * by simp
+
+    from 1 2 show ?thesis unfolding to_imp_tc.simps Let_def split_beta by simp
+  qed
+
 next
   case (hTAIL ts)
   then show ?case
-    apply (induction ts) unfolding to_imp_tc.simps Let_def generate_def split_beta apply simp
-    unfolding to_imp_tc.simps Let_def generate_def split_beta
-    apply simp sorry (* TODO *)
-qed (simp_all add: Let_def split_beta generate_def)
+  proof (cases "ts = []")
+    assume "ts = []"
+    then have *: "generate f (length ts) = []" for f :: "nat \<Rightarrow> 'a" by simp
+    show ?thesis unfolding to_imp_tc.simps Let_def split_beta * by simp
+  next
+    assume *: "ts \<noteq> []"
+
+    let ?xs = "make_n_fresh (stale_registers f_args crgt bs keep (hTAIL ts)) ''TAIL.x.'' (length ts)"
+    let ?cs1 = "generate (\<lambda>i. to_imp_tc f_args crgt bs (?xs ! i) (?xs @ keep) (ts ! i)) (length ts)"
+    let ?cs2 = "generate (\<lambda>i. (f_args ! i) ::= A (V (?xs ! i))) (length ts)"
+
+    from num_commands_mk_seqs[where cs = ?cs1] sum_map_num_commands_arg_list[where xs = ts] hTAIL.IH have 1:
+        "IMP_Tailcall.num_commands (mk_seqs ?cs1) + 1 \<le> length ts + 7 * sum_map HOL_TCN_Timing.num_commands ts"
+      using * by simp
+
+    from num_commands_mk_seqs sum_map_num_commands_copy_list have 2:
+        "IMP_Tailcall.num_commands (mk_seqs ?cs2) + 1 = 2 * length ts"
+      unfolding generate_def using * by simp
+
+    from 1 2 show ?thesis unfolding to_imp_tc.simps Let_def split_beta by simp
+  qed
+
+qed simp_all
 
 end

@@ -50,6 +50,15 @@ lemma interp_trace_nil[simp]: "interp_trace k [] k" unfolding interp_trace_def b
 lemma interp_trace_nilE[elim]: "interp_trace k [] z \<Longrightarrow> k = z" unfolding interp_trace_def by simp
 (* lemma interp_trace_nil_iff: "interp_trace k [] z \<longleftrightarrow> k = z" unfolding interp_trace_def by fastforce *)
 
+(*
+lemma interp_trace1:
+  assumes "\<exists>s'. g \<Rightarrow>\<^bsup>z\<^esup> s'"
+  shows "interp_trace k [g] (k + z)"
+proof (subst interp_trace_def, standard, standard)
+  show "length [z] = length [g]" by simp
+  show "(\<forall>i<length [g]. Ex (big_step_t ([g] ! i) ([z] ! i))) \<and> k + z = sum_list [z] + k" using assms by simp
+qed *)
+
 lemma interp_trace_singleton[simp]:
   assumes "(C, s) \<Rightarrow>\<^bsup>z\<^esup> t"
   shows "interp_trace k [(C, s)] (z + k)"
@@ -182,6 +191,12 @@ next
   case tTail
   then show ?case by simp
 qed
+
+
+lemma trace_nontail_static_bound:
+  assumes "(c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l)"
+  shows "k \<le> c_struct c"
+  using assms by (induction rule: ttrace_to_leaf_induct) auto
 
 
 inductive

@@ -12,6 +12,12 @@ abbreviation "sum_map f xs \<equiv> sum_list (map f xs)"
 lemma sum_map_concat: "sum_map f (concat xss) = sum_list (concat (map (map f) xss))"
   using map_concat by metis
 
+lemma sum_map_mono:
+  fixes f g :: "'a \<Rightarrow> 'b :: {ordered_ab_semigroup_add, monoid_add}"
+  assumes "\<forall>x \<in> set xs. f x \<le> g x"
+  shows "sum_map f xs \<le> sum_map g xs"
+  using assms add_mono by (induction xs) auto
+
 (* hol-tcn definition+semantics*)
 
 type_synonym fun_ref = string
@@ -134,23 +140,59 @@ inductive_cases hIf_case [elim!]: "env \<turnstile> (hIf t1 t2 t3,bs,xs) \<Right
 inductive_cases hCall_case [elim!]: "(f,frgt) \<turnstile> (hCall g ts,bs,xs) \<Rightarrow>\<^bsup>z\<^esup> v"
 inductive_cases hTAIL_case [elim!]: "(f,frgt) \<turnstile> (hTAIL ts,bs,xs) \<Rightarrow>\<^bsup>z\<^esup> v"
 
+(* measure *)
+fun num_commands1 :: "thol \<Rightarrow> nat" where
+  "num_commands1 (LET t1 IN t2) = num_commands1 t1 + num_commands1 t2 + 1" |
+  "num_commands1 (hLetBound _) = 0" |
+  "num_commands1 (hArg n) = 0" |
+  "num_commands1 (hNumber n) = 0" |
+  "num_commands1 (IF t1\<noteq>0 THEN t2 ELSE t3) = num_commands1 t1 + num_commands1 t2 + num_commands1 t3 + 1" |
+  "num_commands1 (hCall g ts) = sum_map num_commands1 ts + length ts + 1" |
+  "num_commands1 (hTAIL ts) = sum_map num_commands1 ts + length ts + 1"
+
+fun num_commands2 :: "thol \<Rightarrow> nat" where
+  "num_commands2 (LET t1 IN t2) = num_commands2 t1 + num_commands2 t2" |
+  "num_commands2 (hLetBound _) = 1" |
+  "num_commands2 (hArg n) = 1" |
+  "num_commands2 (hNumber n) = 1" |
+  "num_commands2 (IF t1\<noteq>0 THEN t2 ELSE t3) = num_commands2 t1 + num_commands2 t2 + num_commands2 t3" |
+  "num_commands2 (hCall g ts) = sum_map num_commands2 ts" |
+  "num_commands2 (hTAIL ts) = sum_map num_commands2 ts"
+
+lemma num_commands_size1: "num_commands1 t = size t"
+  apply (induction t) apply auto using size_list_conv_sum_list map_eq_conv by metis+
+
+lemma num_commands_size2: "num_commands2 t \<le> 2 * size t + 1"
+proof (induction t)
+  case (hCall g ts) then show ?case apply (induction ts) by fastforce+
+  case (hTAIL ts) then show ?case apply (induction ts) by fastforce+
+qed simp_all
+
 fun num_commands :: "thol \<Rightarrow> nat" where
   "num_commands (LET t1 IN t2) = num_commands t1 + num_commands t2 + 1" |
   "num_commands (hLetBound _) = 1" |
   "num_commands (hArg n) = 1" |
   "num_commands (hNumber n) = 1" |
   "num_commands (IF t1\<noteq>0 THEN t2 ELSE t3) = num_commands t1 + num_commands t2 + num_commands t3 + 1" |
-  "num_commands (hCall g ts) = sum_map num_commands ts + 1" |
-  "num_commands (hTAIL ts) = sum_map num_commands ts + 1"
+  "num_commands (hCall g ts) = sum_map num_commands ts + length ts + 1" |
+  "num_commands (hTAIL ts) = sum_map num_commands ts + length ts + 1"
+
+lemma num_commands_size12: "num_commands t = num_commands1 t + num_commands2 t"
+proof (induction t)
+  case (hCall g ts) then show ?case apply (induction ts) by fastforce+
+  case (hTAIL ts) then show ?case apply (induction ts) by fastforce+
+qed simp_all
 
 lemma num_commands_size: "num_commands t \<le> 3 * size t + 1"
+  using num_commands_size1 num_commands_size2 num_commands_size12 by simp
+(* 
 proof (induction t)
   case (hCall gr ts)
   then show ?case by (induction ts) fastforce+
 next
   case (hTAIL ts)
   then show ?case by (induction ts) fastforce+
-qed simp_all
+qed simp_all *)
 
 
 lemma determ:
@@ -249,6 +291,7 @@ lemma interp_trace_n:
 lemma interp_trace_singleton[simp]: "interp_trace frgt n [(g, vs_arg_g)] = n + T_f_from_frgt frgt g vs_arg_g"
   unfolding interp_trace_def interp_trace_item_def by simp
 
+lemmas interp_trace_singleton' = interp_trace_singleton[where n = 0, simplified add_0_left]
 
 datatype leaf_state = Value nat | Tail "nat list"
 print_theorems
@@ -428,6 +471,9 @@ next
 qed
 
 
+(* TODO: idea: for non-terminating executions, we could also capture a trace,
+    and show that they are related to the IMP trace \<rightarrow> co-inductive trace *)
+(* look up related work: "lockstep" relations *)
 inductive
   htrace_to_end :: "thol \<times> fun_registry \<Rightarrow> thol \<times> nat list \<times> nat list \<Rightarrow> trace \<Rightarrow> nat \<Rightarrow> bool"  ("_ \<turnstile> _ \<Rightarrow>\<^bsup>_\<^esup>  _" 55)
 where
@@ -469,15 +515,15 @@ inductive_cases hTAIL_trace_endE [elim!]: "(f,frgt) \<turnstile> (hTAIL ts,bs,xs
 (* relating full traces and bigstep *)
 
 lemma nontail_trace_end_no_tail:
-  assumes "\<not> tails t" "(f, frgt) \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>(n, T)\<^esup> v" shows "n = 0"
+  assumes "\<not> tails t" "(f, frgt) \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>(k, T)\<^esup> v" shows "k = 0"
   using assms by (induction t arbitrary: bs xs T) auto
 
 lemma trace_end_bigstep:
   fixes T :: call_trace and v :: nat
-  assumes "(f, frgt) \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>(n, T)\<^esup> v"
-  shows "(f, frgt) \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>interp_trace frgt n T\<^esup> v"
+  assumes "(f, frgt) \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>(k, T)\<^esup> v"
+  shows "(f, frgt) \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>interp_trace frgt k T\<^esup> v"
 using assms proof (induction rule: htrace_to_end_induct)
-  case (hLet a b t1 bs xs T1 v1 t2 n T2 v2 T)
+  case (hLet a b t1 bs xs T1 v1 t2 k T2 v2 T)
   with interp_trace_append_nt1 show ?case by blast
 next
   case hLetBound
@@ -508,7 +554,7 @@ next
       using \<open>T = concat Ts @ [(gr, vs)]\<close> interp_trace_concat_is_sum_map by simp
   qed (simp_all add: hCall)
 next
-  case (hTail vs ts Ts f frgt bs xs n' T' v' T n)
+  case (hTail vs ts Ts f frgt bs xs k' T' v' T k)
 
   let ?zs = "map (interp_trace frgt 0) Ts"
   have len_zs: "length ?zs = length ts" using hTail by simp
@@ -517,10 +563,10 @@ next
     show "\<forall>i<length ts. (f, frgt) \<turnstile> (ts ! i, bs, xs) \<Rightarrow>\<^bsup>?zs ! i\<^esup>  vs ! i"
       using \<open>length Ts = length ts\<close> hTail.IH nth_map by simp
   next
-    show "interp_trace frgt n T = sum_map (interp_trace frgt 0) Ts + interp_trace frgt n' T' + 1"
+    show "interp_trace frgt k T = sum_map (interp_trace frgt 0) Ts + interp_trace frgt k' T' + 1"
       apply (subst (2) interp_trace_n)
       apply (subst interp_trace_n)
-      using \<open>T = concat Ts @ T'\<close> \<open>n = n' + 1\<close> interp_trace_concat_is_sum_map apply simp
+      using \<open>T = concat Ts @ T'\<close> \<open>k = k' + 1\<close> interp_trace_concat_is_sum_map apply simp
       done
   qed (simp_all add: hTail)
 qed
@@ -651,7 +697,7 @@ qed simp_all
 
 
 lemma trace_end_nontail_trace_leaf:
-  assumes "(f, frgt) \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>(0, T)\<^esup> v" "\<not> tails t"
+  assumes "(f, frgt) \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>(k, T)\<^esup> v" "k = 0" (* "\<not> tails t" *)
   shows "frgt \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>T\<^esup> Value v"
 using assms by (induction rule: htrace_to_end_induct) auto
 
@@ -660,20 +706,20 @@ lemma trace_end_trace_leaf:
   assumes "invar t"
   shows "\<exists>T1 l.
     frgt \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>T1\<^esup> l
-    \<and> (case l of Tail ts \<Rightarrow> (\<exists>T2. (f, frgt) \<turnstile> (f, [], ts) \<Rightarrow>\<^bsup>(k - 1, T2)\<^esup> v)
-               | Value v1 \<Rightarrow> T1 = T \<and> v1 = v)"
-using assms proof (induction rule: htrace_to_end_induct)
+    \<and> (case l of Tail ts \<Rightarrow> (\<exists>T2. (f, frgt) \<turnstile> (f, [], ts) \<Rightarrow>\<^bsup>(k - 1, T2)\<^esup> v \<and> T = T1 @ T2)
+               | Value v1 \<Rightarrow> k = 0 \<and> T1 = T \<and> v1 = v)" (* TODO: check if IMP-TC equiv. lemma can be expanded *)
+using assms proof (induction arbitrary: rule: htrace_to_end_induct)
   case (hLet f frgt t1 bs xs T1 v1 t2 k T2 v2 T)
   from hLet trace_end_nontail_trace_leaf have 1: "frgt \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup>T1\<^esup> Value v1" by simp
   from hLet obtain T2' l'
       where 2: "frgt \<turnstile> (t2, v1 # bs, xs) \<Rightarrow>\<^bsup>T2'\<^esup>  l'"
-        and *: "(case l' of Tail ts \<Rightarrow> (\<exists>T3. (f, frgt) \<turnstile> (f, [], ts) \<Rightarrow>\<^bsup>(k - 1, T3)\<^esup>  v2)
-                          | Value v1 \<Rightarrow> T2' = T2 \<and> v1 = v2)"
+        and *: "(case l' of Tail ts \<Rightarrow> (\<exists>T3. (f, frgt) \<turnstile> (f, [], ts) \<Rightarrow>\<^bsup>(k - 1, T3)\<^esup>  v2 \<and> T2 = T2' @ T3)
+                          | Value v1 \<Rightarrow> k = 0 \<and> T2' = T2 \<and> v1 = v2)"
     by auto
   from 1 2 have "frgt \<turnstile> (LET t1 IN t2, bs, xs) \<Rightarrow>\<^bsup>T1 @ T2'\<^esup> l'" by blast
   moreover from * have
-      "(case l' of Tail ts \<Rightarrow> (\<exists>T3. (f, frgt) \<turnstile> (f, [], ts) \<Rightarrow>\<^bsup>(k - 1, T3)\<^esup>  v2)
-                 | Value v1 \<Rightarrow> T1 @ T2' = T \<and> v1 = v2)"
+      "(case l' of Tail ts \<Rightarrow> (\<exists>T3. (f, frgt) \<turnstile> (f, [], ts) \<Rightarrow>\<^bsup>(k - 1, T3)\<^esup>  v2 \<and> T = (T1 @ T2') @ T3)
+                 | Value v1 \<Rightarrow> k = 0 \<and> T1 @ T2' = T \<and> v1 = v2)"
     using hLet by (cases l') simp_all
 
   ultimately show ?case by blast
@@ -691,28 +737,29 @@ next
   from hIfTrue trace_end_nontail_trace_leaf have 1: "frgt \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup>T1\<^esup> Value v1" by simp
   from hIfTrue obtain T2' l'
       where 2: "frgt \<turnstile> (t2, bs, xs) \<Rightarrow>\<^bsup>T2'\<^esup>  l'"
-        and *: "(case l' of Tail ts \<Rightarrow> (\<exists>T2. (f, frgt) \<turnstile> (f, [], ts) \<Rightarrow>\<^bsup>(k - 1, T2)\<^esup>  v2)
-                          | Value v1 \<Rightarrow> T2' = T2 \<and> v1 = v2)"
+        and *: "(case l' of Tail ts \<Rightarrow> (\<exists>T3. (f, frgt) \<turnstile> (f, [], ts) \<Rightarrow>\<^bsup>(k - 1, T3)\<^esup>  v2 \<and> T2 = T2' @ T3)
+                          | Value v1 \<Rightarrow> k = 0 \<and> T2' = T2 \<and> v1 = v2)"
     by auto
   from 1 2 \<open>v1 \<noteq> 0\<close> have "frgt \<turnstile> (IF t1\<noteq>0 THEN t2 ELSE t3, bs, xs) \<Rightarrow>\<^bsup>T1 @ T2'\<^esup> l'" by blast
   moreover from * have
-      "(case l' of Tail ts \<Rightarrow> (\<exists>T3. (f, frgt) \<turnstile> (f, [], ts) \<Rightarrow>\<^bsup>(k - 1, T3)\<^esup>  v2)
-                 | Value v1 \<Rightarrow> T1 @ T2' = T \<and> v1 = v2)"
+      "(case l' of Tail ts \<Rightarrow> (\<exists>T3. (f, frgt) \<turnstile> (f, [], ts) \<Rightarrow>\<^bsup>(k - 1, T3)\<^esup>  v2 \<and> T = (T1 @ T2') @ T3)
+                 | Value v1 \<Rightarrow> k = 0 \<and> T1 @ T2' = T \<and> v1 = v2)"
     using hIfTrue by (cases l') simp_all
 
   ultimately show ?case by blast
 next
+  (* TODO: shouldn't need a T4... better var names *)
   case (hIfFalse f frgt t1 bs xs T1 v1 t3 k T3 v3 T t2)
   from hIfFalse trace_end_nontail_trace_leaf have 1: "frgt \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup>T1\<^esup> Value v1" by simp
   from hIfFalse obtain T2' l'
       where 2: "frgt \<turnstile> (t3, bs, xs) \<Rightarrow>\<^bsup>T2'\<^esup>  l'"
-        and *: "(case l' of Tail ts \<Rightarrow> (\<exists>T3. (f, frgt) \<turnstile> (f, [], ts) \<Rightarrow>\<^bsup>(k - 1, T3)\<^esup>  v3)
-                          | Value v1 \<Rightarrow> T2' = T3 \<and> v1 = v3)"
+        and *: "(case l' of Tail ts \<Rightarrow> (\<exists>T4. (f, frgt) \<turnstile> (f, [], ts) \<Rightarrow>\<^bsup>(k - 1, T4)\<^esup> v3 \<and> T3 = T2' @ T4)
+                          | Value v1 \<Rightarrow> k = 0 \<and> T2' = T3 \<and> v1 = v3)"
     by auto
   from 1 2 \<open>v1 = 0\<close> have "frgt \<turnstile> (IF t1\<noteq>0 THEN t2 ELSE t3, bs, xs) \<Rightarrow>\<^bsup>T1 @ T2'\<^esup> l'" by blast
   moreover from * have
-      "(case l' of Tail ts \<Rightarrow> (\<exists>T3. (f, frgt) \<turnstile> (f, [], ts) \<Rightarrow>\<^bsup>(k - 1, T3)\<^esup>  v3)
-                 | Value v1 \<Rightarrow> T1 @ T2' = T \<and> v1 = v3)"
+      "(case l' of Tail ts \<Rightarrow> (\<exists>T4. (f, frgt) \<turnstile> (f, [], ts) \<Rightarrow>\<^bsup>(k - 1, T4)\<^esup>  v3 \<and> T = (T1 @ T2') @ T4)
+                 | Value v1 \<Rightarrow> k = 0 \<and> T1 @ T2' = T \<and> v1 = v3)"
     using hIfFalse by (cases l') simp_all
 
   ultimately show ?case by blast
@@ -733,7 +780,7 @@ next
 
   moreover have "(f, frgt) \<turnstile> (f, [], vs) \<Rightarrow>\<^bsup>(k - 1, T')\<^esup>  v'" using hTail by simp
 
-  ultimately show ?case using leaf_state.simps(6) by blast
+  ultimately show ?case using hTail.hyps(4) leaf_state.simps(6) by blast
 qed
 
 

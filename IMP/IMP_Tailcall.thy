@@ -101,16 +101,17 @@ next
   }
 qed blast+
 
+(*
 fun k_struct :: "tcom \<Rightarrow> nat" where
   "k_struct tSKIP = 1" |
   "k_struct (_ ::= _) = 2" |
   "k_struct (c1;; c2) = k_struct c1 + k_struct c2 + 1" |
   "k_struct (IF x\<noteq>0 THEN c1 ELSE c2) = max (k_struct c1) (k_struct c2) + 1" |
   "k_struct (CALL _ RETURN _) = 0" |
-  "k_struct tTAIL = 5"
+  "k_struct tTAIL = 5" *)
 
 (* number of leaves (size c + 1) plus number of inner nodes (size c) *)
-definition num_commands :: "tcom \<Rightarrow> nat" where "num_commands c \<equiv> 2 * size c + 1"
+(* definition num_commands :: "tcom \<Rightarrow> nat" where "num_commands c \<equiv> 2 * size c + 1"
 
 lemma num_commands_simps[simp]:
     "num_commands tSKIP = 1"
@@ -119,10 +120,25 @@ lemma num_commands_simps[simp]:
     "num_commands (IF x\<noteq>0 THEN c1 ELSE c2) = num_commands c1 + num_commands c2 + 1"
     "num_commands (CALL c RETURN r) = 1"
     "num_commands tTAIL = 1"
-  unfolding num_commands_def by simp_all
+  unfolding num_commands_def by simp_all *)
 
+fun num_commands :: "tcom \<Rightarrow> nat" where
+  "num_commands tSKIP = 1" |
+  "num_commands (x ::= v) = 1" |
+  "num_commands (c1;; c2) = num_commands c1 + num_commands c2 + 1" |
+  "num_commands (IF x\<noteq>0 THEN c1 ELSE c2) = num_commands c1 + num_commands c2 + 1" |
+  "num_commands (CALL c RETURN r) = 1" |
+  "num_commands tTAIL = 1"
+
+lemma num_commands_size: "num_commands c = 2 * size c + 1"
+  by (induction c) auto
+
+abbreviation "c_struct c \<equiv> 5 * num_commands c"
+
+(*
 (* cost of up to 5 per leaf and up to 1 per inner node *)
 lemma k_struct_size_bound: "k_struct c \<le> 5 * num_commands c" by (induction c) auto
+*)
 
 lemma bigstep_progress: "f \<turnstile> (c, s) \<Rightarrow>\<^bsup>z\<^esup> t \<Longrightarrow> z > 0"
   by (induct rule: tbig_step_t_induct) (auto simp add: Big_StepT.bigstep_progress) 

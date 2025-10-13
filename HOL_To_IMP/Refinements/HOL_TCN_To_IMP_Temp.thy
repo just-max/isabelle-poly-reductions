@@ -1,9 +1,13 @@
 theory HOL_TCN_To_IMP_Temp
   imports HOL_Nat_To_IMP.IMP_Terminates_With "IMP.HOL_TCN_To_IMP" (* HOL_Nat_To_IMP.Compile_HOL_Nat_To_IMP *)
 (* TODO: rearrange import of stuff from Compile *)
+
+  HOL_To_IMP_Primitives (* only for stuff that should be in IMP_Terminates_With, TODO: fix here once that's done *)
 begin
 
 method repeat methods m = (m; repeat \<open>m\<close>)?
+
+type_synonym state = IMP_Base.state (* TODO *)
 
 abbreviation "lookups names (s :: state) \<equiv> map s names"
 abbreviation "lookup_args crgt g \<equiv> lookups (args_from_crgt crgt g)"
@@ -241,7 +245,8 @@ definition "relate_rgt_correctness frgt crgt fs \<longleftrightarrow> (\<forall>
 
 definition rel_trace_call :: "com_registry \<Rightarrow> fun_ref \<Rightarrow> nat list \<Rightarrow> com \<Rightarrow> state \<Rightarrow> bool" where
   "rel_trace_call crgt gr gargs gcom gs \<longleftrightarrow> com_from_crgt crgt gr = gcom \<and> lookup_args crgt gr gs = gargs"
-definition rel_trace_calls :: "com_registry \<Rightarrow> HOL_TCN_Timing.trace \<Rightarrow> IMP_Tailcall_Traces.call_trace \<Rightarrow> bool" where
+
+definition rel_trace_calls :: "com_registry \<Rightarrow> HOL_TCN_Timing.call_trace \<Rightarrow> IMP_Tailcall_Traces.call_trace \<Rightarrow> bool" where
   "rel_trace_calls crgt hT cT \<longleftrightarrow>
     length hT = length cT \<and>
     list_all (\<lambda>((gr,gargs),(gcom,gs)). rel_trace_call crgt gr gargs gcom gs) (zip hT cT)"
@@ -255,10 +260,14 @@ fun rel_leaf_state :: "com_registry \<Rightarrow> vname list \<Rightarrow> vname
 
 definition rel_trace_to_leaf ::
     "com_registry \<Rightarrow> vname list \<Rightarrow> vname \<Rightarrow>
-      HOL_TCN_Timing.trace \<Rightarrow> leaf_state \<Rightarrow>
+      HOL_TCN_Timing.call_trace \<Rightarrow> leaf_state \<Rightarrow>
         IMP_Tailcall_Traces.call_trace \<Rightarrow> state \<Rightarrow> bool \<Rightarrow> bool" where
   "rel_trace_to_leaf crgt f_args r hT hl cT s cl \<longleftrightarrow>
     rel_trace_calls crgt hT cT \<and> rel_leaf_state crgt f_args r hl s cl"
+
+definition rel_trace_to_end where
+  "rel_trace_to_end crgt r hT v cT s \<longleftrightarrow>
+    rel_trace_calls crgt hT cT \<and> s r = v"
 
 (* lemma
   assumes "length xs = length ys"
@@ -270,6 +279,8 @@ lemma rel_trace_to_leaf_cl:
     and "rel_trace_to_leaf crgt f_args r hT (Tail vs) cT s cl \<Longrightarrow> cl"
   unfolding rel_trace_to_leaf_def by simp_all
 
+(* concatenating traces *)
+
 lemma rel_trace_calls_append:
   assumes "rel_trace_calls crgt hT1 cT1"
   assumes "rel_trace_calls crgt hT2 cT2"
@@ -279,7 +290,20 @@ lemma rel_trace_to_leaf_append:
   assumes "rel_trace_calls crgt hT1 cT1"
   assumes "rel_trace_to_leaf crgt f_args r hT2 hl cT2 s cl"
   shows "rel_trace_to_leaf crgt f_args r (hT1 @ hT2) hl (cT1 @ cT2) s cl"
-  using assms unfolding rel_trace_to_leaf_def rel_trace_calls_def by auto
+  using assms rel_trace_calls_append unfolding rel_trace_to_leaf_def by auto
+
+lemma rel_trace_to_end_append:
+  assumes "rel_trace_calls crgt hT1 cT1"
+  assumes "rel_trace_to_end crgt r hT2 v cT2 s"
+  shows "rel_trace_to_end crgt r (hT1 @ hT2) v (cT1 @ cT2) s"
+  using assms rel_trace_calls_append unfolding rel_trace_to_end_def by auto
+
+(* relating partial and full traces *)
+
+lemma rel_trace_to_leaf_value_rel_trace_to_end:
+  "rel_trace_to_leaf crgt f_args r hT (Value v) cT s False \<longleftrightarrow> rel_trace_to_end crgt r hT v cT s"
+  unfolding rel_trace_to_leaf_def rel_trace_to_end_def by simp
+
 
 
 lemma snoc_obtain:
@@ -349,9 +373,9 @@ lemma compiled_arguments_bigstep:
   assumes disj: "set f_args \<inter>\<^sub>\<emptyset> set xs" "set bs \<inter>\<^sub>\<emptyset> set xs"
   assumes sem: "\<And>i s.
     \<lbrakk> i < length ts; relate_exec_state f_args bs vs_arg vs_b s \<rbrakk> \<Longrightarrow>
-    \<exists>z s'. f \<turnstile> (to_imp_tc f_args crgt bs (xs ! i) keep (ts ! i), s) \<Rightarrow>\<^bsup>z\<^esup> s' \<and>
+    \<exists>z s'. f \<turnstile> (to_imp_tc f_args crgt bs (xs ! i) keep (ts ! i), s) \<Rightarrow>\<^bsup>z :: nat\<^esup> s' \<and>
            s' (xs ! i) = (vs ! i) \<and> s' = s on set f_args \<union> set bs \<union> set keep - {xs ! i}"
-  shows "\<exists>z s'. f \<turnstile> (mk_seqs (generate (\<lambda>i. to_imp_tc f_args crgt bs (xs ! i) keep (ts ! i)) (length ts)), s) \<Rightarrow>\<^bsup>z\<^esup> s' \<and>
+  shows "\<exists>z s'. f \<turnstile> (mk_seqs (generate (\<lambda>i. to_imp_tc f_args crgt bs (xs ! i) keep (ts ! i)) (length ts)), s) \<Rightarrow>\<^bsup>z :: nat\<^esup> s' \<and>
                 lookups xs s' = vs \<and> s' = s on set f_args \<union> set bs \<union> set keep - set xs"
 using dist keep_xs disj sem proof (induction ts xs vs rule: snoc_list_induct3)
   case Nil
@@ -365,13 +389,13 @@ next
 
   have "i < length (ts @ [t])" if "i < length ts" for i using that by simp
   with snoc.prems(5) have **: "\<exists>z s'.
-      f \<turnstile> (to_imp_tc f_args crgt bs (xs ! i) keep (ts ! i), s) \<Rightarrow>\<^bsup>z\<^esup>  s' \<and>
+      f \<turnstile> (to_imp_tc f_args crgt bs (xs ! i) keep (ts ! i), s) \<Rightarrow>\<^bsup>z :: nat\<^esup>  s' \<and>
       s' (xs ! i) = vs ! i \<and> s' = s on set f_args \<union> set bs \<union> set keep - {xs ! i}"
     if "i < length ts" "relate_exec_state f_args bs vs_arg vs_b s" for i s
     using that nth_append_left snoc.hyps by metis
 
   with snoc.IH[OF * **] obtain z1 s2 where exec1:
-    "f \<turnstile> (mk_seqs (generate (\<lambda>i. to_imp_tc f_args crgt bs (xs ! i) keep (ts ! i)) (length ts)), s) \<Rightarrow>\<^bsup>z1\<^esup> s2"
+    "f \<turnstile> (mk_seqs (generate (\<lambda>i. to_imp_tc f_args crgt bs (xs ! i) keep (ts ! i)) (length ts)), s) \<Rightarrow>\<^bsup>z1 :: nat\<^esup> s2"
     "lookups xs s2 = vs" "s2 = s on set f_args \<union> set bs \<union> set keep - set xs"
     by blast
 
@@ -384,7 +408,7 @@ next
 
   from snoc.prems(5)[OF * **]
   obtain z2 s3 where exec2:
-      "f \<turnstile> (to_imp_tc f_args crgt bs ((xs @ [x]) ! length ts) keep ((ts @ [t]) ! length ts), s2) \<Rightarrow>\<^bsup>z2\<^esup> s3"
+      "f \<turnstile> (to_imp_tc f_args crgt bs ((xs @ [x]) ! length ts) keep ((ts @ [t]) ! length ts), s2) \<Rightarrow>\<^bsup>z2 :: nat\<^esup> s3"
       "s3 ((xs @ [x]) ! length ts) = (vs @ [v]) ! length ts"
       "s3 = s2 on set f_args \<union> set bs \<union> set keep - {(xs @ [x]) ! length ts}"
     by blast
@@ -475,10 +499,10 @@ lemma compiled_arguments_bigstep':
   assumes "set f_args \<inter>\<^sub>\<emptyset> set xs" "set bs \<inter>\<^sub>\<emptyset> set xs"
   assumes "\<And>i s.
     \<lbrakk> i < length ts; relate_exec_state f_args bs vs_arg vs_b s \<rbrakk> \<Longrightarrow>
-    \<exists>z s'. f \<turnstile> (to_imp_tc f_args crgt bs (xs ! i) keep (ts ! i), s) \<Rightarrow>\<^bsup>z\<^esup> s' \<and>
+    \<exists>z s'. f \<turnstile> (to_imp_tc f_args crgt bs (xs ! i) keep (ts ! i), s) \<Rightarrow>\<^bsup>z :: nat\<^esup> s' \<and>
              s' (xs ! i) = (vs ! i) \<and> s' = s on set f_args \<union> set bs \<union> set keep - {xs ! i}"
   obtains z s' where
-    "f \<turnstile> (mk_seqs (generate (\<lambda>i. to_imp_tc f_args crgt bs (xs ! i) keep (ts ! i)) (length ts)), s) \<Rightarrow>\<^bsup>z\<^esup> s'"
+    "f \<turnstile> (mk_seqs (generate (\<lambda>i. to_imp_tc f_args crgt bs (xs ! i) keep (ts ! i)) (length ts)), s) \<Rightarrow>\<^bsup>z :: nat\<^esup> s'"
     "lookups xs s' = vs" "s' = s on set f_args \<union> set bs \<union> set keep - set xs"
   using compiled_arguments_bigstep[OF assms] by blast
 
@@ -497,12 +521,12 @@ abbreviation "calls_r t \<equiv> set (map fst (calls t))"
 
 theorem compiler_correct_no_tails:
   assumes "\<not> tails t"
-  assumes "(f,frgt) \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup>z\<^esup> v"
+  assumes "(f,frgt) \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup>z :: nat\<^esup> v"
   assumes "compiler_invar crgt f_args bs keep t"
   assumes "relate_rgt_correctness frgt crgt (calls_r t)"
   assumes "relate_exec_state f_args bs vs_arg vs_b s"
   shows "\<exists>z_c s'.
-    f_c \<turnstile> (to_imp_tc f_args crgt bs r keep t,s) \<Rightarrow>\<^bsup>z_c\<^esup> s'
+    f_c \<turnstile> (to_imp_tc f_args crgt bs r keep t,s) \<Rightarrow>\<^bsup>z_c :: nat\<^esup> s'
     \<and> s' r = v
     \<and> s' = s on set f_args \<union> set bs \<union> set keep - {r}"
 using assms proof (induction t arbitrary: vs_b z v bs keep s r crgt)
@@ -513,7 +537,7 @@ using assms proof (induction t arbitrary: vs_b z v bs keep s r crgt)
   let ?c2 = "to_imp_tc f_args crgt (?r1 # bs) r (?r1 # keep) t2"
 
   from hLet.prems hLet_case
-  obtain z1 v1 z2 where inv:
+  obtain z1 v1 z2 :: nat where inv:
       "(f, frgt) \<turnstile> (t1, vs_b, vs_arg) \<Rightarrow>\<^bsup>z1\<^esup> v1"
       "(f, frgt) \<turnstile> (t2, v1 # vs_b, vs_arg) \<Rightarrow>\<^bsup>z2\<^esup> v"
     by blast
@@ -536,7 +560,7 @@ using assms proof (induction t arbitrary: vs_b z v bs keep s r crgt)
 
   from hLet.prems have rel_state1: "relate_exec_state f_args bs vs_arg vs_b s" by blast
 
-  obtain z1_c s2 where ih1:
+  obtain z1_c :: nat and s2 where ih1:
       "f_c \<turnstile> (?c1, s) \<Rightarrow>\<^bsup>z1_c\<^esup> s2" "s2 ?r1 = v1" "s2 = s on set f_args \<union> set bs \<union> set keep - {?r1}"
     using hLet.IH(1) no_tails(1) inv(1) comp_invar(1) rel_rgt(1) rel_state1 by blast
 
@@ -547,7 +571,7 @@ using assms proof (induction t arbitrary: vs_b z v bs keep s r crgt)
   then have rel_state2: "relate_exec_state f_args (?r1 # bs) vs_arg (v1 # vs_b) s2"
     using hLet.prems unfolding relate_exec_state_def using ih1 by fastforce
 
-  obtain z2_c s3 where ih2:
+  obtain z2_c :: nat and s3 where ih2:
       "f_c \<turnstile> (?c2, s2) \<Rightarrow>\<^bsup>z2_c\<^esup>  s3" "s3 r = v"
       "s3 = s2 on set f_args \<union> set (?r1 # bs) \<union> set (?r1 # keep) - {r}"
     using hLet.IH(2) no_tails(2) inv(2) comp_invar(2) rel_rgt(2) rel_state2 by blast
@@ -621,7 +645,7 @@ next
   proof (cases rule: hIf_case[OF hIf.prems(2)])
     case ifTrue: (1 z1 v1 z2)
 
-    obtain z1_c s2 where ih1:
+    obtain z1_c :: nat and s2 where ih1:
         "f_c \<turnstile> (?c1, s) \<Rightarrow>\<^bsup>z1_c\<^esup> s2"
         "s2 ?r1 = v1" "s2 = s on set f_args \<union> set bs \<union> set keep - {?r1}"
       using hIf.IH(1) no_tails(1) ifTrue comp_invar(1) rel_rgt(1) rel_state1 by blast
@@ -631,7 +655,7 @@ next
     then have rel_state2: "relate_exec_state f_args bs vs_arg vs_b s2"
       using hIf.prems unfolding relate_exec_state_def using ih1 by fastforce
 
-    obtain z2_c s3 where ih2:
+    obtain z2_c :: nat and s3 where ih2:
         "f_c \<turnstile> (?c2, s2) \<Rightarrow>\<^bsup>z2_c\<^esup>  s3" "s3 r = v"
         "s3 = s2 on set f_args \<union> set bs \<union> set keep - {r}"
       using hIf.IH(2) no_tails(2) ifTrue comp_invar(2) rel_rgt(2) rel_state2 by blast
@@ -647,7 +671,7 @@ next
   next
     case ifFalse: (2 z1 z2)
 
-    obtain z1_c s2 where ih1:
+    obtain z1_c :: nat and s2 where ih1:
         "f_c \<turnstile> (?c1, s) \<Rightarrow>\<^bsup>z1_c\<^esup> s2"
         "s2 ?r1 = 0" "s2 = s on set f_args \<union> set bs \<union> set keep - {?r1}"
       using hIf.IH(1) no_tails(1) ifFalse comp_invar(1) rel_rgt(1) rel_state1 by metis
@@ -657,7 +681,7 @@ next
     then have rel_state3: "relate_exec_state f_args bs vs_arg vs_b s2"
       using hIf.prems(5) unfolding relate_exec_state_def using ih1 by fastforce
 
-    obtain z2_c s3 where ih3:
+    obtain z2_c :: nat and s3 where ih3:
         "f_c \<turnstile> (?c3, s2) \<Rightarrow>\<^bsup>z2_c\<^esup>  s3" "s3 r = v"
         "s3 = s2 on set f_args \<union> set bs \<union> set keep - {r}"
       using hIf.IH(3) no_tails(3) ifFalse comp_invar(3) rel_rgt(3) rel_state3 by blast
@@ -678,7 +702,7 @@ next
   let ?T_g = "T_f_from_frgt frgt gr"
 
   from hCall.prems hCall_case
-  obtain zs vs where
+  obtain zs vs :: "nat list" where
           z: "z = sum_list zs + ?T_g vs"
       and lengths: "length zs = length ts" "length vs = length ts"
       and args_bigstep: "\<forall>i<length ts. (f, frgt) \<turnstile> (ts ! i, vs_b, vs_arg) \<Rightarrow>\<^bsup>zs ! i\<^esup> vs ! i"
@@ -698,7 +722,7 @@ next
   moreover have "set f_args \<inter>\<^sub>\<emptyset> set ?xs" "set bs \<inter>\<^sub>\<emptyset> set ?xs"
     unfolding stale_registers_def using make_n_fresh_not_in_stale by fastforce+
   moreover have
-      "\<exists>z_c s'. f_c \<turnstile> (to_imp_tc f_args crgt bs (?xs ! i) (?xs @ keep) (ts ! i), s) \<Rightarrow>\<^bsup>z_c\<^esup>  s' \<and>
+      "\<exists>z_c s'. f_c \<turnstile> (to_imp_tc f_args crgt bs (?xs ! i) (?xs @ keep) (ts ! i), s) \<Rightarrow>\<^bsup>z_c :: nat\<^esup>  s' \<and>
                 s' (?xs ! i) = (vs ! i) \<and> s' = s on set f_args \<union> set bs \<union> set (?xs @ keep) - {?xs ! i}"
     if "i < length ts" "relate_exec_state f_args bs vs_arg vs_b s" for i s
   proof (rule hCall.IH)
@@ -719,7 +743,7 @@ next
     from that show "relate_exec_state f_args bs vs_arg vs_b s" by blast
   qed
 
-  ultimately obtain z1 s2 where exec_c1: "f_c \<turnstile> (?c1, s) \<Rightarrow>\<^bsup>z1\<^esup>  s2"
+  ultimately obtain z1 :: nat and s2 where exec_c1: "f_c \<turnstile> (?c1, s) \<Rightarrow>\<^bsup>z1\<^esup>  s2"
       "lookups ?xs s2 = vs" "s2 = s on set f_args \<union> set bs \<union> set (?xs @ keep) - set ?xs"
     using compiled_arguments_bigstep' by blast
 
@@ -762,7 +786,7 @@ next
   let ?c4 = "r ::= A (V (ret_from_crgt crgt gr)) :: tcom"
 
   let ?s5 = "?s4(r := aval (A (V ?gret)) ?s4)"
-  obtain z4 where exec_c4: "f_c \<turnstile> (?c4, ?s4) \<Rightarrow>\<^bsup>z4\<^esup> ?s5" by blast
+  obtain z4 :: nat where exec_c4: "f_c \<turnstile> (?c4, ?s4) \<Rightarrow>\<^bsup>z4\<^esup> ?s5" by blast
   then have s5: "?s5 = ?s4(r := v)" using vfrom exec_c3 by simp
 
   (* putting it together *)
@@ -805,7 +829,7 @@ qed
    LET subterm requires a well-formed starting state. *)
 lemma compiler_augment_rel_trace:
   assumes no_tails: "\<not> HOL_TCN_Timing.tails t"
-  assumes htrace: "frgt \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup> hT :: HOL_TCN_Timing.trace \<^esup> Value v"
+  assumes htrace: "frgt \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup> hT :: HOL_TCN_Timing.call_trace \<^esup> Value v"
   assumes comp_assms:
     "compiler_invar crgt f_args bs keep t"
     and "relate_rgt_correctness frgt crgt (calls_r t)"
@@ -815,15 +839,15 @@ lemma compiler_augment_rel_trace:
     and "rel_trace_to_leaf crgt f_args r hT (Value v) cT s' False"
   shows "s' r = v" "s' = s on set f_args \<union> set bs \<union> set keep - {r}"
 proof -
-  from assms trace_val_to_semantics
-  obtain f z where "(f,frgt) \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup>z\<^esup> v" by blast
+  from assms trace_leaf_nontail_bigstep
+  obtain f z where "(f,frgt) \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup>z :: nat\<^esup> v" by blast
 
   then obtain f_c z_c s2 where correct:
-      "f_c \<turnstile> (to_imp_tc f_args crgt bs r keep t,s) \<Rightarrow>\<^bsup>z_c\<^esup> s2" "s2 r = v"
+      "f_c \<turnstile> (to_imp_tc f_args crgt bs r keep t,s) \<Rightarrow>\<^bsup>z_c :: nat\<^esup> s2" "s2 r = v"
       "s2 = s on set f_args \<union> set bs \<union> set keep - {r}"
     using compiler_correct_no_tails[where t = t] assms by blast
 
-  have "s2 = s'" using correct(1) trace_nontail_has_bigstep[OF comp_rel(1)] determ(2) by blast
+  have "s2 = s'" using correct(1) IMP_Tailcall_Traces.trace_leaf_nontail_bigstep[OF comp_rel(1)] determ(2) by blast
 
   then show "s' r = v" "s' = s on set f_args \<union> set bs \<union> set keep - {r}" using correct by simp_all
 qed
@@ -1001,7 +1025,7 @@ lemma copy_list_trace':
 
 theorem compiler_rel_trace:
   assumes "invar t"
-  assumes "frgt \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup> hT :: HOL_TCN_Timing.trace \<^esup> hl"
+  assumes "frgt \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup> hT :: HOL_TCN_Timing.call_trace \<^esup> hl"
   assumes "compiler_invar crgt f_args bs keep t"
   assumes "relate_rgt_correctness frgt crgt (calls_r t)"
   assumes "relate_exec_state f_args bs vs_arg vs_b s"
@@ -1233,8 +1257,7 @@ next
       unfolding rel_trace_to_leaf_def by blast
   qed
 next
-  case (hCall g T_g frgt gr vs ts hTs vs_b vs_arg T v)
-
+  case (hCall vs ts hTs frgt vs_b vs_arg T gr v)
   let ?g = "f_from_frgt frgt gr"
   let ?T_g = "T_f_from_frgt frgt gr"
 
@@ -1455,6 +1478,232 @@ next
       using rel_trace_calls_append by blast
   qed
 qed
+
+
+lemma ind_tail:
+  fixes P :: "thol \<Rightarrow> fun_registry \<Rightarrow> thol \<Rightarrow> nat list \<Rightarrow> nat list \<Rightarrow> nat \<Rightarrow> HOL_TCN_Timing.call_trace \<Rightarrow> nat \<Rightarrow> bool"
+  assumes invar: "invar t" "invar f"
+  assumes trace: "(f,frgt) \<turnstile> (t, vs_b, vs_arg) \<Rightarrow>\<^bsup> (k, T) :: HOL_TCN_Timing.trace \<^esup> v"
+  assumes val:
+    "\<And>f frgt t vs_b vs_arg T v.
+      frgt \<turnstile> (t, vs_b, vs_arg) \<Rightarrow>\<^bsup> T :: HOL_TCN_Timing.call_trace \<^esup> Value v \<Longrightarrow>
+      P f frgt t vs_b vs_arg 0 T v"
+  assumes tail:
+    "\<And>f frgt t vs_b vs_arg k T1 T2 vs v.
+      frgt \<turnstile> (t, vs_b, vs_arg) \<Rightarrow>\<^bsup> T1 :: HOL_TCN_Timing.call_trace \<^esup> Tail vs \<Longrightarrow>
+      (f, frgt) \<turnstile> (f, [], vs) \<Rightarrow>\<^bsup> (k, T2) :: HOL_TCN_Timing.trace \<^esup> v \<Longrightarrow>
+      P f frgt f [] vs k T2 v \<Longrightarrow>
+      P f frgt t vs_b vs_arg (k + 1) (T1 @ T2) v"
+  shows "P f frgt t vs_b vs_arg k T v"
+using assms(3,1) proof (induction k arbitrary: t vs_b vs_arg T v)
+  case 0
+  then have "frgt \<turnstile> (t, vs_b, vs_arg) \<Rightarrow>\<^bsup>T\<^esup> Value v"
+    using HOL_TCN_Timing.trace_end_nontail_trace_leaf by force
+  then show ?case
+    using val by blast
+next
+  case (Suc k)
+
+  from trace_end_trace_leaf[OF Suc.prems(1,2)] obtain T1 l where
+      "frgt \<turnstile> (t, vs_b, vs_arg) \<Rightarrow>\<^bsup>T1\<^esup> l"
+      "case l of Value v1 \<Rightarrow> Suc k = 0 \<and> T1 = T \<and> v1 = v
+               | Tail ts \<Rightarrow> \<exists>T2. (f, frgt) \<turnstile> (f, [], ts) \<Rightarrow>\<^bsup>(Suc k - 1, T2)\<^esup>  v \<and> T = T1 @ T2"
+    by blast
+  then obtain ts T2 where
+      "frgt \<turnstile> (t, vs_b, vs_arg) \<Rightarrow>\<^bsup>T1\<^esup> Tail ts"
+      "(f, frgt) \<turnstile> (f, [], ts) \<Rightarrow>\<^bsup>(k, T2)\<^esup> v" "T = T1 @ T2"
+    by (cases l) auto
+
+  with Suc tail invar(2) show ?case by simp
+qed
+
+
+theorem compiler_rel_trace_end:
+  assumes "invar t" "invar f"
+  assumes "(f,frgt) \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup> (hk, hT) :: HOL_TCN_Timing.trace \<^esup> hv"
+  assumes "compiler_invar crgt f_args bs keep t"
+  assumes "compiler_invar crgt f_args [] [] f"
+  assumes "relate_rgt_correctness frgt crgt (calls_r t)"
+  assumes "relate_rgt_correctness frgt crgt (calls_r f)"
+  assumes "relate_exec_state f_args bs vs_arg vs_b s"
+  shows "\<exists>k cT s'.
+    to_imp_tc f_args crgt [] r [] f \<turnstile> (to_imp_tc f_args crgt bs r keep t,s)\<Rightarrow>\<^bsup>(k, cT)\<^esup> s'
+    \<and> rel_trace_to_end crgt r hT hv cT s'"
+(* TODO: need to add relationship between k and hk *)
+using assms(1-2,4-) proof (induction arbitrary: s bs keep rule: ind_tail[OF assms(1,2,3)])
+  (* base case: t executes to a value without a tail call *)
+  case (1 f frgt t vs_b vs_arg T v)
+
+  (* using the partial trace relatedness theorem, obtain a related trace *)
+  with compiler_rel_trace obtain k cT s'
+    where imp: "(to_imp_tc f_args crgt bs r keep t, s) \<Rightarrow>\<^bsup>(k, cT)\<^esup>  (s', False)"
+      and rel: "rel_trace_to_leaf crgt f_args r T (Value v) cT s' False"
+    using rel_trace_to_leaf_cl by (metis (full_types))
+
+  (* turn the information about partial traces (ending in a value) to full traces *)
+  from rel have "rel_trace_to_end crgt r T v cT s'"
+    using rel_trace_to_leaf_value_rel_trace_to_end by simp
+  moreover from imp have "f \<turnstile> (to_imp_tc f_args crgt bs r keep t, s) \<Rightarrow>\<^bsup>(k, cT)\<^esup>  s'" for f
+    using IMP_Tailcall_Traces.trace_leaf_no_tail_trace_end by blast 
+
+  ultimately show ?case by blast
+next
+  (* inductive step: t executes to a tail call *)
+  case (2 f frgt t vs_b vs_arg hk hT1 hT2 vs v)
+
+  (* again using the partial trace relatedness theorem, obtain a related trace up to the tail call *)
+  with compiler_rel_trace obtain ck1 cT1 s2
+    where imp1: "(to_imp_tc f_args crgt bs r keep t, s) \<Rightarrow>\<^bsup>(ck1, cT1)\<^esup>  (s2, True)"
+      and rel1: "rel_trace_to_leaf crgt f_args r hT1 (Tail vs) cT1 s2 True"
+    using rel_trace_to_leaf_cl by (metis (full_types))
+
+  (* show that the intermediate state s2 encodes the initial context for the remaining trace *)
+  from rel1 have "lookups f_args s2 = vs" unfolding rel_trace_to_leaf_def by simp
+  then have rel_state2: "relate_exec_state f_args [] vs [] s2"
+    unfolding relate_exec_state_def by simp
+
+  (* from there, apply the IH to get the remaining trace *)
+  with "2.IH" "2.prems" obtain ck2 cT2 s3
+    where imp2: "to_imp_tc f_args crgt [] r [] f \<turnstile>(to_imp_tc f_args crgt [] r [] f, s2) \<Rightarrow>\<^bsup>(ck2, cT2)\<^esup>  s3"
+      and rel2: "rel_trace_to_end crgt r hT2 v cT2 s3"
+    by blast
+
+  (* combine the first and second parts of the execution *)
+  from rel1 rel2 have "rel_trace_to_end crgt r (hT1 @ hT2) v (cT1 @ cT2) s3"
+    using rel_trace_to_end_append unfolding rel_trace_to_leaf_def by metis
+  moreover from imp1 imp2 have
+    "to_imp_tc f_args crgt [] r [] f \<turnstile>(to_imp_tc f_args crgt bs r keep t, s) \<Rightarrow>\<^bsup>(ck1 + ck2, cT1 @ cT2)\<^esup>  s3"
+    using IMP_Tailcall_Traces.trace_leaf_tail_trace_end by auto
+
+  ultimately show ?case by blast
+qed
+
+term relate_rgt_correctness
+
+
+(* TODO: does this not exist already? *)
+definition list_max :: "nat list \<Rightarrow> nat" where "list_max xs = fold max xs 0"
+
+lemma list_max_cons: "list_max (x # xs) = max x (list_max xs)"
+proof-
+  have "fold max (x # xs :: nat list) z = max x (fold max xs z)" for x xs z
+    by (induction xs arbitrary: x z) auto
+  then show ?thesis unfolding list_max_def by blast
+qed
+
+lemma list_max_append: "max (list_max xs) (list_max ys) = list_max (xs @ ys)"
+proof (induction xs)
+  case Nil then show ?case using list_max_def by simp
+  case (Cons a xs) then show ?case using list_max_cons by simp
+qed
+
+definition "terminates_time_order_IMP p T_f =
+  (\<exists>f. HOL_Nat_To_IMP.terminates_with_time_order_IMP p f T_f)"
+
+(* TODO "fs" or "set fs" *)
+definition "relate_rgt_time frgt crgt fs \<longleftrightarrow> (\<forall>f \<in> set fs.
+  terminates_time_order_IMP (com_from_crgt crgt f) (T_f_from_frgt frgt f o lookup_args crgt f))"
+(* note that terminates_time_order_IMP imposes only an upper bound on the running time, even though it could really by exact *)
+
+definition "least_constant frgt crgt f =
+  HOL_Nat_To_IMP.least_constant_IMP (com_from_crgt crgt f) (T_f_from_frgt frgt f o lookup_args crgt f)"
+
+definition "list_least_constant frgt crgt gs = list_max (map (least_constant frgt crgt) gs)"
+
+(* lemma "list_least_constant frgt crgt (map fst hT) \<le> ... max of all constants occuring in term " *)
+
+lemma rel_trace_times:
+  assumes "rel_trace_calls crgt hT cT"
+  assumes "relate_rgt_time frgt crgt (map fst hT)"
+  shows "\<exists>z. IMP_Tailcall_Traces.interp_trace 0 cT z \<and>
+             z \<le> list_least_constant frgt crgt (map fst hT) * HOL_TCN_Timing.interp_trace frgt 0 hT"
+proof-
+  from assms(1) have "length hT = length cT" unfolding rel_trace_calls_def by simp
+  then show ?thesis
+  using assms proof (induction rule: list_induct2)
+    case Nil
+    then show ?case by simp
+  next
+    case (Cons hg hT cg cT)
+    let ?gr = "fst hg" and ?gargs = "snd hg"
+    let ?gcom = "fst cg" and ?gs = "snd cg"
+
+    from Cons have rel1: "rel_trace_call crgt ?gr ?gargs ?gcom ?gs"
+      unfolding rel_trace_calls_def by auto
+
+    let ?T_f = "T_f_from_frgt frgt ?gr o lookup_args crgt ?gr"
+    let ?c1 = "HOL_Nat_To_IMP.least_constant_IMP ?gcom ?T_f"
+
+    have "?gr \<in> set (map fst (hg # hT))" by simp
+    with Cons.prems(2) rel1 have
+      "terminates_time_order_IMP (com_from_crgt crgt ?gr) ?T_f"
+      unfolding relate_rgt_time_def by blast
+    then have
+      "\<exists>t. HOL_Nat_To_IMP.terminates_with_time_IMP (com_from_crgt crgt ?gr) ?gs t
+            (HOL_Nat_To_IMP.least_constant_IMP (com_from_crgt crgt ?gr) ?T_f * ?T_f ?gs)"
+      using HOL_Nat_To_IMP.obtain_least_bound unfolding terminates_time_order_IMP_def by blast
+    then obtain t where
+      "HOL_Nat_To_IMP.terminates_with_time_IMP ?gcom ?gs t (?c1 * T_f_from_frgt frgt ?gr ?gargs)"
+      using rel1 unfolding rel_trace_call_def by auto
+    then obtain z1 where z1:
+        "(?gcom, ?gs) \<Rightarrow>\<^bsup> z1 \<^esup> t" "z1 \<le> ?c1 * T_f_from_frgt frgt ?gr ?gargs"
+      by (meson HOL_Nat_To_IMP.terminates_with_time_IMPE)
+
+    then have interp1: "IMP_Tailcall_Traces.interp_trace 0 [(?gcom, ?gs)] z1"
+      using IMP_Tailcall_Traces.interp_trace_singleton' by blast
+
+    let ?c2 = "list_least_constant frgt crgt (map fst hT)"
+
+    from Cons obtain z2
+      where interp2: "IMP_Tailcall_Traces.interp_trace 0 cT z2"
+        and z2: "z2 \<le> ?c2 * HOL_TCN_Timing.interp_trace frgt 0 hT"
+      unfolding rel_trace_calls_def relate_rgt_time_def by auto
+
+    let ?c = "list_least_constant frgt crgt (map fst (hg # hT))"
+    have "?c = max (least_constant frgt crgt ?gr) ?c2"
+      unfolding list_least_constant_def
+      using list_max_cons by simp
+    also have "... = max ?c1 ?c2"
+      using rel1 unfolding rel_trace_call_def least_constant_def by simp
+    finally have c_as_max: "?c = max ?c1 ?c2" .
+
+    show ?case
+    proof (rule exI, rule conjI)
+      from interp1 interp2 show "IMP_Tailcall_Traces.interp_trace 0 (cg # cT) (z1 + z2)"
+        using IMP_Tailcall_Traces.interp_trace_append by fastforce
+    next
+      (* have "?c1 \<le> list_least_constant frgt crgt (map fst (hg # hT)) *)
+      have "z1 + z2 \<le> ?c1 * T_f_from_frgt frgt ?gr ?gargs + ?c2 * HOL_TCN_Timing.interp_trace frgt 0 hT" using z1 z2 by simp
+      also have "... \<le> ?c1 * T_f_from_frgt frgt ?gr ?gargs + ?c * HOL_TCN_Timing.interp_trace frgt 0 hT" using c_as_max by simp
+      also have "... \<le> ?c * T_f_from_frgt frgt ?gr ?gargs + ?c * HOL_TCN_Timing.interp_trace frgt 0 hT" using c_as_max by simp
+      also have "... = ?c * (T_f_from_frgt frgt ?gr ?gargs + HOL_TCN_Timing.interp_trace frgt 0 hT)" by algebra
+      also have "... = ?c * (HOL_TCN_Timing.interp_trace frgt 0 [hg] + HOL_TCN_Timing.interp_trace frgt 0 hT)"
+        using HOL_TCN_Timing.interp_trace_singleton[where n = 0, simplified add_0_left] by (metis split_pairs)
+      also have "... = ?c * HOL_TCN_Timing.interp_trace frgt 0 ([hg] @ hT)"
+        using HOL_TCN_Timing.interp_trace_append[of _ 0 0, simplified add_0_right] by presburger
+      finally show "z1 + z2 \<le> list_least_constant frgt crgt (map fst (hg # hT)) * HOL_TCN_Timing.interp_trace frgt 0 (hg # hT)" by simp
+    qed
+  qed
+qed
+
+      (* "\<exists>t. \<exists>c. HOL_Nat_To_IMP.terminates_with_time_IMP
+        ?gcom ?gs t (c * T_f_from_frgt frgt ?gr ?gargs)"
+    proof-
+      have *: "(T_f_from_frgt frgt ?gr o lookup_args crgt ?gr) ?gs = T_f_from_frgt frgt ?gr ?gargs"
+        using rel1 unfolding rel_trace_call_def by simp
+      then show ?thesis
+      using rel1 unfolding rel_trace_call_def HOL_Nat_To_IMP.terminates_with_time_order_IMP_def try0 *)
+(* \<exists>c. \<forall>s. terminates_with_time_IMP p s (s_p s) (c * T_f s) *)
+ (*    with Cons.prems(2) rel1 have "\<exists>f_s. HOL_Nat_To_IMP.terminates_with_time_order_IMP ?gcom f_s (T_f_from_frgt frgt ?gr ?gargs)"
+      unfolding relate_rgt_time_def rel_trace_call_def HOL_Nat_To_IMP.terminates_with_time_order_IMP_def by metis
+
+    then obtain z1 t where
+        "(?gcom, ?gs) \<Rightarrow>\<^bsup> z1 \<^esup> t" "z1 \<le> T_f_from_frgt frgt ?gr ?gargs"
+      by (meson HOL_Nat_To_IMP.terminates_with_time_IMPE) *)
+
+
+term HOL_TCN_Timing.interp_trace
+term IMP_Tailcall_Traces.interp_trace
 
 (* lemma "\<exists>c. \<forall>s. tstruct_k t_imp + something \<le> c * interp_time frgt (time_to_tail frgt vs_b vs_arg t)" oops *)
 (* in fact, we can calculate c as the max of the structural-constant-factor and all T_f_const-ants or so *)
