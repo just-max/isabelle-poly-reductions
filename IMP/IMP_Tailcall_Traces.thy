@@ -192,10 +192,16 @@ next
   then show ?case by simp
 qed
 
-
+(* each command can cost up to 5, so the static cost is at most 5 times the number of commands *)
 lemma trace_nontail_static_bound:
   assumes "(c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l)"
   shows "k \<le> c_struct c"
+  using assms by (induction rule: ttrace_to_leaf_induct) auto
+
+(* there cannot be more calls than commands *)
+lemma trace_nontail_call_bound:
+  assumes "(c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> (t, l)"
+  shows "length T \<le> IMP_Tailcall.num_commands c"
   using assms by (induction rule: ttrace_to_leaf_induct) auto
 
 

@@ -1519,31 +1519,37 @@ next
 qed
 
 
-(* due to `c_struct` and lemma `to_imp_num_commands` *)
-definition "rel_trace_times t hk k \<equiv>
-  k \<le> 35 * HOL_TCN_Timing.num_commands t * (hk + 1)"
+(* due to `c_struct` (5 * ..) and lemma `to_imp_num_commands` (7 * ..) *)
+definition "rel_trace_times t hk k T \<equiv>
+  k \<le> 35 * HOL_TCN_Timing.num_commands t * (hk + 1)
+  \<and> length T \<le> 7 * HOL_TCN_Timing.num_commands t * (hk + 1)"
 
 lemma compiler_rel_trace_times_to_tail:
   assumes "(to_imp_tc f_args crgt bs r keep t,s)\<Rightarrow>\<^bsup>(k, cT)\<^esup> (s', l)"
-  shows "rel_trace_times t hk k"
-proof-
+  shows "rel_trace_times t 0 k cT"
+unfolding rel_trace_times_def proof (standard, goal_cases)
+  case 1
   have "k \<le> c_struct (to_imp_tc f_args crgt bs r keep t)"
     using assms trace_nontail_static_bound by blast
   also have "... \<le> 35 * HOL_TCN_Timing.num_commands t"
     using to_imp_num_commands by simp
-  also have "... \<le> 35 * HOL_TCN_Timing.num_commands t * (hk + 1)" by simp
-  finally show ?thesis unfolding rel_trace_times_def .
+  finally show ?case by simp
+next
+  case 2
+  have "length cT \<le> 7 * HOL_TCN_Timing.num_commands t"
+    using trace_nontail_call_bound[OF assms] to_imp_num_commands le_trans by blast
+  then show ?case by simp
 qed
 
 lemma rel_trace_times_join:
-  assumes "rel_trace_times t hk1 k1" "rel_trace_times t hk2 k2"
-  shows "rel_trace_times t (hk1 + hk2 + 1) (k1 + k2)"
+  assumes "rel_trace_times t hk1 k1 T1" "rel_trace_times t hk2 k2 T2"
+  shows "rel_trace_times t (hk1 + hk2 + 1) (k1 + k2) (T1 @ T2)"
   using assms unfolding rel_trace_times_def by (simp add: algebra_simps)
 
 lemma rel_trace_times_num_commands_mono:
   assumes "HOL_TCN_Timing.num_commands t \<le> HOL_TCN_Timing.num_commands f"
-  assumes "rel_trace_times t hk k"
-  shows "rel_trace_times f hk k"
+  assumes "rel_trace_times t hk k T"
+  shows "rel_trace_times f hk k T"
   using assms unfolding rel_trace_times_def
   by (meson dual_order.refl mult_le_mono order_trans)
 
@@ -1558,8 +1564,7 @@ theorem compiler_rel_trace_end:
   assumes "relate_exec_state f_args bs vs_arg vs_b s"
   shows "\<exists>k cT s'.
     to_imp_tc f_args crgt [] r [] f \<turnstile> (to_imp_tc f_args crgt bs r keep t,s)\<Rightarrow>\<^bsup>(k, cT)\<^esup> s'
-    \<and> rel_trace_to_end crgt r hT hv cT s'
-    \<and> rel_trace_times f hk k"
+    \<and> rel_trace_to_end crgt r hT hv cT s' \<and> rel_trace_times f hk k cT"
 using assms(1-3,5-) proof (induction arbitrary: s bs keep rule: ind_tail[OF assms(1,2,4)])
   (* base case: t executes to a value without a tail call *)
   case (1 f frgt t vs_b vs_arg T v)
@@ -1577,7 +1582,7 @@ using assms(1-3,5-) proof (induction arbitrary: s bs keep rule: ind_tail[OF assm
     using IMP_Tailcall_Traces.trace_leaf_no_tail_trace_end by blast
 
   (* the running time until the tail call is bounded *)
-  moreover from imp have "rel_trace_times f 0 k"
+  moreover from imp have "rel_trace_times f 0 k cT"
     using compiler_rel_trace_times_to_tail "1.prems" rel_trace_times_num_commands_mono by blast
 
   ultimately show ?case by blast
@@ -1590,7 +1595,7 @@ next
     where imp1: "(to_imp_tc f_args crgt bs r keep t, s) \<Rightarrow>\<^bsup>(ck1, cT1)\<^esup>  (s2, True)"
       and rel1: "rel_trace_to_leaf crgt f_args r hT1 (Tail vs) cT1 s2 True"
     using rel_trace_to_leaf_cl by (metis (full_types))
-  then have rel_time1: "rel_trace_times f 0 ck1"
+  then have rel_time1: "rel_trace_times f 0 ck1 cT1"
     using compiler_rel_trace_times_to_tail "2.prems" rel_trace_times_num_commands_mono by blast
 
   (* show that the intermediate state s2 encodes the initial context for the remaining trace *)
@@ -1602,7 +1607,7 @@ next
   with "2.IH" "2.prems" obtain ck2 cT2 s3
     where imp2: "to_imp_tc f_args crgt [] r [] f \<turnstile>(to_imp_tc f_args crgt [] r [] f, s2) \<Rightarrow>\<^bsup>(ck2, cT2)\<^esup>  s3"
       and rel2: "rel_trace_to_end crgt r hT2 v cT2 s3"
-      and rel_time2: "rel_trace_times f hk ck2"
+      and rel_time2: "rel_trace_times f hk ck2 cT2"
     by blast
 
   (* combine the first and second parts of the execution *)
@@ -1611,7 +1616,7 @@ next
     using IMP_Tailcall_Traces.trace_leaf_tail_trace_end by auto
   moreover from rel1 rel2 have "rel_trace_to_end crgt r (hT1 @ hT2) v (cT1 @ cT2) s3"
     using rel_trace_to_end_append unfolding rel_trace_to_leaf_def by metis
-  moreover from rel_time1 rel_time2 have "rel_trace_times f (hk + 1) (ck1 + ck2)"
+  moreover from rel_time1 rel_time2 have "rel_trace_times f (hk + 1) (ck1 + ck2) (cT1 @ cT2)"
     using rel_trace_times_join by fastforce
 
   ultimately show ?case by blast
@@ -1677,31 +1682,79 @@ proof
   show "(\<lambda>_. 0 :: nat) \<noteq> (\<lambda>_. 1)" by (meson zero_neq_one)
 qed
 
+(* todo move *)
+lemma max1I (* [intro] *):
+
+
+ (* why does this break as an intro rule? *)
+  (* assumes "\<And>x. x \<noteq> 0 \<Longrightarrow> P x" *)
+  (* assumes "x \<noteq> 0 \<Longrightarrow> P x" *)
+  assumes "x = 0 \<Longrightarrow> P 1" "x \<noteq> 0 \<Longrightarrow> P x"
+  shows "P (x\<^sub>+)"
+  using assms by (cases "x = 0") simp_all
+  (* using assms[of 1] assms[of x] by (cases "x = 0") auto *)
+
+lemma max1E[elim]:
+  assumes "P (x\<^sub>+)" "P 1 \<Longrightarrow> Q 0" "\<And>x. x \<noteq> 0 \<Longrightarrow> P x \<Longrightarrow> Q x"
+  shows "Q x"
+  using assms by (cases "x = 0") auto
+
+
 (* shows us that our order definition is nothing but the classic a*f+b definition... *)
 lemma order_of_ab: "f \<le>\<^sub>c g \<longleftrightarrow> (\<exists>a b. \<forall>x. f x \<le> a * g x + b)"
 proof
-  assume "f \<le>\<^sub>c g" then obtain c where *: "f x \<le> c * (g x)\<^sub>+" for x by fast
-  have "f x \<le> c * g x + c" for x using *[of x] by (cases "g x = 0"; simp)
+  assume "f \<le>\<^sub>c g" then obtain c where *: "f x \<le> c * (g x)\<^sub>+" for x by force
+  then have "f x \<le> c * g x + c" for x by fastforce
   then show "\<exists>a b. \<forall>x. f x \<le> a * g x + b" by blast
 next
   assume "\<exists>a b. \<forall>x. f x \<le> a * g x + b" then obtain a b where *: "f x \<le> a * g x + b" for x by blast
   have "f x \<le> (a + b) * (g x)\<^sub>+" for x
-  proof (cases "g x = 0")
-    assume "g x = 0" then show ?thesis using *[of x] by simp
+  proof (rule max1I)
+    assume "g x = 0" then show "f x \<le> (a + b) * 1" using *[of x] by simp
   next
     assume **: "g x \<noteq> 0"
     have "f x \<le> a * g x + b" using * by blast
     also have "... \<le> a * g x + b * g x" using ** by simp
     also have "... = (a + b) * g x" by algebra
-    also have "... = (a + b) * (g x)\<^sub>+" using ** by simp
-    finally show ?thesis .
+    finally show "f x \<le> (a + b) * g x" .
   qed
   then show "f \<le>\<^sub>c g" by blast
 qed
 
+lemma order_of_const: "(\<lambda>_. k) \<le>\<^sub>c f"
+  by (rule order_ofI, rule order_of_cI[where c = k], rule max1I; simp)
 
-(* following the formulation from A Fistful of Dollars,
-    we abstract the definition of "asymptotically bounded" away: *)
+lemma order_of_plus: assumes "f \<le>\<^sub>c h" "g \<le>\<^sub>c h" shows "(\<lambda>x. f x + g x) \<le>\<^sub>c h"
+proof-
+  from assms obtain c1 c2 where *: "order_of_c c1 f h" "order_of_c c2 g h" by blast
+  show "(\<lambda>x. f x + g x) \<le>\<^sub>c h"
+  proof (rule order_ofI, rule order_of_cI, rule max1I)
+    fix x assume "h x = 0"
+    with * have "f x \<le> c1" "g x \<le> c2" using order_of_cE[where g = h and x = x] by auto
+    then show "f x + g x \<le> (c1 + c2) * 1" by simp
+  next
+    fix x assume "h x \<noteq> 0"
+    with * have "f x \<le> c1 * h x" "g x \<le> c2 * h x" using order_of_cE[where g = h and x = x] by auto
+    then show "f x + g x \<le> (c1 + c2) * h x" by (simp add: algebra_simps)
+  qed
+qed
+
+lemma order_of_const_mult: assumes "f \<le>\<^sub>c g" shows "(\<lambda>x. k * f x) \<le>\<^sub>c g"
+  using assms order_of_plus by (induction k) auto
+
+
+(* Following the formulation from A Fistful of Dollars,
+    we abstract the definition of "asymptotically bounded" away.
+
+  Advantages:
+  - No more "c" floating around in the definition of terminates_with_res_time_order_IMP
+  - Also don't need to add a "c" parameter to terminates_with_res_time_IMP, which I think would get in the way:
+      - Since that predicate is used for the recursion on the term, the "c" would be an extra parameter fixed at 1
+      - There's also nothing that could force "c" to be a constant there, so it would just be an extra parameter that gets multiplied in inside the predicate
+  - Keeps the definition of "of_order" in one place, which we might need when considering functions that have run time of 0
+      - E.g. of_order g f = if (g is zero function) then (f is constant function) else (existing def ...)
+      - Any change here would of course nevertheless need to be accounted for whenever an auxiliary function is called.
+ *)
 
 definition "terminates_with_res_time_order_IMP p r f T_f \<equiv>
   \<exists>T. T \<le>\<^sub>c T_f \<and> (\<forall>s. HOL_Nat_To_IMP.terminates_with_res_time_IMP p s r (f s) (T s))"
@@ -1717,15 +1770,71 @@ lemma terminates_with_res_time_order_IMP_E[elim]:
   obtains T where "T \<le>\<^sub>c T_f" "\<And>s. HOL_Nat_To_IMP.terminates_with_res_time_IMP p s r (f s) (T s)"
   using assms unfolding terminates_with_res_time_order_IMP_def by blast
 
-(* Advantages:
-  - No more "c" floating around in the definition of terminates_with_res_time_order_IMP
-  - Also don't need to add a "c" parameter to terminates_with_res_time_IMP, which I think would get in the way:
-      - Since that predicate is used for the recursion on the term, the "c" would be an extra parameter fixed at 1
-      - There's also nothing that could force "c" to be a constant there, so it would just be an extra parameter that gets multiplied in inside the predicate
-  - Keeps the definition of "of_order" in one place, which we might need when considering functions that have run time of 0
-      - E.g. of_order g f = if (g is zero function) then (f is constant function) else (existing def ...)
-      - Any change here would of course nevertheless need to be accounted for whenever an auxiliary function is called.
- *)
+definition "terminates_with_res_time_order_IMP_Tailcall tp p r f T_f \<equiv>
+  \<exists>T. T \<le>\<^sub>c T_f \<and> (\<forall>s. HOL_Nat_To_IMP.terminates_with_res_time_IMP_Tailcall tp p s r (f s) (T s))"
+
+lemma terminates_with_res_time_order_IMP_TailcallI[intro]:
+  assumes "T \<le>\<^sub>c T_f"
+  assumes "\<And>s. HOL_Nat_To_IMP.terminates_with_res_time_IMP_Tailcall tp p s r (f s) (T s)"
+  shows "terminates_with_res_time_order_IMP_Tailcall tp p r f T_f"
+  using assms unfolding terminates_with_res_time_order_IMP_Tailcall_def by blast
+
+lemma terminates_with_res_time_order_IMP_TailcallE[elim]:
+  assumes "terminates_with_res_time_order_IMP_Tailcall tp p r f T_f"
+  obtains T where "T \<le>\<^sub>c T_f" "\<And>s. HOL_Nat_To_IMP.terminates_with_res_time_IMP_Tailcall tp p s r (f s) (T s)"
+  using assms unfolding terminates_with_res_time_order_IMP_Tailcall_def by blast
+
+thm HOL_Nat_To_IMP.tailcall_to_IMP_order_preserving
+lemma terminates_with_res_time_order_IMP_Tailcall_to_IMP:
+  assumes "IMP_Tailcall.invar p"
+  assumes "r \<in> set (vars p)"
+  assumes "terminates_with_res_time_order_IMP_Tailcall p p r f T_f"
+  shows "terminates_with_res_time_order_IMP (tailcall_to_IMP p) r f T_f"
+proof-
+  from assms(3) obtain T where tc:
+      "T \<le>\<^sub>c T_f"
+      "\<And>s. HOL_Nat_To_IMP.terminates_with_res_time_IMP_Tailcall p p s r (f s) (T s)"
+    by fastforce
+
+  let ?T = "\<lambda>s. (1 + size\<^sub>c (compile p) + 8 + 8 * size\<^sub>c (compile p)) * T s"
+  show ?thesis
+  proof
+    fix s
+    from tc obtain z1 s'1 where imp_tc:
+        "p \<turnstile> (p, s) \<Rightarrow>\<^bsup> z1 :: nat \<^esup> s'1" "s'1 r = f s" "z1 \<le> T s"
+      using HOL_Nat_To_IMP.terminates_with_res_time_IMP_TailcallE by blast
+    with assms(1) compile_sound obtain s'2 where imp':
+        "(compile p, s) \<Rightarrow>'\<^bsup> 7 + z1 \<^esup> s'2" "s'1 = s'2 on set (vars p)" by blast
+    with assms(2) inline_sound obtain z3 s'3 where imp:
+        "(inline (compile p), s) \<Rightarrow>\<^bsup> z3 \<^esup> s'3"
+        "s'3 = s'2 on set (vars (compile p))"
+        "7 + z1 \<le> z3" "z3 \<le> (7 + z1 + 1) * (1 + size\<^sub>c (compile p))"
+      using inline_sound by blast
+
+    show "HOL_Nat_To_IMP.terminates_with_res_time_IMP (tailcall_to_IMP p) s r (f s) (?T s)"
+    proof (rule HOL_Nat_To_IMP.terminates_with_res_time_IMPI)
+      show "(tailcall_to_IMP p, s) \<Rightarrow>\<^bsup> z3 \<^esup> s'3" using imp tailcall_to_IMP_eq by simp
+    next
+      have "f s = s'1 r" using imp_tc by simp
+      also have "... = s'2 r" using imp' assms(2) by blast
+      also have "... = s'3 r" using imp assms(2) set_vars_compile by force
+      finally show "s'3 r = f s" by simp
+    next
+      have *: "T s > 0" using imp_tc IMP_Tailcall.bigstep_progress by fastforce
+
+      have "7 + z1 + 1 \<le> T s + 8" using imp_tc by linarith
+      then have "z3 \<le> (T s + 8) * (1 + size\<^sub>c (compile p))" using imp by (meson le_trans mult_le_mono1)
+      also have "... = T s + T s * size\<^sub>c (compile p) + 8 + 8 * size\<^sub>c (compile p)" by (simp add: algebra_simps)
+      also with * have "... \<le> 1 * T s + size\<^sub>c (compile p) * T s + 8 * T s + 8 * size\<^sub>c (compile p) * T s"
+        by (simp add: algebra_simps add_mono)
+      also have "... = (1 + size\<^sub>c (compile p) + 8 + 8 * size\<^sub>c (compile p)) * T s" by algebra
+      finally show "z3 \<le> ?T s" .
+    qed
+  next
+    show "?T \<le>\<^sub>c T_f" using tc order_of_const_mult by blast
+  qed
+qed
+
 
 definition "some_constant_IMP p T_f \<equiv>
   (SOME c. \<exists>T. order_of_c c T T_f \<and> (\<forall>s. \<exists>s'. HOL_Nat_To_IMP.terminates_with_time_IMP p s s' (T s)))"
@@ -1790,19 +1899,15 @@ definition "some_constant_f frgt crgt f =
 
 definition "some_constant_fs frgt crgt fs =
   max_list0 (map (some_constant_f frgt crgt) fs)"
-(* length fs + *)
 
 (* lemma "list_least_constant frgt crgt (map fst hT) \<le> ... max of all constants occuring in term " *)
-
-lemma "max (length xs) (sum_map f xs) \<le> sum_map (\<lambda>x. (f x)\<^sub>+) xs"
-  apply (induction xs) apply auto apply (simp_all add: max1_def)+ done
 
 lemma rel_trace_times:
   assumes "rel_trace_calls crgt hT cT"
   assumes "relate_rgt_time frgt crgt (set (map fst hT))"
   shows "\<exists>z. IMP_Tailcall_Traces.interp_trace 0 cT z \<and>
              z \<le> some_constant_fs frgt crgt (map fst hT) * (length hT + HOL_TCN_Timing.interp_trace frgt 0 hT)"
-(* note: we will later show that `length hT` is bounded by the number of recursive calls *)
+(* note: `length hT` is bounded by the number of recursive calls, so this is still "linear" *)
 proof-
   from assms(1) have "length hT = length cT" unfolding rel_trace_calls_def by simp
   then show ?thesis
@@ -1810,10 +1915,9 @@ proof-
     case Nil
     then show ?case by simp
   next
-    case (Cons hg hT cg cT) have ?case sorry
+    case (Cons hg hT cg cT)
     let ?gr = "fst hg" and ?gargs = "snd hg"
     let ?gcom = "fst cg" and ?gs = "snd cg"
-
 
     (* first handle the head of the list:
         - show ?gcom(?gs) runs in time z1
@@ -1848,7 +1952,6 @@ proof-
         "z2 \<le> ?c2 * (length hT + HOL_TCN_Timing.interp_trace frgt 0 hT)"
       unfolding rel_trace_calls_def relate_rgt_time_def by auto
 
-
     (* now put it together *)
 
     let ?c = "some_constant_fs frgt crgt (map fst (hg # hT))"
@@ -1878,6 +1981,35 @@ proof-
     qed
   qed
 qed
+
+thm compiler_rel_trace_end
+schematic_goal compiler_rel_time_end:
+  assumes "invar t" "invar f"
+  assumes "HOL_TCN_Timing.num_commands t \<le> HOL_TCN_Timing.num_commands f"
+  assumes "(f,frgt) \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup> hz :: nat \<^esup> hv"
+  assumes "compiler_invar crgt f_args bs keep t"
+  assumes "compiler_invar crgt f_args [] [] f"
+  assumes "relate_rgt_correctness frgt crgt (calls_r t)"
+  assumes "relate_rgt_correctness frgt crgt (calls_r f)"
+  assumes "relate_exec_state f_args bs vs_arg vs_b s"
+  shows
+    "to_imp_tc f_args crgt [] r [] f \<turnstile> (to_imp_tc f_args crgt bs r keep t,s)\<Rightarrow>\<^bsup> z :: nat \<^esup> s'
+     \<and> s' r = hv \<and> z \<le> ?c * hz\<^sub>+"
+  sorry
+
+
+theorem compiler_correct:
+  assumes "invar t"
+  assumes "\<And>vs_arg. length vs_arg = length f_args \<Longrightarrow> (t,frgt) \<turnstile> (t,[],vs_arg) \<Rightarrow>\<^bsup> T_f vs_arg :: nat \<^esup> f vs_arg"
+  assumes "compiler_invar crgt f_args [] keep t"
+  assumes "compiler_invar crgt f_args [] [] t" (* todo: needed ? *)
+  assumes "relate_rgt_correctness frgt crgt (calls_r t)"
+  (* assumes "relate_exec_state f_args [] vs_arg vs_b s" *)
+  shows
+    "terminates_with_res_time_order_IMP
+      (tailcall_to_IMP (to_imp_tc f_args crgt [] r keep t)) r
+      (f o lookups f_args) (T_f o lookups f_args)"
+
 
 
 
