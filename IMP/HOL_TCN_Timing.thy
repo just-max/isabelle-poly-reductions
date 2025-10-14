@@ -1,22 +1,9 @@
 theory HOL_TCN_Timing
-  imports Com
+  imports Com My_Utils
 begin
 
 unbundle no com_syntax
 declare [[syntax_ambiguity_warning=false]]
-
-(* general stuff *)
-
-abbreviation "sum_map f xs \<equiv> sum_list (map f xs)"
-
-lemma sum_map_concat: "sum_map f (concat xss) = sum_list (concat (map (map f) xss))"
-  using map_concat by metis
-
-lemma sum_map_mono:
-  fixes f g :: "'a \<Rightarrow> 'b :: {ordered_ab_semigroup_add, monoid_add}"
-  assumes "\<forall>x \<in> set xs. f x \<le> g x"
-  shows "sum_map f xs \<le> sum_map g xs"
-  using assms add_mono by (induction xs) auto
 
 (* hol-tcn definition+semantics*)
 
@@ -471,9 +458,6 @@ next
 qed
 
 
-(* TODO: idea: for non-terminating executions, we could also capture a trace,
-    and show that they are related to the IMP trace \<rightarrow> co-inductive trace *)
-(* look up related work: "lockstep" relations *)
 inductive
   htrace_to_end :: "thol \<times> fun_registry \<Rightarrow> thol \<times> nat list \<times> nat list \<Rightarrow> trace \<Rightarrow> nat \<Rightarrow> bool"  ("_ \<turnstile> _ \<Rightarrow>\<^bsup>_\<^esup>  _" 55)
 where

@@ -4,6 +4,7 @@ theory HOL_To_IMP_Primitives
     "HOL_Nat_To_IMP.HOL_Nat_To_IMP_Tactics"
     "HOL-Data_Structures.Define_Time_Function"
     "ML_Unification.Unify_Assumption_Tactic"
+    "IMP.My_Utils"
 begin
 
 context HOL_To_HOL_Nat
@@ -192,11 +193,7 @@ definition "terminates_with_res_time_order_IMP' p r f T_f \<equiv>
       - Any change here would of course nevertheless need to be accounted for whenever an auxiliary function is called.
  *)
 
-
-definition "positive (n :: nat) \<equiv> max n 1"
-notation positive (\<open>(_\<^sup>+)\<close> [1000])
-
-definition "of_order_z g = (\<lambda>f. \<exists>c. \<forall>x. f x \<le> c * (g x)\<^sup>+)"
+definition "of_order_z g = (\<lambda>f. \<exists>c. \<forall>x. f x \<le> c * (g x)\<^sub>+)"
 (* - for a function that is nowhere-zero, this is the same as before
    - for a function that is everywhere-zero, this says f must be less than some c everywhere
    - in general, there must be some constant c, such that f is larger than g only up to the factor c,

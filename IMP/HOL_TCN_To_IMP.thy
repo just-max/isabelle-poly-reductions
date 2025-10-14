@@ -1,49 +1,9 @@
 theory HOL_TCN_To_IMP
   (* TODO: move file *)
-  imports IMP_Tailcall_Traces HOL_TCN_Timing Fresh
+  imports IMP_Tailcall_Traces HOL_TCN_Timing Fresh My_Utils
 begin
 
 unbundle no com_syntax and thol_syntax and tcom_syntax
-
-
-(* general stuff *)
-
-definition "null = (\<lambda>_. undefined)"
-
-definition "generate f n \<equiv> map f [0..<n]"
-(* abbreviation "generate_len f xs \<equiv> generate f (length xs)" (* ? *) *)
-
-lemma generate_cong[fundef_cong]:
-  assumes "n = m" "\<And>i. i < m \<Longrightarrow> f i = g i"
-  shows "generate f n = generate g m"
-  using assms unfolding generate_def by simp
-
-lemma map_generate_comp: "map g (generate f n) = generate (g o f) n"
-  unfolding generate_def by simp
-
-lemma generate_snoc: "generate f (Suc n) = generate f n @ [f n]"
-  unfolding generate_def by auto
-
-lemma generate_length[simp]: "length (generate f n) = n"
-  unfolding generate_def by simp
-
-lemma generate_0_conv[iff]: "generate f n = [] \<longleftrightarrow> n = 0"
-  unfolding generate_def by simp
-
-(* like turning a classic for loop into a for-each loop *)
-lemma generate_nth_is_map[simp]: "generate (\<lambda>i. f (xs ! i)) (length xs) = map f xs"
-  unfolding generate_def by (simp add: map_equality_iff)
-
-(*
-lemma generate_of_snoc: "generate (\<lambda>i. f i ((xs @ [x]) ! i)) (length xs) = generate (\<lambda>i. f i (xs ! i)) (length xs)"
-  unfolding generate_def using nth_append_left by fastforce
-
-lemma generate_of_snoc':
-  assumes "n = length xs" shows "generate (\<lambda>i. f i ((xs @ [x]) ! i)) n = generate (\<lambda>i. f i (xs ! i)) n"
-  using assms generate_of_snoc[where f = f] by blast
-*)
-
-abbreviation "concat_map f xs \<equiv> concat (map f xs)"
 
 
 (* command registries *)
@@ -330,6 +290,8 @@ fun to_imp_tc ::
          cs2 = generate (\<lambda>i. (f_args ! i) ::= A (V (xs ! i))) (length ts)
       in mk_seqs cs1;; mk_seqs cs2;; tTAIL)"
 
+(* compile some examples *)
+
 definition "h_let_1 = hLet (hNumber 7) (hLetBound 0)"
 value "to_imp_tc [] null [] ''r'' [] h_let_1"
 
@@ -380,7 +342,8 @@ qed
 lemma sum_map_num_commands_copy_list: "sum_map IMP_Tailcall.num_commands (generate (\<lambda>i. (x i) ::= y i) n) = n"
   unfolding generate_def by (induction n) auto
 
-lemma "IMP_Tailcall.num_commands (to_imp_tc f_args crgt bs r keep t) \<le> 7 * HOL_TCN_Timing.num_commands t"
+lemma to_imp_num_commands:
+  "IMP_Tailcall.num_commands (to_imp_tc f_args crgt bs r keep t) \<le> 7 * HOL_TCN_Timing.num_commands t"
 proof (induction t arbitrary: bs r keep)
   case (hLet t1 t2)
   have "IMP_Tailcall.num_commands (to_imp_tc f_args crgt bs r keep LET t1 IN t2)

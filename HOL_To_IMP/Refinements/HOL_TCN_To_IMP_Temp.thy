@@ -1518,8 +1518,44 @@ next
 qed
 
 
+(* due to `c_struct` and lemma `to_imp_num_commands` *)
+definition "rel_trace_times t hk k \<equiv>
+  k \<le> 35 * HOL_TCN_Timing.num_commands t * (hk + 1)"
+
+lemma compiler_rel_trace_times_to_tail:
+  assumes "(to_imp_tc f_args crgt bs r keep t,s)\<Rightarrow>\<^bsup>(k, cT)\<^esup> (s', l)"
+  shows "rel_trace_times t hk k"
+proof-
+  have "k \<le> c_struct (to_imp_tc f_args crgt bs r keep t)"
+    using assms trace_nontail_static_bound by blast
+  also have "... \<le> 35 * HOL_TCN_Timing.num_commands t"
+    using to_imp_num_commands by simp
+  also have "... \<le> 35 * HOL_TCN_Timing.num_commands t * (hk + 1)" by simp
+  finally show ?thesis unfolding rel_trace_times_def .
+qed
+
+(* todo move *)
+(* x\<^sub>+ for x > 0 is already handled, but need this for x = 0 *)
+lemma max1_zero[simp]: "0\<^sub>+ = 1" unfolding max1_def by simp
+
+lemma rel_trace_times_join:
+  assumes "rel_trace_times t hk1 k1" "rel_trace_times t hk2 k2"
+  shows "rel_trace_times t (hk1 + hk2 + 1) (k1 + k2)"
+  using assms unfolding rel_trace_times_def by (simp add: algebra_simps)
+
+lemma rel_trace_times_num_commands_mono:
+  assumes "HOL_TCN_Timing.num_commands t \<le> HOL_TCN_Timing.num_commands f"
+  assumes "rel_trace_times t hk k"
+  shows "rel_trace_times f hk k"
+  using assms unfolding rel_trace_times_def
+  by (meson dual_order.refl mult_le_mono order_trans)
+
+
+(* lemma max1_Suc[simp]: "(Suc x)\<^sub>+ = Suc x" by simp *)
+
 theorem compiler_rel_trace_end:
   assumes "invar t" "invar f"
+  assumes "HOL_TCN_Timing.num_commands t \<le> HOL_TCN_Timing.num_commands f"
   assumes "(f,frgt) \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup> (hk, hT) :: HOL_TCN_Timing.trace \<^esup> hv"
   assumes "compiler_invar crgt f_args bs keep t"
   assumes "compiler_invar crgt f_args [] [] f"
@@ -1528,9 +1564,9 @@ theorem compiler_rel_trace_end:
   assumes "relate_exec_state f_args bs vs_arg vs_b s"
   shows "\<exists>k cT s'.
     to_imp_tc f_args crgt [] r [] f \<turnstile> (to_imp_tc f_args crgt bs r keep t,s)\<Rightarrow>\<^bsup>(k, cT)\<^esup> s'
-    \<and> rel_trace_to_end crgt r hT hv cT s'"
-(* TODO: need to add relationship between k and hk *)
-using assms(1-2,4-) proof (induction arbitrary: s bs keep rule: ind_tail[OF assms(1,2,3)])
+    \<and> rel_trace_to_end crgt r hT hv cT s'
+    \<and> rel_trace_times f hk k"
+using assms(1-3,5-) proof (induction arbitrary: s bs keep rule: ind_tail[OF assms(1,2,4)])
   (* base case: t executes to a value without a tail call *)
   case (1 f frgt t vs_b vs_arg T v)
 
@@ -1544,7 +1580,11 @@ using assms(1-2,4-) proof (induction arbitrary: s bs keep rule: ind_tail[OF assm
   from rel have "rel_trace_to_end crgt r T v cT s'"
     using rel_trace_to_leaf_value_rel_trace_to_end by simp
   moreover from imp have "f \<turnstile> (to_imp_tc f_args crgt bs r keep t, s) \<Rightarrow>\<^bsup>(k, cT)\<^esup>  s'" for f
-    using IMP_Tailcall_Traces.trace_leaf_no_tail_trace_end by blast 
+    using IMP_Tailcall_Traces.trace_leaf_no_tail_trace_end by blast
+
+  (* the running time until the tail call is bounded *)
+  moreover from imp have "rel_trace_times f 0 k"
+    using compiler_rel_trace_times_to_tail "1.prems" rel_trace_times_num_commands_mono by blast
 
   ultimately show ?case by blast
 next
@@ -1556,6 +1596,8 @@ next
     where imp1: "(to_imp_tc f_args crgt bs r keep t, s) \<Rightarrow>\<^bsup>(ck1, cT1)\<^esup>  (s2, True)"
       and rel1: "rel_trace_to_leaf crgt f_args r hT1 (Tail vs) cT1 s2 True"
     using rel_trace_to_leaf_cl by (metis (full_types))
+  then have rel_time1: "rel_trace_times f 0 ck1"
+    using compiler_rel_trace_times_to_tail "2.prems" rel_trace_times_num_commands_mono by blast
 
   (* show that the intermediate state s2 encodes the initial context for the remaining trace *)
   from rel1 have "lookups f_args s2 = vs" unfolding rel_trace_to_leaf_def by simp
@@ -1566,36 +1608,22 @@ next
   with "2.IH" "2.prems" obtain ck2 cT2 s3
     where imp2: "to_imp_tc f_args crgt [] r [] f \<turnstile>(to_imp_tc f_args crgt [] r [] f, s2) \<Rightarrow>\<^bsup>(ck2, cT2)\<^esup>  s3"
       and rel2: "rel_trace_to_end crgt r hT2 v cT2 s3"
+      and rel_time2: "rel_trace_times f hk ck2"
     by blast
 
   (* combine the first and second parts of the execution *)
-  from rel1 rel2 have "rel_trace_to_end crgt r (hT1 @ hT2) v (cT1 @ cT2) s3"
-    using rel_trace_to_end_append unfolding rel_trace_to_leaf_def by metis
   moreover from imp1 imp2 have
     "to_imp_tc f_args crgt [] r [] f \<turnstile>(to_imp_tc f_args crgt bs r keep t, s) \<Rightarrow>\<^bsup>(ck1 + ck2, cT1 @ cT2)\<^esup>  s3"
     using IMP_Tailcall_Traces.trace_leaf_tail_trace_end by auto
+  moreover from rel1 rel2 have "rel_trace_to_end crgt r (hT1 @ hT2) v (cT1 @ cT2) s3"
+    using rel_trace_to_end_append unfolding rel_trace_to_leaf_def by metis
+  moreover from rel_time1 rel_time2 have "rel_trace_times f (hk + 1) (ck1 + ck2)"
+    using rel_trace_times_join by fastforce
 
   ultimately show ?case by blast
 qed
 
-term relate_rgt_correctness
 
-
-(* TODO: does this not exist already? *)
-definition list_max :: "nat list \<Rightarrow> nat" where "list_max xs = fold max xs 0"
-
-lemma list_max_cons: "list_max (x # xs) = max x (list_max xs)"
-proof-
-  have "fold max (x # xs :: nat list) z = max x (fold max xs z)" for x xs z
-    by (induction xs arbitrary: x z) auto
-  then show ?thesis unfolding list_max_def by blast
-qed
-
-lemma list_max_append: "max (list_max xs) (list_max ys) = list_max (xs @ ys)"
-proof (induction xs)
-  case Nil then show ?case using list_max_def by simp
-  case (Cons a xs) then show ?case using list_max_cons by simp
-qed
 
 definition "terminates_time_order_IMP p T_f =
   (\<exists>f. HOL_Nat_To_IMP.terminates_with_time_order_IMP p f T_f)"
@@ -1608,7 +1636,7 @@ definition "relate_rgt_time frgt crgt fs \<longleftrightarrow> (\<forall>f \<in>
 definition "least_constant frgt crgt f =
   HOL_Nat_To_IMP.least_constant_IMP (com_from_crgt crgt f) (T_f_from_frgt frgt f o lookup_args crgt f)"
 
-definition "list_least_constant frgt crgt gs = list_max (map (least_constant frgt crgt) gs)"
+definition "list_least_constant frgt crgt gs = max_list0 (map (least_constant frgt crgt) gs)"
 
 (* lemma "list_least_constant frgt crgt (map fst hT) \<le> ... max of all constants occuring in term " *)
 
@@ -1662,7 +1690,7 @@ proof-
     let ?c = "list_least_constant frgt crgt (map fst (hg # hT))"
     have "?c = max (least_constant frgt crgt ?gr) ?c2"
       unfolding list_least_constant_def
-      using list_max_cons by simp
+      using max_list0_cons by simp
     also have "... = max ?c1 ?c2"
       using rel1 unfolding rel_trace_call_def least_constant_def by simp
     finally have c_as_max: "?c = max ?c1 ?c2" .
@@ -1686,20 +1714,6 @@ proof-
   qed
 qed
 
-      (* "\<exists>t. \<exists>c. HOL_Nat_To_IMP.terminates_with_time_IMP
-        ?gcom ?gs t (c * T_f_from_frgt frgt ?gr ?gargs)"
-    proof-
-      have *: "(T_f_from_frgt frgt ?gr o lookup_args crgt ?gr) ?gs = T_f_from_frgt frgt ?gr ?gargs"
-        using rel1 unfolding rel_trace_call_def by simp
-      then show ?thesis
-      using rel1 unfolding rel_trace_call_def HOL_Nat_To_IMP.terminates_with_time_order_IMP_def try0 *)
-(* \<exists>c. \<forall>s. terminates_with_time_IMP p s (s_p s) (c * T_f s) *)
- (*    with Cons.prems(2) rel1 have "\<exists>f_s. HOL_Nat_To_IMP.terminates_with_time_order_IMP ?gcom f_s (T_f_from_frgt frgt ?gr ?gargs)"
-      unfolding relate_rgt_time_def rel_trace_call_def HOL_Nat_To_IMP.terminates_with_time_order_IMP_def by metis
-
-    then obtain z1 t where
-        "(?gcom, ?gs) \<Rightarrow>\<^bsup> z1 \<^esup> t" "z1 \<le> T_f_from_frgt frgt ?gr ?gargs"
-      by (meson HOL_Nat_To_IMP.terminates_with_time_IMPE) *)
 
 
 term HOL_TCN_Timing.interp_trace
