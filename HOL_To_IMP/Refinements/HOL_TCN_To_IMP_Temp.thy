@@ -1534,10 +1534,6 @@ proof-
   finally show ?thesis unfolding rel_trace_times_def .
 qed
 
-(* todo move *)
-(* x\<^sub>+ for x > 0 is already handled, but need this for x = 0 *)
-lemma max1_zero[simp]: "0\<^sub>+ = 1" unfolding max1_def by simp
-
 lemma rel_trace_times_join:
   assumes "rel_trace_times t hk1 k1" "rel_trace_times t hk2 k2"
   shows "rel_trace_times t (hk1 + hk2 + 1) (k1 + k2)"
@@ -1549,9 +1545,6 @@ lemma rel_trace_times_num_commands_mono:
   shows "rel_trace_times f hk k"
   using assms unfolding rel_trace_times_def
   by (meson dual_order.refl mult_le_mono order_trans)
-
-
-(* lemma max1_Suc[simp]: "(Suc x)\<^sub>+ = Suc x" by simp *)
 
 theorem compiler_rel_trace_end:
   assumes "invar t" "invar f"

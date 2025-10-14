@@ -83,10 +83,12 @@ lemma max1_pos[simp]: "x\<^sub>+ \<noteq> 0" unfolding max1_def by simp
 lemma max1_pos_id[simp]: "x \<noteq> 0 \<Longrightarrow> x\<^sub>+ = x" unfolding max1_def by simp
 lemma max1_id_positive[iff]: "x\<^sub>+ = x \<longleftrightarrow> x \<noteq> 0" unfolding max1_def by linarith
 
+(* x\<^sub>+ for x > 0 is already handled, but need this for x = 0 *)
+lemma max1_zero[simp]: "0\<^sub>+ = 1" unfolding max1_def by simp
+
 lemma max1_plus1[simp]: "x \<noteq> 0 \<Longrightarrow> (x + y)\<^sub>+ = x + y" by simp
 lemma max1_plus2[simp]: "y \<noteq> 0 \<Longrightarrow> (x + y)\<^sub>+ = x + y" by simp
 
-lemma max1_inc: "x\<^sub>+ \<ge> x" unfolding max1_def by simp
 
 
 end
