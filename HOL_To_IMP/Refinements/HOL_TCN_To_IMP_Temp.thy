@@ -1784,7 +1784,6 @@ lemma terminates_with_res_time_order_IMP_TailcallE[elim]:
   obtains T where "T \<le>\<^sub>c T_f" "\<And>s. HOL_Nat_To_IMP.terminates_with_res_time_IMP_Tailcall tp p s r (f s) (T s)"
   using assms unfolding terminates_with_res_time_order_IMP_Tailcall_def by blast
 
-thm HOL_Nat_To_IMP.tailcall_to_IMP_order_preserving
 lemma terminates_with_res_time_order_IMP_Tailcall_to_IMP:
   assumes "IMP_Tailcall.invar p"
   assumes "r \<in> set (vars p)"
@@ -1847,9 +1846,9 @@ lemma some_constant_IMP_as_bound:
   shows "HOL_Nat_To_IMP.terminates_with_res_time_IMP p s r (f s) (some_constant_IMP p T_f * (T_f s)\<^sub>+)"
 proof-
   show "HOL_Nat_To_IMP.terminates_with_res_time_IMP p s r (f s) (some_constant_IMP p T_f * (T_f s)\<^sub>+)"
-  unfolding some_constant_IMP_def proof (rule someI2_ex)
+    unfolding some_constant_IMP_def proof (rule someI2_ex)
     show "\<exists>c T. order_of_c c T T_f \<and> (\<forall>s. \<exists>s'. HOL_Nat_To_IMP.terminates_with_time_IMP p s s' (T s))"
-      using assms HOL_Nat_To_IMP.terminates_with_time_res_equiv by fast
+      using assms HOL_Nat_To_IMP.terminates_with_time_res_equiv terminates_with_res_time_order_IMP_E order_ofE by metis
   next
     fix c
     assume "\<exists>T. order_of_c c T T_f \<and> (\<forall>s. \<exists>s'. HOL_Nat_To_IMP.terminates_with_time_IMP p s s' (T s))"
@@ -1870,20 +1869,6 @@ proof-
       using HOL_Nat_To_IMP.terminates_with_res_time_IMP_mono by presburger
   qed
 qed
-
-
-(*
-lemma obtain_least_bound_res_2:
-  assumes "terminates_with_res_time_order_IMP p r f T_f"
-  shows "terminates_with_res_time_IMP p s r (f s) (least_constant_IMP p T_f * T_f s)"
-proof-
-  from assms have "\<exists>s_p. terminates_with_time_order_IMP p s_p T_f \<and> (\<forall>s. s_p s r = f s)"
-    using terminates_with_res_time_order_to_terminates_with_time_order by blast
-  then have "\<exists>s_p. terminates_with_time_IMP p s (s_p s) (least_constant_IMP p T_f * T_f s) \<and> s_p s r = f s"
-    using obtain_least_bound by blast
-  then show "terminates_with_res_time_IMP p s r (f s) (least_constant_IMP p T_f * T_f s)"
-    using terminates_with_time_res_equiv by blast
-qed *)
 
 
 
@@ -1963,15 +1948,15 @@ proof-
       have "IMP_Tailcall_Traces.interp_trace 0 [(?gcom, ?gs)] z1"
         using IMP_Tailcall_Traces.interp_trace_singleton' g by blast
       with gs show "IMP_Tailcall_Traces.interp_trace 0 (cg # cT) (z1 + z2)"
-        using IMP_Tailcall_Traces.interp_trace_append by fastforce
+        using IMP_Tailcall_Traces.interp_trace_append by force
     next
-      from g rel1 c have "z1 \<le> ?c * (T_f_from_frgt frgt ?gr ?gargs)\<^sub>+" using le_trans by fastforce
+      from g rel1 c have "z1 \<le> ?c * (T_f_from_frgt frgt ?gr ?gargs)\<^sub>+" using le_trans nat_mult_max_left by force
       also have "... = ?c * (HOL_TCN_Timing.interp_trace frgt 0 [hg])\<^sub>+"
         unfolding HOL_TCN_Timing.interp_trace_singleton[symmetric, where n = 0, simplified add_0_left] by simp
       also have "... \<le> ?c * (1 + HOL_TCN_Timing.interp_trace frgt 0 [hg])" by (simp add: max1_def)
       finally have *: "z1 \<le> ?c * (1 + HOL_TCN_Timing.interp_trace frgt 0 [hg])" .
 
-      from gs c have **: "z2 \<le> ?c * (length hT + HOL_TCN_Timing.interp_trace frgt 0 hT)" using le_trans[of z2] by fastforce
+      from gs c have **: "z2 \<le> ?c * (length hT + HOL_TCN_Timing.interp_trace frgt 0 hT)" using le_trans[of z2] nat_mult_max_left by force
 
       from * ** have "z1 + z2 \<le> ?c * ((1 + length hT) + (HOL_TCN_Timing.interp_trace frgt 0 [hg] + HOL_TCN_Timing.interp_trace frgt 0 hT))"
         by (simp add: algebra_simps)
@@ -2009,6 +1994,7 @@ theorem compiler_correct:
     "terminates_with_res_time_order_IMP
       (tailcall_to_IMP (to_imp_tc f_args crgt [] r keep t)) r
       (f o lookups f_args) (T_f o lookups f_args)"
+  sorry
 
 
 
