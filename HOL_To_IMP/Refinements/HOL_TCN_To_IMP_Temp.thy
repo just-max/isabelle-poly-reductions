@@ -2,7 +2,8 @@ theory HOL_TCN_To_IMP_Temp
   imports HOL_Nat_To_IMP.IMP_Terminates_With "IMP.HOL_TCN_To_IMP" (* HOL_Nat_To_IMP.Compile_HOL_Nat_To_IMP *)
 (* TODO: rearrange import of stuff from Compile *)
 
-  HOL_To_IMP_Primitives (* only for stuff that should be in IMP_Terminates_With, TODO: fix here once that's done *)
+  HOL_To_IMP_Primitives
+  (* only for stuff that should be in IMP_Terminates_With, TODO: fix here once that's done *)
 begin
 
 method repeat methods m = (m; repeat \<open>m\<close>)?
@@ -1618,26 +1619,190 @@ qed
 
 
 
-definition "terminates_time_order_IMP p T_f =
-  (\<exists>f. HOL_Nat_To_IMP.terminates_with_time_order_IMP p f T_f)"
+definition order_of_c :: "nat \<Rightarrow> ('a \<Rightarrow> nat) \<Rightarrow> ('a \<Rightarrow> nat) \<Rightarrow> bool" where
+  "order_of_c c f g = (\<forall>x. f x \<le> c * (g x)\<^sub>+)"
 
-(* TODO "fs" or "set fs" *)
-definition "relate_rgt_time frgt crgt fs \<longleftrightarrow> (\<forall>f \<in> set fs.
+definition order_of :: "('a \<Rightarrow> nat) \<Rightarrow> ('a \<Rightarrow> nat) \<Rightarrow> bool" (\<open>(\<open>notation=\<open>infix \<le>\<close>\<close>_/ \<le>\<^sub>c _)\<close>  [51, 51] 50) where
+  "order_of f g = (\<exists>c. order_of_c c f g)"
+(* - for a function g that is nowhere-zero, this says that f must be no larger than g times some factor c
+   - for a function that is everywhere-zero, this says f must be less than some c everywhere
+   - in general, there must be some constant c, such that f must be no larger than g times that factor c,
+      except where g is zero, where f is no larger than c *)
+
+lemma order_of_cI[intro]: assumes "\<And>x. f x \<le> c * (g x)\<^sub>+" shows "order_of_c c f g"
+  using assms unfolding order_of_c_def by blast
+
+lemma order_of_cE[elim]: assumes "order_of_c c f g" shows "f x \<le> c * (g x)\<^sub>+"
+  using assms unfolding order_of_c_def by blast
+
+lemma order_ofI[intro]: assumes "order_of_c c f g" shows "f \<le>\<^sub>c g"
+  using assms unfolding order_of_def by blast
+
+lemma order_ofE[elim]: assumes "f \<le>\<^sub>c g" obtains c where "order_of_c c f g"
+  using assms unfolding order_of_def by blast
+
+lemma order_of_refl: "f \<le>\<^sub>c f"
+unfolding order_of_def order_of_c_def proof
+  show "\<forall>x. f x \<le> 1 * (f x)\<^sub>+" using max1_non_dec by simp
+qed
+
+lemma order_of_c_trans:
+  assumes "order_of_c c1 f g" "order_of_c c2 g h"
+  shows "order_of_c (c1 * c2\<^sub>+) f h"
+unfolding order_of_c_def proof
+  fix x
+  from assms have *: "f x \<le> c1 * (g x)\<^sub>+" and **: "g x \<le> c2 * (h x)\<^sub>+" unfolding order_of_c_def by auto
+  show "f x \<le> (c1 * c2\<^sub>+) * (h x)\<^sub>+"
+  proof (cases "g x = 0")
+    assume "g x = 0"
+    with * have "f x \<le> c1" by simp
+    also have "... \<le> (c1 * c2\<^sub>+) * (h x)\<^sub>+" using linorder_not_less by fastforce
+    finally show ?thesis .
+  next
+    assume "g x \<noteq> 0"
+    with * have "f x \<le> c1 * g x" by simp
+    also with ** have "... \<le> c1 * c2 * (h x)\<^sub>+" by simp
+    also have "... \<le> (c1 * c2\<^sub>+) * (h x)\<^sub>+" using linorder_not_less by fastforce
+    finally show ?thesis .
+  qed
+qed
+
+lemma order_of_trans: assumes "f \<le>\<^sub>c g" "g \<le>\<^sub>c h" shows "f \<le>\<^sub>c h"
+  using assms unfolding order_of_def using order_of_c_trans by blast
+
+lemma order_of_not_antisym: obtains f g where "f \<le>\<^sub>c g" "g \<le>\<^sub>c f" "f \<noteq> g"
+proof
+  show "(\<lambda>_. 0) \<le>\<^sub>c (\<lambda>_. 1)" by blast
+  show "(\<lambda>_. 1) \<le>\<^sub>c (\<lambda>_. 0)" by fastforce
+  show "(\<lambda>_. 0 :: nat) \<noteq> (\<lambda>_. 1)" by (meson zero_neq_one)
+qed
+
+(* shows us that our order definition is nothing but the classic a*f+b definition... *)
+lemma order_of_ab: "f \<le>\<^sub>c g \<longleftrightarrow> (\<exists>a b. \<forall>x. f x \<le> a * g x + b)"
+proof
+  assume "f \<le>\<^sub>c g" then obtain c where *: "f x \<le> c * (g x)\<^sub>+" for x by fast
+  have "f x \<le> c * g x + c" for x using *[of x] by (cases "g x = 0"; simp)
+  then show "\<exists>a b. \<forall>x. f x \<le> a * g x + b" by blast
+next
+  assume "\<exists>a b. \<forall>x. f x \<le> a * g x + b" then obtain a b where *: "f x \<le> a * g x + b" for x by blast
+  have "f x \<le> (a + b) * (g x)\<^sub>+" for x
+  proof (cases "g x = 0")
+    assume "g x = 0" then show ?thesis using *[of x] by simp
+  next
+    assume **: "g x \<noteq> 0"
+    have "f x \<le> a * g x + b" using * by blast
+    also have "... \<le> a * g x + b * g x" using ** by simp
+    also have "... = (a + b) * g x" by algebra
+    also have "... = (a + b) * (g x)\<^sub>+" using ** by simp
+    finally show ?thesis .
+  qed
+  then show "f \<le>\<^sub>c g" by blast
+qed
+
+
+(* following the formulation from A Fistful of Dollars,
+    we abstract the definition of "asymptotically bounded" away: *)
+
+definition "terminates_with_res_time_order_IMP p r f T_f \<equiv>
+  \<exists>T. T \<le>\<^sub>c T_f \<and> (\<forall>s. HOL_Nat_To_IMP.terminates_with_res_time_IMP p s r (f s) (T s))"
+
+lemma terminates_with_res_time_order_IMP_I[intro]:
+  assumes "T \<le>\<^sub>c T_f"
+  assumes "\<And>s. HOL_Nat_To_IMP.terminates_with_res_time_IMP p s r (f s) (T s)"
+  shows "terminates_with_res_time_order_IMP p r f T_f"
+  using assms unfolding terminates_with_res_time_order_IMP_def by blast
+
+lemma terminates_with_res_time_order_IMP_E[elim]:
+  assumes "terminates_with_res_time_order_IMP p r f T_f"
+  obtains T where "T \<le>\<^sub>c T_f" "\<And>s. HOL_Nat_To_IMP.terminates_with_res_time_IMP p s r (f s) (T s)"
+  using assms unfolding terminates_with_res_time_order_IMP_def by blast
+
+(* Advantages:
+  - No more "c" floating around in the definition of terminates_with_res_time_order_IMP
+  - Also don't need to add a "c" parameter to terminates_with_res_time_IMP, which I think would get in the way:
+      - Since that predicate is used for the recursion on the term, the "c" would be an extra parameter fixed at 1
+      - There's also nothing that could force "c" to be a constant there, so it would just be an extra parameter that gets multiplied in inside the predicate
+  - Keeps the definition of "of_order" in one place, which we might need when considering functions that have run time of 0
+      - E.g. of_order g f = if (g is zero function) then (f is constant function) else (existing def ...)
+      - Any change here would of course nevertheless need to be accounted for whenever an auxiliary function is called.
+ *)
+
+definition "some_constant_IMP p T_f \<equiv>
+  (SOME c. \<exists>T. order_of_c c T T_f \<and> (\<forall>s. \<exists>s'. HOL_Nat_To_IMP.terminates_with_time_IMP p s s' (T s)))"
+
+(* TODO: we're switching between terminates_with_res and plain terminates_with,
+  maybe be consistent? \<rightarrow> defs in _Primitives are more complete *)
+
+lemma some_constant_IMP_as_bound:
+  assumes "terminates_with_res_time_order_IMP p r f T_f"
+  shows "HOL_Nat_To_IMP.terminates_with_res_time_IMP p s r (f s) (some_constant_IMP p T_f * (T_f s)\<^sub>+)"
+proof-
+  show "HOL_Nat_To_IMP.terminates_with_res_time_IMP p s r (f s) (some_constant_IMP p T_f * (T_f s)\<^sub>+)"
+  unfolding some_constant_IMP_def proof (rule someI2_ex)
+    show "\<exists>c T. order_of_c c T T_f \<and> (\<forall>s. \<exists>s'. HOL_Nat_To_IMP.terminates_with_time_IMP p s s' (T s))"
+      using assms HOL_Nat_To_IMP.terminates_with_time_res_equiv by fast
+  next
+    fix c
+    assume "\<exists>T. order_of_c c T T_f \<and> (\<forall>s. \<exists>s'. HOL_Nat_To_IMP.terminates_with_time_IMP p s s' (T s))"
+    then obtain T s' where some_c:
+      "HOL_Nat_To_IMP.terminates_with_time_IMP p s s' (T s)"
+      "order_of_c c T T_f" by blast
+
+    from assms obtain T' where
+      "HOL_Nat_To_IMP.terminates_with_res_time_IMP p s r (f s) (T' s)" by blast
+    moreover from some_c(1) have *: "HOL_Nat_To_IMP.terminates_with_res_time_IMP p s r (s' r) (T s)"
+      using HOL_Nat_To_IMP.terminates_with_time_res_equiv by blast
+    ultimately have **: "f s = s' r"
+      by (metis HOL_Nat_To_IMP.terminates_with_res_time_IMPE bigstep_det)
+
+    from some_c(2) have ***: "T s \<le> c * (T_f s)\<^sub>+" by auto
+
+    from * ** *** show "HOL_Nat_To_IMP.terminates_with_res_time_IMP p s r (f s) (c * (T_f s)\<^sub>+)"
+      using HOL_Nat_To_IMP.terminates_with_res_time_IMP_mono by presburger
+  qed
+qed
+
+
+(*
+lemma obtain_least_bound_res_2:
+  assumes "terminates_with_res_time_order_IMP p r f T_f"
+  shows "terminates_with_res_time_IMP p s r (f s) (least_constant_IMP p T_f * T_f s)"
+proof-
+  from assms have "\<exists>s_p. terminates_with_time_order_IMP p s_p T_f \<and> (\<forall>s. s_p s r = f s)"
+    using terminates_with_res_time_order_to_terminates_with_time_order by blast
+  then have "\<exists>s_p. terminates_with_time_IMP p s (s_p s) (least_constant_IMP p T_f * T_f s) \<and> s_p s r = f s"
+    using obtain_least_bound by blast
+  then show "terminates_with_res_time_IMP p s r (f s) (least_constant_IMP p T_f * T_f s)"
+    using terminates_with_time_res_equiv by blast
+qed *)
+
+
+
+definition "terminates_time_order_IMP p T_f =
+  (\<exists>r f. terminates_with_res_time_order_IMP p r f T_f)"
+
+definition "relate_rgt_time frgt crgt fs \<longleftrightarrow> (\<forall>f \<in> fs.
   terminates_time_order_IMP (com_from_crgt crgt f) (T_f_from_frgt frgt f o lookup_args crgt f))"
 (* note that terminates_time_order_IMP imposes only an upper bound on the running time, even though it could really by exact *)
 
-definition "least_constant frgt crgt f =
-  HOL_Nat_To_IMP.least_constant_IMP (com_from_crgt crgt f) (T_f_from_frgt frgt f o lookup_args crgt f)"
+definition "some_constant_f frgt crgt f =
+  some_constant_IMP (com_from_crgt crgt f) (T_f_from_frgt frgt f o lookup_args crgt f)"
 
-definition "list_least_constant frgt crgt gs = max_list0 (map (least_constant frgt crgt) gs)"
+definition "some_constant_fs frgt crgt fs =
+  max_list0 (map (some_constant_f frgt crgt) fs)"
+(* length fs + *)
 
 (* lemma "list_least_constant frgt crgt (map fst hT) \<le> ... max of all constants occuring in term " *)
 
+lemma "max (length xs) (sum_map f xs) \<le> sum_map (\<lambda>x. (f x)\<^sub>+) xs"
+  apply (induction xs) apply auto apply (simp_all add: max1_def)+ done
+
 lemma rel_trace_times:
   assumes "rel_trace_calls crgt hT cT"
-  assumes "relate_rgt_time frgt crgt (map fst hT)"
+  assumes "relate_rgt_time frgt crgt (set (map fst hT))"
   shows "\<exists>z. IMP_Tailcall_Traces.interp_trace 0 cT z \<and>
-             z \<le> list_least_constant frgt crgt (map fst hT) * HOL_TCN_Timing.interp_trace frgt 0 hT"
+             z \<le> some_constant_fs frgt crgt (map fst hT) * (length hT + HOL_TCN_Timing.interp_trace frgt 0 hT)"
+(* note: we will later show that `length hT` is bounded by the number of recursive calls *)
 proof-
   from assms(1) have "length hT = length cT" unfolding rel_trace_calls_def by simp
   then show ?thesis
@@ -1645,64 +1810,71 @@ proof-
     case Nil
     then show ?case by simp
   next
-    case (Cons hg hT cg cT)
+    case (Cons hg hT cg cT) have ?case sorry
     let ?gr = "fst hg" and ?gargs = "snd hg"
     let ?gcom = "fst cg" and ?gs = "snd cg"
 
-    from Cons have rel1: "rel_trace_call crgt ?gr ?gargs ?gcom ?gs"
+
+    (* first handle the head of the list:
+        - show ?gcom(?gs) runs in time z1
+        - show z1 \<le> c_?gr * T_?gr(?gargs) *)
+
+    from Cons.prems(1) have "rel_trace_call crgt ?gr ?gargs ?gcom ?gs"
       unfolding rel_trace_calls_def by auto
+    then have rel1: "?gcom = com_from_crgt crgt ?gr" "?gargs = lookup_args crgt ?gr ?gs"
+      unfolding rel_trace_call_def by simp_all
 
     let ?T_f = "T_f_from_frgt frgt ?gr o lookup_args crgt ?gr"
-    let ?c1 = "HOL_Nat_To_IMP.least_constant_IMP ?gcom ?T_f"
+    let ?c1 = "some_constant_IMP ?gcom ?T_f"
 
     have "?gr \<in> set (map fst (hg # hT))" by simp
     with Cons.prems(2) rel1 have
-      "terminates_time_order_IMP (com_from_crgt crgt ?gr) ?T_f"
-      unfolding relate_rgt_time_def by blast
-    then have
-      "\<exists>t. HOL_Nat_To_IMP.terminates_with_time_IMP (com_from_crgt crgt ?gr) ?gs t
-            (HOL_Nat_To_IMP.least_constant_IMP (com_from_crgt crgt ?gr) ?T_f * ?T_f ?gs)"
-      using HOL_Nat_To_IMP.obtain_least_bound unfolding terminates_time_order_IMP_def by blast
-    then obtain t where
-      "HOL_Nat_To_IMP.terminates_with_time_IMP ?gcom ?gs t (?c1 * T_f_from_frgt frgt ?gr ?gargs)"
-      using rel1 unfolding rel_trace_call_def by auto
-    then obtain z1 where z1:
-        "(?gcom, ?gs) \<Rightarrow>\<^bsup> z1 \<^esup> t" "z1 \<le> ?c1 * T_f_from_frgt frgt ?gr ?gargs"
-      by (meson HOL_Nat_To_IMP.terminates_with_time_IMPE)
+        "terminates_time_order_IMP ?gcom ?T_f"
+      unfolding relate_rgt_time_def by simp
+    then obtain r f where
+        "terminates_with_res_time_order_IMP ?gcom r f ?T_f"
+      unfolding terminates_time_order_IMP_def by blast
+    with some_constant_IMP_as_bound have
+        "HOL_Nat_To_IMP.terminates_with_res_time_IMP ?gcom ?gs r (f ?gs) (?c1 * (?T_f ?gs)\<^sub>+)" by blast
+    then obtain z1 s' where g:
+        "(?gcom, ?gs) \<Rightarrow>\<^bsup> z1 \<^esup> s'" "z1 \<le> ?c1 * (?T_f ?gs)\<^sub>+"
+      using HOL_Nat_To_IMP.terminates_with_res_time_IMPE by blast
 
-    then have interp1: "IMP_Tailcall_Traces.interp_trace 0 [(?gcom, ?gs)] z1"
-      using IMP_Tailcall_Traces.interp_trace_singleton' by blast
+    (* then obtain the IH for the tail of the trace *)
 
-    let ?c2 = "list_least_constant frgt crgt (map fst hT)"
-
-    from Cons obtain z2
-      where interp2: "IMP_Tailcall_Traces.interp_trace 0 cT z2"
-        and z2: "z2 \<le> ?c2 * HOL_TCN_Timing.interp_trace frgt 0 hT"
+    let ?c2 = "some_constant_fs frgt crgt (map fst hT)"
+    from Cons obtain z2 where gs:
+        "IMP_Tailcall_Traces.interp_trace 0 cT z2"
+        "z2 \<le> ?c2 * (length hT + HOL_TCN_Timing.interp_trace frgt 0 hT)"
       unfolding rel_trace_calls_def relate_rgt_time_def by auto
 
-    let ?c = "list_least_constant frgt crgt (map fst (hg # hT))"
-    have "?c = max (least_constant frgt crgt ?gr) ?c2"
-      unfolding list_least_constant_def
-      using max_list0_cons by simp
-    also have "... = max ?c1 ?c2"
-      using rel1 unfolding rel_trace_call_def least_constant_def by simp
-    finally have c_as_max: "?c = max ?c1 ?c2" .
+
+    (* now put it together *)
+
+    let ?c = "some_constant_fs frgt crgt (map fst (hg # hT))"
+    have c: "?c = max ?c1 ?c2"
+      unfolding some_constant_fs_def some_constant_f_def using max_list0_cons rel1 by simp
 
     show ?case
     proof (rule exI, rule conjI)
-      from interp1 interp2 show "IMP_Tailcall_Traces.interp_trace 0 (cg # cT) (z1 + z2)"
+      have "IMP_Tailcall_Traces.interp_trace 0 [(?gcom, ?gs)] z1"
+        using IMP_Tailcall_Traces.interp_trace_singleton' g by blast
+      with gs show "IMP_Tailcall_Traces.interp_trace 0 (cg # cT) (z1 + z2)"
         using IMP_Tailcall_Traces.interp_trace_append by fastforce
     next
-      (* have "?c1 \<le> list_least_constant frgt crgt (map fst (hg # hT)) *)
-      have "z1 + z2 \<le> ?c1 * T_f_from_frgt frgt ?gr ?gargs + ?c2 * HOL_TCN_Timing.interp_trace frgt 0 hT" using z1 z2 by simp
-      also have "... \<le> ?c1 * T_f_from_frgt frgt ?gr ?gargs + ?c * HOL_TCN_Timing.interp_trace frgt 0 hT" using c_as_max by simp
-      also have "... \<le> ?c * T_f_from_frgt frgt ?gr ?gargs + ?c * HOL_TCN_Timing.interp_trace frgt 0 hT" using c_as_max by simp
-      also have "... = ?c * (T_f_from_frgt frgt ?gr ?gargs + HOL_TCN_Timing.interp_trace frgt 0 hT)" by algebra
-      also have "... = ?c * (HOL_TCN_Timing.interp_trace frgt 0 [hg] + HOL_TCN_Timing.interp_trace frgt 0 hT)"
-        using HOL_TCN_Timing.interp_trace_singleton[where n = 0, simplified add_0_left] by (metis split_pairs)
-      also have "... = ?c * HOL_TCN_Timing.interp_trace frgt 0 ([hg] @ hT)"
-        using HOL_TCN_Timing.interp_trace_append[of _ 0 0, simplified add_0_right] by presburger
-      finally show "z1 + z2 \<le> list_least_constant frgt crgt (map fst (hg # hT)) * HOL_TCN_Timing.interp_trace frgt 0 (hg # hT)" by simp
+      from g rel1 c have "z1 \<le> ?c * (T_f_from_frgt frgt ?gr ?gargs)\<^sub>+" using le_trans by fastforce
+      also have "... = ?c * (HOL_TCN_Timing.interp_trace frgt 0 [hg])\<^sub>+"
+        unfolding HOL_TCN_Timing.interp_trace_singleton[symmetric, where n = 0, simplified add_0_left] by simp
+      also have "... \<le> ?c * (1 + HOL_TCN_Timing.interp_trace frgt 0 [hg])" by (simp add: max1_def)
+      finally have *: "z1 \<le> ?c * (1 + HOL_TCN_Timing.interp_trace frgt 0 [hg])" .
+
+      from gs c have **: "z2 \<le> ?c * (length hT + HOL_TCN_Timing.interp_trace frgt 0 hT)" using le_trans[of z2] by fastforce
+
+      from * ** have "z1 + z2 \<le> ?c * ((1 + length hT) + (HOL_TCN_Timing.interp_trace frgt 0 [hg] + HOL_TCN_Timing.interp_trace frgt 0 hT))"
+        by (simp add: algebra_simps)
+      also have "... = ?c * (length (hg # hT) + HOL_TCN_Timing.interp_trace frgt 0 (hg # hT))"
+        unfolding HOL_TCN_Timing.interp_trace_append[symmetric] by simp
+      finally show "z1 + z2 \<le> some_constant_fs frgt crgt (map fst (hg # hT)) * (length (hg # hT) + HOL_TCN_Timing.interp_trace frgt 0 (hg # hT))" .
     qed
   qed
 qed

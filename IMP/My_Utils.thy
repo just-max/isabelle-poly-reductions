@@ -81,6 +81,7 @@ definition max1 :: "nat \<Rightarrow> nat" (\<open>(\<open>notation=\<open>postf
 lemma max1_idem[simp]: shows "(x\<^sub>+)\<^sub>+ = x\<^sub>+" unfolding max1_def by simp
 lemma max1_pos[simp]: "x\<^sub>+ \<noteq> 0" unfolding max1_def by simp
 lemma max1_pos_id[simp]: "x \<noteq> 0 \<Longrightarrow> x\<^sub>+ = x" unfolding max1_def by simp
+lemma max1_non_dec[simp]: "x\<^sub>+ \<ge> x" by (cases x) auto
 lemma max1_id_positive[iff]: "x\<^sub>+ = x \<longleftrightarrow> x \<noteq> 0" unfolding max1_def by linarith
 
 (* x\<^sub>+ for x > 0 is already handled, but need this for x = 0 *)

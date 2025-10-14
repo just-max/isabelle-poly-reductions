@@ -387,15 +387,21 @@ lemma terminates_with_time_res_equiv:
     \<exists>s'. terminates_with_time_IMP p s s' t \<and> s' r = val"
   by (rule eq_reflection, rule iffI; blast)
 
-lemma terminates_with_res_to_terminates_with_bound_time:
+lemma terminates_with_res_time_order_to_terminates_with_time_order':
   assumes "terminates_with_res_time_order_IMP p r f T_f"
-  shows "\<exists>s_p. terminates_with_time_order_IMP p s_p T_f \<and> (\<forall>s. s_p s r = f s)"
+  shows "\<exists>f'. terminates_with_time_order_IMP p f' T_f \<and> (\<forall>s. f' s r = f s)"
 proof-
   from assms have "\<exists>c. \<forall>s. \<exists>s'. terminates_with_time_IMP p s s' (c * T_f s) \<and> s' r = f s" by fastforce
-  then have "\<exists>s_p. \<exists>c. \<forall>s. terminates_with_time_IMP p s (s_p s) (c * T_f s) \<and> s_p s r = f s" using choice by fast
-  then show "\<exists>s_p. terminates_with_time_order_IMP p s_p T_f \<and> (\<forall>s. s_p s r = f s)" by blast
-  (* note these last two are equivalent, and the former could perhaps be useful, but the latter is "cleaner" *)
+  then have "\<exists>f'. \<exists>c. \<forall>s. terminates_with_time_IMP p s (f' s) (c * T_f s) \<and> f' s r = f s" using choice by fast
+  then show "\<exists>f'. terminates_with_time_order_IMP p f' T_f \<and> (\<forall>s. f' s r = f s)" by blast
+  (* note these previous two are equivalent, and the former could perhaps be useful, but the latter is "cleaner" *)
 qed
+
+corollary terminates_with_res_time_order_to_terminates_with_time_order:
+  assumes "terminates_with_res_time_order_IMP p r f T_f"
+  obtains f' where "terminates_with_time_order_IMP p f' T_f" "\<And>s. f' s r = f s"
+  using terminates_with_res_time_order_to_terminates_with_time_order' assms by blast
+
 
 (* not used *)
 lemma terminates_with_to_terminates_with_res_bound_time:
@@ -423,7 +429,7 @@ lemma obtain_least_bound_res_2:
   shows "terminates_with_res_time_IMP p s r (f s) (least_constant_IMP p T_f * T_f s)"
 proof-
   from assms have "\<exists>s_p. terminates_with_time_order_IMP p s_p T_f \<and> (\<forall>s. s_p s r = f s)"
-    using terminates_with_res_to_terminates_with_bound_time by blast
+    using terminates_with_res_time_order_to_terminates_with_time_order by blast
   then have "\<exists>s_p. terminates_with_time_IMP p s (s_p s) (least_constant_IMP p T_f * T_f s) \<and> s_p s r = f s"
     using obtain_least_bound by blast
   then show "terminates_with_res_time_IMP p s r (f s) (least_constant_IMP p T_f * T_f s)"
