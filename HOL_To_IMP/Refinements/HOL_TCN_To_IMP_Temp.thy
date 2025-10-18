@@ -2295,7 +2295,7 @@ definition [simp]: "plus_name \<equiv> ''+''"
 definition [simp]: "(plus_f :: nat list \<Rightarrow> nat) \<equiv> (\<lambda>xs. xs ! 0 + xs ! 1)"
 definition [simp]: "(plus_T_f :: nat list \<Rightarrow> nat) \<equiv> (\<lambda>xs. 0)"
 definition [simp]: "plus_args \<equiv> [''+.args.x'', ''+.args.y'']"
-definition "plus_com \<equiv> Assign ''+.ret'' (V ''+.args.x'' \<oplus>  V ''+.args.y'')"
+definition [simp]: "plus_com \<equiv> Assign ''+.ret'' (V ''+.args.x'' \<oplus>  V ''+.args.y'')"
 definition [simp]: "plus_r \<equiv> ''+.ret''"
 
 lemma plus_correctness:
@@ -2319,12 +2319,11 @@ definition [simp]: "minus_name \<equiv> ''-''"
 definition [simp]: "(minus_f :: nat list \<Rightarrow> nat) \<equiv> (\<lambda>xs. xs ! 0 - xs ! 1)"
 definition [simp]: "(minus_T_f :: nat list \<Rightarrow> nat) \<equiv> (\<lambda>xs. 0)"
 definition [simp]: "minus_args \<equiv> [''-.args.x'', ''-.args.y'']"
-definition "minus_com \<equiv> Assign ''-.ret'' (V ''-.args.x'' \<ominus>  V ''-.args.y'')"
+definition [simp]: "minus_com \<equiv> Assign ''-.ret'' (V ''-.args.x'' \<ominus>  V ''-.args.y'')"
 definition [simp]: "minus_r \<equiv> ''-.ret''"
 
 lemma minus_correctness:
   "terminates_with_res_time_order_IMP minus_com minus_r (minus_f o lookups minus_args) (minus_T_f o lookups minus_args)"
-  unfolding minus_com_def
   by (rule terminates_with_res_const) fastforce+
 
 definition [simp]: "minus_frgt_upd upd = upd(minus_name := mk_frgt1 minus_f minus_T_f)"
@@ -2423,6 +2422,14 @@ next
   qed (simp_all add: True assms(4))
 qed
 
+method to_imp_tc_unfold uses def =
+  rule SIMPS_TOD,
+  simp add:
+    def generate_def Let_def split_beta
+    make_n_fresh_def make_nth_fresh_def stale_registers_def call_registers_def calls'_def Fresh.fresh_def
+    char_of_def bit_simps,
+  rule SIMPS_TOI
+
 
 (* equality *)
 
@@ -2467,10 +2474,10 @@ definition "eq_com \<equiv> tailcall_to_IMP eq_tcom"
 definition [simp]: "eq_frgt_upd upd = upd(eq_name := mk_frgt1 eq_f eq_T_f)"
 definition [simp]: "eq_crgt_upd upd = upd(eq_name := mk_crgt1 eq_args eq_com eq_r)"
 
-
 (* just for show ;) *)
+(* schematic_goal "eq_tcom \<equiv> ?t"
+  by (to_imp_tc_unfold def: eq_tcom_def) (* slow :( *) *)
 value eq_tcom
-(* value eq_com \<rightarrow> fails, why? too big to be interesting anyway *)
 
 (* this proof gets generated; instantiating frgt with eq_frgt provides a "concrete" registry,
     but morally the generalization tells us we only depend on functions we actually call *)
@@ -2644,6 +2651,9 @@ definition [simp]: "mul_acc_r \<equiv> ''mul_acc.ret''"
 definition "mul_acc_tcom \<equiv> to_imp_tc mul_acc_args mul_acc_crgt [] mul_acc_r [] mul_acc_hol_tcn"
 definition "mul_acc_com \<equiv> tailcall_to_IMP mul_acc_tcom"
 
+(* schematic_goal "mul_acc_tcom \<equiv> ?t"
+  by (to_imp_tc_unfold def: mul_acc_tcom_def) *)
+
 (* note: in the exported registry entry, we place the original timing function again *)
 definition [simp]: "mul_acc_frgt_upd upd = upd(mul_acc_name := mk_frgt1 mul_acc_f mul_acc_T_f)"
 definition [simp]: "mul_acc_crgt_upd upd = upd(mul_acc_name := mk_crgt1 mul_acc_args mul_acc_com mul_acc_r)"
@@ -2805,5 +2815,80 @@ proof-
   then show ?thesis unfolding relate_rgt_f_def using mul_acc_correctness by (metis split_pairs2)
 qed
 
+(* now without an accumulator *)
+
+definition "mul x y = mul_acc x y 0"
+time_fun mul
+
+definition [simp]: "(mul_f :: nat list \<Rightarrow> nat) \<equiv> (\<lambda>xs. mul (xs ! 0) (xs ! 1))"
+definition [simp]: "(mul_T_f :: nat list \<Rightarrow> nat) \<equiv> (\<lambda>xs. T_mul (xs ! 0) (xs ! 1))"
+
+definition [simp]: "mul_hol_tcn \<equiv> hCall ''mul_acc'' [hArg 0, hArg 1, hNumber 0]"
+
+definition [simp]: "mul_aux \<equiv> calls_names_set mul_hol_tcn"
+(* note: *) lemma "mul_aux = {''mul_acc''}" by auto
+
+definition [simp]: "mul_frgt \<equiv> null |> mul_acc_frgt_upd"
+definition [simp]: "mul_crgt \<equiv> null |> mul_acc_crgt_upd"
+
+definition [simp]: "mul_name \<equiv> ''*''"
+definition [simp]: "mul_args \<equiv> [''*.args.x'', ''*.args.y'']"
+definition [simp]: "mul_r \<equiv> ''*.ret''"
+
+definition "mul_tcom \<equiv> to_imp_tc mul_args mul_crgt [] mul_r [] mul_hol_tcn"
+definition "mul_com \<equiv> tailcall_to_IMP mul_tcom"
+
+definition [simp]: "mul_frgt_upd upd = upd(mul_name := mk_frgt1 mul_f mul_T_f)"
+definition [simp]: "mul_crgt_upd upd = upd(mul_name := mk_crgt1 mul_args mul_com mul_r)"
+
+
+lemma mul_hol_tcn_correctness:
+  assumes rgt: "frgt = mul_frgt on mul_aux"
+  assumes *: "length xs = length mul_args"
+  shows "(mul_hol_tcn, frgt) \<turnstile> (mul_hol_tcn, [], xs)\<Rightarrow>\<^bsup> mul_T_f xs \<^esup> mul_f xs"
+proof-
+  have frgt: "frgt ''mul_acc'' = mk_frgt1 mul_acc_f mul_acc_T_f"
+    using eq_on_lookup[of frgt mul_frgt, OF rgt] by auto
+
+  show "(mul_hol_tcn, frgt) \<turnstile> (mul_hol_tcn, [], xs)\<Rightarrow>\<^bsup> mul_T_f xs \<^esup> mul_f xs"
+    apply (rule bigstep_start[OF mul_hol_tcn_def])
+  proof (rule hbig_step_t.hCall)
+    show "\<forall>i<length [hArg 0, hArg 1, hNumber 0].
+            (mul_hol_tcn, frgt) \<turnstile> ([hArg 0, hArg 1, hNumber 0] ! i, [], xs) \<Rightarrow>\<^bsup>[0, 0, 0] ! i\<^esup> [xs ! 0, xs ! 1, 0] ! i"
+      apply (repeat \<open>rule forall_i_length_Cons\<close>) using * by auto
+  qed (simp_all add: frgt mul_def)
+qed
+
+lemma mul_correctness:
+  "terminates_with_res_time_order_IMP mul_com mul_r (mul_f o lookups mul_args) (mul_T_f o lookups mul_args)"
+  unfolding mul_com_def mul_tcom_def
+proof (rule compiler_correct')
+  fix vs_arg :: "nat list"
+  assume "length vs_arg = length mul_args"
+  then show "(mul_hol_tcn, mul_frgt) \<turnstile> (mul_hol_tcn, [], vs_arg) \<Rightarrow>\<^bsup>mul_T_f vs_arg\<^esup>  mul_f vs_arg"
+    using mul_hol_tcn_correctness by blast
+next
+  show "relate_rgt mul_frgt mul_crgt (calls_names_set mul_hol_tcn)"
+    apply (rule relate_rgt_unfold) apply simp
+    apply (repeat \<open>rule forall_i_insert\<close>)
+    using mul_acc_correctness_rgt by simp_all
+  show "compiler_invar mul_crgt mul_args [] [] mul_hol_tcn"
+    unfolding compiler_invar_def call_registers_def calls'_def calls_n_def by simp
+  show "HOL_TCN_Timing.invar mul_hol_tcn" "can_terminate mul_hol_tcn" by simp_all
+qed
+
+lemma mul_correctness_rgt:
+  assumes "frgt mul_name = mul_frgt_upd null mul_name"
+  assumes "crgt mul_name = mul_crgt_upd null mul_name"
+  shows "relate_rgt_f frgt crgt mul_name"
+proof-
+  from assms have
+    "frgt mul_name = mk_frgt1 mul_f mul_T_f"
+    "crgt mul_name = mk_crgt1 mul_args mul_com mul_r" by simp_all
+  then show ?thesis unfolding relate_rgt_f_def using mul_correctness by (metis split_pairs2)
+qed
+
+schematic_goal "mul_tcom \<equiv> ?t"
+  by (to_imp_tc_unfold def: mul_tcom_def)
 
 end
