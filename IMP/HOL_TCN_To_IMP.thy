@@ -8,8 +8,9 @@ unbundle no com_syntax and thol_syntax and tcom_syntax
 
 (* command registries *)
 
+type_synonym com_registry_entry = "vname list \<times> com \<times> vname"
 (* function name \<Rightarrow> (argument registers' names \<times> IMP command \<times> return register's name *)
-type_synonym com_registry = "fun_ref \<Rightarrow> (vname list \<times> com \<times> vname)"
+type_synonym com_registry = "fun_ref \<Rightarrow> com_registry_entry"
 abbreviation "args_from_crgt (crgt :: com_registry) name \<equiv> fst (crgt name)"
 abbreviation "com_from_crgt (crgt :: com_registry) name \<equiv> fst (snd (crgt name))"
 abbreviation "ret_from_crgt (crgt :: com_registry) name \<equiv> snd (snd (crgt name))"
@@ -310,6 +311,26 @@ lemma to_imp_nontail: "\<not> HOL_TCN_Timing.tails t \<Longrightarrow> \<not> IM
 
 lemma to_imp_invar: "HOL_TCN_Timing.invar t \<Longrightarrow> IMP_Tailcall.invar (to_imp_tc f_args crgt bs r keep t)"
   by (induction t arbitrary: bs r keep) (simp_all add: Let_def split_beta generate_def to_imp_nontail)
+
+(* todo: move *)
+(* predicate that checks whether it is possible for the function to return without looping forever *)
+fun can_terminate :: "thol \<Rightarrow> bool" where
+  "can_terminate (LET _ IN t2) \<longleftrightarrow> can_terminate t2" |
+  "can_terminate (hLetBound _) = True" |
+  "can_terminate (hArg _) = True" |
+  "can_terminate (hNumber _) = True" |
+  "can_terminate (IF _\<noteq>0 THEN t2 ELSE t3) \<longleftrightarrow> can_terminate t2 \<or> can_terminate t3" |
+  "can_terminate (hCall _ ts) = True" |
+  "can_terminate (hTAIL ts) = False"
+
+lemma to_imp_r_in_vars:
+  assumes "can_terminate t"
+  shows "r \<in> set (vars (to_imp_tc f_args crgt bs r keep t))"
+using assms proof (induction arbitrary: bs keep rule: can_terminate.induct)
+  case hIf: (5 t1 t2 t3)
+  then consider "can_terminate t2" | "can_terminate t3" by auto
+  then show ?case using hIf by cases (simp_all add: Let_def)
+qed (simp_all add: Let_def split_beta)
 
 
 lemma num_commands_mk_seqs:

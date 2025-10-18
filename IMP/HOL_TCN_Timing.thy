@@ -82,8 +82,11 @@ proof-
     by (induction t rule: calls.induct) auto
 qed *)
 
+type_synonym fun_registry_entry = "(nat list \<Rightarrow> nat) \<times> (nat list \<Rightarrow> nat)"
+
 (* function name \<Rightarrow> (function \<times> timing function) *)
-type_synonym fun_registry = "fun_ref \<Rightarrow> ((nat list \<Rightarrow> nat) \<times> (nat list \<Rightarrow> nat))"
+type_synonym fun_registry = "fun_ref \<Rightarrow> fun_registry_entry"
+
 abbreviation "f_from_frgt (frgt :: fun_registry) name \<equiv> fst (frgt name)"
 abbreviation "T_f_from_frgt (frgt :: fun_registry) name \<equiv> snd (frgt name)"
 

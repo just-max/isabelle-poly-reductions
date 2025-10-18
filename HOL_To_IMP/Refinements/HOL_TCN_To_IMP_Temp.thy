@@ -10,7 +10,7 @@ method repeat methods m = (m; repeat \<open>m\<close>)?
 
 type_synonym state = IMP_Base.state (* TODO *)
 
-abbreviation "lookups names (s :: state) \<equiv> map s names"
+abbreviation (input) lookups where "lookups names (s :: state) \<equiv> map s names"
 abbreviation "lookup_args crgt g \<equiv> lookups (args_from_crgt crgt g)"
 
 (* note: lookups xs s = map s xs *)
@@ -518,13 +518,14 @@ lemma copy_list_bigstep':
   using copy_list_bigstep[where xs = xs and ys = ys] assms by auto
 
 
-abbreviation "calls_r t \<equiv> set (map fst (calls t))"
+abbreviation "calls_names t \<equiv> map fst (calls t)"
+abbreviation "calls_names_set t \<equiv> set (calls_names t)"
 
 theorem compiler_correct_no_tails:
   assumes "\<not> tails t"
   assumes "(f,frgt) \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup>z :: nat\<^esup> v"
   assumes "compiler_invar crgt f_args bs keep t"
-  assumes "relate_rgt_correctness frgt crgt (calls_r t)"
+  assumes "relate_rgt_correctness frgt crgt (calls_names_set t)"
   assumes "relate_exec_state f_args bs vs_arg vs_b s"
   shows "\<exists>z_c s'.
     f_c \<turnstile> (to_imp_tc f_args crgt bs r keep t,s) \<Rightarrow>\<^bsup>z_c :: nat\<^esup> s'
@@ -555,8 +556,8 @@ using assms proof (induction t arbitrary: vs_b z v bs keep s r crgt)
 
   from hLet.prems
   have rel_rgt:
-      "relate_rgt_correctness frgt crgt (calls_r t1)"
-      "relate_rgt_correctness frgt crgt (calls_r t2)"
+      "relate_rgt_correctness frgt crgt (calls_names_set t1)"
+      "relate_rgt_correctness frgt crgt (calls_names_set t2)"
     unfolding relate_rgt_correctness_def by simp_all
 
   from hLet.prems have rel_state1: "relate_exec_state f_args bs vs_arg vs_b s" by blast
@@ -635,9 +636,9 @@ next
 
   from hIf.prems
   have rel_rgt:
-      "relate_rgt_correctness frgt crgt (calls_r t1)"
-      "relate_rgt_correctness frgt crgt (calls_r t2)"
-      "relate_rgt_correctness frgt crgt (calls_r t3)"
+      "relate_rgt_correctness frgt crgt (calls_names_set t1)"
+      "relate_rgt_correctness frgt crgt (calls_names_set t2)"
+      "relate_rgt_correctness frgt crgt (calls_names_set t3)"
     unfolding relate_rgt_correctness_def by simp_all
 
   from hIf.prems have rel_state1: "relate_exec_state f_args bs vs_arg vs_b s" by blast
@@ -738,7 +739,7 @@ next
     from that hCall.prems compiler_invar_call
     show "compiler_invar crgt f_args bs (?xs @ keep) (ts ! i)" by simp
   next
-    from that show "relate_rgt_correctness frgt crgt (calls_r (ts ! i))"
+    from that show "relate_rgt_correctness frgt crgt (calls_names_set (ts ! i))"
       using hCall.prems(4) unfolding relate_rgt_correctness_def by fastforce
   next
     from that show "relate_exec_state f_args bs vs_arg vs_b s" by blast
@@ -833,7 +834,7 @@ lemma compiler_augment_rel_trace:
   assumes htrace: "frgt \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup> hT :: HOL_TCN_Timing.call_trace \<^esup> Value v"
   assumes comp_assms:
     "compiler_invar crgt f_args bs keep t"
-    and "relate_rgt_correctness frgt crgt (calls_r t)"
+    and "relate_rgt_correctness frgt crgt (calls_names_set t)"
     and "relate_exec_state f_args bs vs_arg vs_b s"
   assumes comp_rel:
     "(to_imp_tc f_args crgt bs r keep t,s) \<Rightarrow>\<^bsup>(k, cT)\<^esup> (s', False)"
@@ -1028,7 +1029,7 @@ theorem compiler_rel_trace:
   assumes "invar t"
   assumes "frgt \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup> hT :: HOL_TCN_Timing.call_trace \<^esup> hl"
   assumes "compiler_invar crgt f_args bs keep t"
-  assumes "relate_rgt_correctness frgt crgt (calls_r t)"
+  assumes "relate_rgt_correctness frgt crgt (calls_names_set t)"
   assumes "relate_exec_state f_args bs vs_arg vs_b s"
   shows "\<exists>k cT s' cl.
     (to_imp_tc f_args crgt bs r keep t,s)\<Rightarrow>\<^bsup>(k, cT)\<^esup> (s', cl)
@@ -1054,8 +1055,8 @@ using assms(2) assms(1,3-) proof (induction arbitrary: bs keep s r crgt rule: ht
 
   from hLet.prems
   have rel_rgt:
-      "relate_rgt_correctness frgt crgt (calls_r t1)"
-      "relate_rgt_correctness frgt crgt (calls_r t2)"
+      "relate_rgt_correctness frgt crgt (calls_names_set t1)"
+      "relate_rgt_correctness frgt crgt (calls_names_set t2)"
     unfolding relate_rgt_correctness_def by simp_all
 
   from hLet.prems have rel_state1: "relate_exec_state f_args bs vs_arg vs_b s" by blast
@@ -1144,8 +1145,8 @@ next
 
   from hIfTrue.prems
   have rel_rgt:
-      "relate_rgt_correctness frgt crgt (calls_r t1)"
-      "relate_rgt_correctness frgt crgt (calls_r t2)"
+      "relate_rgt_correctness frgt crgt (calls_names_set t1)"
+      "relate_rgt_correctness frgt crgt (calls_names_set t2)"
     unfolding relate_rgt_correctness_def by simp_all
 
   from hIfTrue.prems have rel_state1: "relate_exec_state f_args bs vs_arg vs_b s" by blast
@@ -1210,8 +1211,8 @@ next
 
   from hIfFalse.prems
   have rel_rgt:
-      "relate_rgt_correctness frgt crgt (calls_r t1)"
-      "relate_rgt_correctness frgt crgt (calls_r t3)"
+      "relate_rgt_correctness frgt crgt (calls_names_set t1)"
+      "relate_rgt_correctness frgt crgt (calls_names_set t3)"
     unfolding relate_rgt_correctness_def by simp_all
 
   from hIfFalse.prems have rel_state1: "relate_exec_state f_args bs vs_arg vs_b s" by blast
@@ -1276,9 +1277,9 @@ next
   have comp_invar: "compiler_invar crgt f_args bs (?xs @ keep) (ts ! i)"
     if "i < length ts" for i using that by simp
 
-  have "calls_r (ts ! i) \<subseteq> calls_r (hCall gr ts)" if "i < length ts" for i using that by fastforce
+  have "calls_names_set (ts ! i) \<subseteq> calls_names_set (hCall gr ts)" if "i < length ts" for i using that by fastforce
   with hCall.prems have rel_rgt:
-      "relate_rgt_correctness frgt crgt (calls_r (ts ! i))"
+      "relate_rgt_correctness frgt crgt (calls_names_set (ts ! i))"
     if "i < length ts" for i using that unfolding relate_rgt_correctness_def by blast
 
   from hCall.IH
@@ -1399,9 +1400,9 @@ next
   have comp_invar: "compiler_invar crgt f_args bs (?xs @ keep) (ts ! i)"
     if "i < length ts" for i using that by simp
 
-  have "calls_r (ts ! i) \<subseteq> calls_r (hTAIL ts)" if "i < length ts" for i using that by fastforce
+  have "calls_names_set (ts ! i) \<subseteq> calls_names_set (hTAIL ts)" if "i < length ts" for i using that by fastforce
   with hTail.prems have rel_rgt:
-      "relate_rgt_correctness frgt crgt (calls_r (ts ! i))"
+      "relate_rgt_correctness frgt crgt (calls_names_set (ts ! i))"
     if "i < length ts" for i using that unfolding relate_rgt_correctness_def by blast
 
   from hTail.IH
@@ -1520,51 +1521,144 @@ qed
 
 
 (* due to `c_struct` (5 * ..) and lemma `to_imp_num_commands` (7 * ..) *)
-definition "rel_trace_times t hk k T \<equiv>
-  k \<le> 35 * HOL_TCN_Timing.num_commands t * (hk + 1)
-  \<and> length T \<le> 7 * HOL_TCN_Timing.num_commands t * (hk + 1)"
+definition "rel_trace_time t hk k \<equiv> k \<le> 35 * HOL_TCN_Timing.num_commands t * (hk + 1)"
+(* this says: in each of `hk + 1` "chunks" of source program, the structural execution time of the
+    compiled program is bounded by some constant (35 * |t|) *)
 
-lemma compiler_rel_trace_times_to_tail:
+lemma compiler_rel_trace_time_to_leaf:
   assumes "(to_imp_tc f_args crgt bs r keep t,s)\<Rightarrow>\<^bsup>(k, cT)\<^esup> (s', l)"
-  shows "rel_trace_times t 0 k cT"
-unfolding rel_trace_times_def proof (standard, goal_cases)
-  case 1
+  shows "rel_trace_time t 0 k"
+proof-
   have "k \<le> c_struct (to_imp_tc f_args crgt bs r keep t)"
     using assms trace_nontail_static_bound by blast
   also have "... \<le> 35 * HOL_TCN_Timing.num_commands t"
     using to_imp_num_commands by simp
-  finally show ?case by simp
-next
-  case 2
-  have "length cT \<le> 7 * HOL_TCN_Timing.num_commands t"
-    using trace_nontail_call_bound[OF assms] to_imp_num_commands le_trans by blast
-  then show ?case by simp
+  term ?thesis
+  finally show ?thesis unfolding rel_trace_time_def by simp
 qed
 
-lemma rel_trace_times_join:
-  assumes "rel_trace_times t hk1 k1 T1" "rel_trace_times t hk2 k2 T2"
-  shows "rel_trace_times t (hk1 + hk2 + 1) (k1 + k2) (T1 @ T2)"
-  using assms unfolding rel_trace_times_def by (simp add: algebra_simps)
+lemma rel_trace_time_join:
+  assumes "rel_trace_time t hk1 k1" "rel_trace_time t hk2 k2"
+  shows "rel_trace_time t (hk1 + hk2 + 1) (k1 + k2)"
+  using assms unfolding rel_trace_time_def by (simp add: algebra_simps)
 
-lemma rel_trace_times_num_commands_mono:
+lemma rel_trace_time_num_commands_mono:
   assumes "HOL_TCN_Timing.num_commands t \<le> HOL_TCN_Timing.num_commands f"
-  assumes "rel_trace_times t hk k T"
-  shows "rel_trace_times f hk k T"
-  using assms unfolding rel_trace_times_def
+  assumes "rel_trace_time t hk k"
+  shows "rel_trace_time f hk k"
+  using assms unfolding rel_trace_time_def
   by (meson dual_order.refl mult_le_mono order_trans)
 
+
+(* todo move *)
+lemma sum_map_mono2:
+  fixes f :: "_ \<Rightarrow> 'a :: {ordered_ab_semigroup_add, monoid_add}" and g :: "_ \<Rightarrow> 'a"
+  assumes "length xs = length ys"
+  assumes "\<forall>i < length xs. f (xs ! i) \<le> g (ys ! i)"
+  shows "sum_map f xs \<le> sum_map g ys"
+using assms(2) proof (induction xs ys rule: snoc_list_induct2)
+  case (snoc xs x ys y)
+  from snoc have *: "f x \<le> g y" by (metis length_append_singleton lessI nth_append_length)
+  from snoc have **: "\<forall>i<length xs. f (xs ! i) \<le> g (ys ! i)" by (simp add: less_Suc_eq nth_append_left)
+  from * ** snoc.IH show ?case using add_mono by fastforce
+qed (simp_all add: assms(1))
+
+(* todo: move *)
+lemma htrace_to_end_length_bound:
+  assumes "(f,frgt) \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup> (k, T) :: HOL_TCN_Timing.trace \<^esup> v"
+  shows "length T \<le> HOL_TCN_Timing.num_commands f * k + HOL_TCN_Timing.num_commands t"
+using assms proof (induction rule: htrace_to_end_induct)
+  case (hCall vs ts Ts f frgt bs xs T gr v)
+  have "\<forall>i < length ts. HOL_TCN_Timing.num_commands (ts ! i) \<le> sum_map HOL_TCN_Timing.num_commands ts" by (simp add: member_le_sum_list)
+  then have "\<forall>i < length Ts. length (Ts ! i) \<le> HOL_TCN_Timing.num_commands (ts ! i)" using hCall.IH hCall.hyps by auto
+  with hCall.hyps have "sum_map length Ts \<le> sum_map HOL_TCN_Timing.num_commands ts" using sum_map_mono2 by blast
+  then have "length (concat Ts) \<le> sum_map HOL_TCN_Timing.num_commands ts" by (simp add: length_concat)
+  with hCall.hyps show ?case by simp
+next
+  case (hTail vs ts Ts f frgt bs xs n' T' v' T k)
+  have "\<forall>i < length ts. HOL_TCN_Timing.num_commands (ts ! i) \<le> sum_map HOL_TCN_Timing.num_commands ts" by (simp add: member_le_sum_list)
+  then have "\<forall>i < length Ts. length (Ts ! i) \<le> HOL_TCN_Timing.num_commands (ts ! i)" using hTail.IH hTail.hyps by auto
+  with hTail.hyps have "sum_map length Ts \<le> sum_map HOL_TCN_Timing.num_commands ts"
+    using sum_map_mono2 by blast
+  then have *: "length (concat Ts) \<le> sum_map HOL_TCN_Timing.num_commands ts" by (simp add: length_concat)
+  have **: "length T' \<le> HOL_TCN_Timing.num_commands f * k + (length ts + 1)" using hTail.hyps hTail.IH(2) by simp
+  from * ** \<open>T = _\<close> show ?case by simp
+qed auto
+
+(* this lemma says that there are at most |f| calls per "chunk" *)
+corollary htrace_to_end_length_bound':
+  assumes "(f,frgt) \<turnstile> (f,bs,xs) \<Rightarrow>\<^bsup> (k, T) :: HOL_TCN_Timing.trace \<^esup> v"
+  shows "length T \<le> HOL_TCN_Timing.num_commands f * (k + 1)"
+  using htrace_to_end_length_bound assms by fastforce
+
+
+
+(* hT only "calls" functions which occur in f *)
+definition "trace_calls_in f hT \<equiv> set (map fst hT) \<subseteq> calls_names_set f"
+
+lemma Union_mono2:
+  assumes "length xs = length ys"
+  assumes "\<forall>i < length xs. f (xs ! i) \<subseteq> g (ys ! i)"
+  shows "(\<Union>x \<in> set xs. f x) \<subseteq> (\<Union>y \<in> set ys. g y)"
+using assms(2) proof (induction xs ys rule: snoc_list_induct2)
+  case (snoc xs x ys y)
+  from snoc have *: "f x \<subseteq> g y" by (metis length_append_singleton lessI nth_append_length)
+  from snoc have **: "\<forall>i<length xs. f (xs ! i) \<subseteq> g (ys ! i)" by (simp add: less_Suc_eq nth_append_left)
+  from * ** snoc.IH show ?case using add_mono by fastforce
+qed (simp_all add: assms(1))
+
+
+lemma htrace_to_end_calls_in:
+  assumes "(f,frgt) \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup> (k, T) :: HOL_TCN_Timing.trace \<^esup> v"
+  shows "set (map fst T) \<subseteq> calls_names_set f \<union> calls_names_set t"
+using assms proof (induction rule: htrace_to_end_induct)
+  case (hCall vs ts Ts f frgt bs xs T gr v)
+
+  have *: "\<forall>i < length Ts. set (map fst (Ts ! i)) \<subseteq> calls_names_set f \<union> calls_names_set (ts ! i)"
+    using hCall by auto
+
+  have "set (map fst (concat Ts)) = (\<Union>Ti\<in>set Ts. set (map fst Ti))" by auto
+  also have "... \<subseteq> (\<Union>t\<in>set ts. calls_names_set f \<union> calls_names_set t)"
+    using Union_mono2 \<open>length Ts = length ts\<close> * by meson
+  also have "... \<subseteq> calls_names_set f \<union> (\<Union>t\<in>set ts. calls_names_set t)" by blast
+  also have "... = calls_names_set f \<union> set (concat_map calls_names ts)" by simp
+  finally show "set (map fst T) \<subseteq> calls_names_set f \<union> calls_names_set (hCall gr ts)" using \<open>T = _\<close> by auto
+next
+  case (hTail vs ts Ts f frgt bs xs n' T' v' T k)
+
+  have tail: "set (map fst T') \<subseteq> calls_names_set f \<union> calls_names_set (hTAIL ts)" using hTail.IH by blast
+
+  have *: "\<forall>i < length Ts. set (map fst (Ts ! i)) \<subseteq> calls_names_set f \<union> calls_names_set (ts ! i)"
+    using hTail by auto
+
+  have "set (map fst (concat Ts)) = (\<Union>Ti\<in>set Ts. set (map fst Ti))" by auto
+  also have "... \<subseteq> (\<Union>t\<in>set ts. calls_names_set f \<union> calls_names_set t)"
+    using Union_mono2 \<open>length Ts = length ts\<close> * by meson
+  also have "... \<subseteq> calls_names_set f \<union> (\<Union>t\<in>set ts. calls_names_set t)" by blast
+  also have "... = calls_names_set f \<union> calls_names_set (hTAIL ts)" by auto
+  finally show "set (map fst T) \<subseteq> calls_names_set f \<union> calls_names_set (hTAIL ts)"
+    using tail \<open>T = _\<close> by simp
+qed auto
+
+corollary htrace_to_end_calls_in':
+  assumes "(f,frgt) \<turnstile> (f,bs,xs) \<Rightarrow>\<^bsup> (k, T) :: HOL_TCN_Timing.trace \<^esup> v"
+  shows "set (map fst T) \<subseteq> calls_names_set f"
+  using htrace_to_end_calls_in assms by blast
+
+
+(* todo: could probably split this big lemma up, but would take considerable work *)
 theorem compiler_rel_trace_end:
   assumes "invar t" "invar f"
   assumes "HOL_TCN_Timing.num_commands t \<le> HOL_TCN_Timing.num_commands f"
   assumes "(f,frgt) \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup> (hk, hT) :: HOL_TCN_Timing.trace \<^esup> hv"
   assumes "compiler_invar crgt f_args bs keep t"
   assumes "compiler_invar crgt f_args [] [] f"
-  assumes "relate_rgt_correctness frgt crgt (calls_r t)"
-  assumes "relate_rgt_correctness frgt crgt (calls_r f)"
+  assumes "relate_rgt_correctness frgt crgt (calls_names_set t)"
+  assumes "relate_rgt_correctness frgt crgt (calls_names_set f)"
   assumes "relate_exec_state f_args bs vs_arg vs_b s"
   shows "\<exists>k cT s'.
     to_imp_tc f_args crgt [] r [] f \<turnstile> (to_imp_tc f_args crgt bs r keep t,s)\<Rightarrow>\<^bsup>(k, cT)\<^esup> s'
-    \<and> rel_trace_to_end crgt r hT hv cT s' \<and> rel_trace_times f hk k cT"
+    \<and> rel_trace_to_end crgt r hT hv cT s' \<and> rel_trace_time f hk k"
 using assms(1-3,5-) proof (induction arbitrary: s bs keep rule: ind_tail[OF assms(1,2,4)])
   (* base case: t executes to a value without a tail call *)
   case (1 f frgt t vs_b vs_arg T v)
@@ -1578,12 +1672,12 @@ using assms(1-3,5-) proof (induction arbitrary: s bs keep rule: ind_tail[OF assm
   (* turn the information about partial traces (ending in a value) to full traces *)
   from rel have "rel_trace_to_end crgt r T v cT s'"
     using rel_trace_to_leaf_value_rel_trace_to_end by simp
-  moreover from imp have "f \<turnstile> (to_imp_tc f_args crgt bs r keep t, s) \<Rightarrow>\<^bsup>(k, cT)\<^esup>  s'" for f
+  moreover from imp have ****: "f \<turnstile> (to_imp_tc f_args crgt bs r keep t, s) \<Rightarrow>\<^bsup>(k, cT)\<^esup>  s'" for f
     using IMP_Tailcall_Traces.trace_leaf_no_tail_trace_end by blast
 
   (* the running time until the tail call is bounded *)
-  moreover from imp have "rel_trace_times f 0 k cT"
-    using compiler_rel_trace_times_to_tail "1.prems" rel_trace_times_num_commands_mono by blast
+  moreover from imp have "rel_trace_time f 0 k"
+    using compiler_rel_trace_time_to_leaf "1.prems" rel_trace_time_num_commands_mono by blast
 
   ultimately show ?case by blast
 next
@@ -1595,8 +1689,8 @@ next
     where imp1: "(to_imp_tc f_args crgt bs r keep t, s) \<Rightarrow>\<^bsup>(ck1, cT1)\<^esup>  (s2, True)"
       and rel1: "rel_trace_to_leaf crgt f_args r hT1 (Tail vs) cT1 s2 True"
     using rel_trace_to_leaf_cl by (metis (full_types))
-  then have rel_time1: "rel_trace_times f 0 ck1 cT1"
-    using compiler_rel_trace_times_to_tail "2.prems" rel_trace_times_num_commands_mono by blast
+  then have rel_time1: "rel_trace_time f 0 ck1"
+    using compiler_rel_trace_time_to_leaf "2.prems" rel_trace_time_num_commands_mono by blast
 
   (* show that the intermediate state s2 encodes the initial context for the remaining trace *)
   from rel1 have "lookups f_args s2 = vs" unfolding rel_trace_to_leaf_def by simp
@@ -1607,7 +1701,7 @@ next
   with "2.IH" "2.prems" obtain ck2 cT2 s3
     where imp2: "to_imp_tc f_args crgt [] r [] f \<turnstile>(to_imp_tc f_args crgt [] r [] f, s2) \<Rightarrow>\<^bsup>(ck2, cT2)\<^esup>  s3"
       and rel2: "rel_trace_to_end crgt r hT2 v cT2 s3"
-      and rel_time2: "rel_trace_times f hk ck2 cT2"
+      and rel_time2: "rel_trace_time f hk ck2"
     by blast
 
   (* combine the first and second parts of the execution *)
@@ -1616,8 +1710,8 @@ next
     using IMP_Tailcall_Traces.trace_leaf_tail_trace_end by auto
   moreover from rel1 rel2 have "rel_trace_to_end crgt r (hT1 @ hT2) v (cT1 @ cT2) s3"
     using rel_trace_to_end_append unfolding rel_trace_to_leaf_def by metis
-  moreover from rel_time1 rel_time2 have "rel_trace_times f (hk + 1) (ck1 + ck2) (cT1 @ cT2)"
-    using rel_trace_times_join by fastforce
+  moreover from rel_time1 rel_time2 have "rel_trace_time f (hk + 1) (ck1 + ck2)"
+    using rel_trace_time_join by fastforce
 
   ultimately show ?case by blast
 qed
@@ -1682,43 +1776,18 @@ proof
   show "(\<lambda>_. 0 :: nat) \<noteq> (\<lambda>_. 1)" by (meson zero_neq_one)
 qed
 
-(* todo move *)
-lemma max1I (* [intro] *):
-
-
- (* why does this break as an intro rule? *)
-  (* assumes "\<And>x. x \<noteq> 0 \<Longrightarrow> P x" *)
-  (* assumes "x \<noteq> 0 \<Longrightarrow> P x" *)
-  assumes "x = 0 \<Longrightarrow> P 1" "x \<noteq> 0 \<Longrightarrow> P x"
-  shows "P (x\<^sub>+)"
-  using assms by (cases "x = 0") simp_all
-  (* using assms[of 1] assms[of x] by (cases "x = 0") auto *)
-
-lemma max1E[elim]:
-  assumes "P (x\<^sub>+)" "P 1 \<Longrightarrow> Q 0" "\<And>x. x \<noteq> 0 \<Longrightarrow> P x \<Longrightarrow> Q x"
-  shows "Q x"
-  using assms by (cases "x = 0") auto
-
-
 (* shows us that our order definition is nothing but the classic a*f+b definition... *)
 lemma order_of_ab: "f \<le>\<^sub>c g \<longleftrightarrow> (\<exists>a b. \<forall>x. f x \<le> a * g x + b)"
 proof
-  assume "f \<le>\<^sub>c g" then obtain c where *: "f x \<le> c * (g x)\<^sub>+" for x by force
-  then have "f x \<le> c * g x + c" for x by fastforce
+  assume "f \<le>\<^sub>c g"
+  then obtain c where "f x \<le> c * (g x)\<^sub>+" for x by force
+  then have "f x \<le> c * g x + c" for x by (fastforce elim: max1E)
   then show "\<exists>a b. \<forall>x. f x \<le> a * g x + b" by blast
 next
-  assume "\<exists>a b. \<forall>x. f x \<le> a * g x + b" then obtain a b where *: "f x \<le> a * g x + b" for x by blast
-  have "f x \<le> (a + b) * (g x)\<^sub>+" for x
-  proof (rule max1I)
-    assume "g x = 0" then show "f x \<le> (a + b) * 1" using *[of x] by simp
-  next
-    assume **: "g x \<noteq> 0"
-    have "f x \<le> a * g x + b" using * by blast
-    also have "... \<le> a * g x + b * g x" using ** by simp
-    also have "... = (a + b) * g x" by algebra
-    finally show "f x \<le> (a + b) * g x" .
-  qed
-  then show "f \<le>\<^sub>c g" by blast
+  assume "\<exists>a b. \<forall>x. f x \<le> a * g x + b"
+  then obtain a b where "f x \<le> a * g x + b" for x by blast
+  also have "... x \<le> (a + b) * (g x)\<^sub>+" for x using max1_abc by blast
+  finally show "f \<le>\<^sub>c g" by blast
 qed
 
 lemma order_of_const: "(\<lambda>_. k) \<le>\<^sub>c f"
@@ -1875,6 +1944,16 @@ qed
 definition "terminates_time_order_IMP p T_f =
   (\<exists>r f. terminates_with_res_time_order_IMP p r f T_f)"
 
+lemma terminates_time_order_IMP_I[intro]:
+  assumes "terminates_with_res_time_order_IMP p r f T_f"
+  shows "terminates_time_order_IMP p T_f"
+  unfolding terminates_time_order_IMP_def using assms by blast
+
+lemma terminates_time_order_IMP_E[elim]:
+  assumes "terminates_time_order_IMP p T_f"
+  obtains r f where "terminates_with_res_time_order_IMP p r f T_f"
+  using assms unfolding terminates_time_order_IMP_def by blast
+
 definition "relate_rgt_time frgt crgt fs \<longleftrightarrow> (\<forall>f \<in> fs.
   terminates_time_order_IMP (com_from_crgt crgt f) (T_f_from_frgt frgt f o lookup_args crgt f))"
 (* note that terminates_time_order_IMP imposes only an upper bound on the running time, even though it could really by exact *)
@@ -1885,9 +1964,22 @@ definition "some_constant_f frgt crgt f =
 definition "some_constant_fs frgt crgt fs =
   max_list0 (map (some_constant_f frgt crgt) fs)"
 
-(* lemma "list_least_constant frgt crgt (map fst hT) \<le> ... max of all constants occuring in term " *)
+definition "some_constant_t frgt crgt t =
+  some_constant_fs frgt crgt (calls_names t)"
 
-lemma rel_trace_times:
+lemma some_constant_trace_to_term:
+  assumes "set fs \<subseteq> calls_names_set t"
+  shows "some_constant_fs frgt crgt fs \<le> some_constant_t frgt crgt t"
+proof-
+  have "set (map (some_constant_f frgt crgt) fs) = some_constant_f frgt crgt ` set fs" by simp
+  also from assms have "... \<subseteq> some_constant_f frgt crgt ` calls_names_set t" by blast
+  also have "... = set (map (some_constant_f frgt crgt) (calls_names t))" by auto
+  finally show ?thesis
+  unfolding some_constant_fs_def some_constant_t_def using max_list0_subset by blast
+qed
+
+
+lemma rel_trace_time:
   assumes "rel_trace_calls crgt hT cT"
   assumes "relate_rgt_time frgt crgt (set (map fst hT))"
   shows "\<exists>z. IMP_Tailcall_Traces.interp_trace 0 cT z \<and>
@@ -1967,42 +2059,511 @@ proof-
   qed
 qed
 
-thm compiler_rel_trace_end
-schematic_goal compiler_rel_time_end:
-  assumes "invar t" "invar f"
-  assumes "HOL_TCN_Timing.num_commands t \<le> HOL_TCN_Timing.num_commands f"
-  assumes "(f,frgt) \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup> hz :: nat \<^esup> hv"
-  assumes "compiler_invar crgt f_args bs keep t"
-  assumes "compiler_invar crgt f_args [] [] f"
-  assumes "relate_rgt_correctness frgt crgt (calls_r t)"
-  assumes "relate_rgt_correctness frgt crgt (calls_r f)"
-  assumes "relate_exec_state f_args bs vs_arg vs_b s"
+
+(* todo move *)
+lemma num_commands_nonzero: "HOL_TCN_Timing.num_commands f \<ge> 1" by (cases f) auto
+
+definition "relate_rgt_f frgt crgt f \<longleftrightarrow>
+  terminates_with_res_time_order_IMP (com_from_crgt crgt f) (ret_from_crgt crgt f)
+    (f_from_frgt frgt f o lookup_args crgt f) (T_f_from_frgt frgt f o lookup_args crgt f)"
+
+definition "relate_rgt frgt crgt fs \<longleftrightarrow> (\<forall>f \<in> fs. relate_rgt_f frgt crgt f)"
+
+(* todo: move *)
+lemma terminates_with_res_time_order_combine:
+  "terminates_with_res_time_order_IMP c r f T_f \<longleftrightarrow>
+    (\<forall>s. terminates_with_res_IMP c s r (f s)) \<and> terminates_time_order_IMP c T_f"
+proof
+  assume *: "terminates_with_res_time_order_IMP c r f T_f"
+  have "terminates_with_res_IMP c s r (f s)" for s
+  proof-
+    from * obtain z where "HOL_Nat_To_IMP.terminates_with_res_time_IMP c s r (f s) z" by blast
+    then show "terminates_with_res_IMP c s r (f s)"
+      using HOL_Nat_To_IMP.terminates_with_res_time_IMPE terminates_with_IMPI terminates_with_res_IMPI by metis
+  qed
+  moreover have "terminates_time_order_IMP c T_f" using * by blast
+  ultimately show "(\<forall>s. terminates_with_res_IMP c s r (f s)) \<and> terminates_time_order_IMP c T_f" by blast
+next
+  assume "(\<forall>s. terminates_with_res_IMP c s r (f s)) \<and> terminates_time_order_IMP c T_f"
+  then have
+    "\<And>s. terminates_with_res_IMP c s r (f s)"
+    "terminates_time_order_IMP c T_f" by blast+
+  then show "terminates_with_res_time_order_IMP c r f T_f"
+    using
+      terminates_time_order_IMP_E terminates_with_res_time_order_IMP_E HOL_Nat_To_IMP.terminates_with_res_time_IMPE
+      terminates_with_res_IMPE terminates_with_IMPE
+      terminates_with_res_time_order_IMP_I HOL_Nat_To_IMP.terminates_with_res_time_IMPI
+      bigstep_det
+    by (smt (verit, best))
+qed
+
+lemma relate_rgt_combine_correctness_time:
+    "relate_rgt frgt crgt fs \<longleftrightarrow> relate_rgt_correctness frgt crgt fs \<and> relate_rgt_time frgt crgt fs"
+  unfolding relate_rgt_correctness_def relate_rgt_f_def relate_rgt_def relate_rgt_time_def
+  using terminates_with_res_time_order_combine by auto
+
+
+definition "the_hol_to_imp_c frgt crgt f = 2 * (35 + some_constant_t frgt crgt f) * HOL_TCN_Timing.num_commands f"
+
+lemma compiler_rel_time_end:
+  assumes invar: "invar t" "invar f"
+  assumes size_bound: "HOL_TCN_Timing.num_commands t \<le> HOL_TCN_Timing.num_commands f"
+  assumes calls_bound: "calls_names_set t \<subseteq> calls_names_set f"
+  assumes bigstep: "(f,frgt) \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup> hz :: nat \<^esup> hv"
+  assumes rgt: "relate_rgt frgt crgt (calls_names_set f)"
+  assumes prereq:
+    "compiler_invar crgt f_args bs keep t"
+    "compiler_invar crgt f_args [] [] f"
+  assumes state: "relate_exec_state f_args bs vs_arg vs_b s"
   shows
-    "to_imp_tc f_args crgt [] r [] f \<turnstile> (to_imp_tc f_args crgt bs r keep t,s)\<Rightarrow>\<^bsup> z :: nat \<^esup> s'
-     \<and> s' r = hv \<and> z \<le> ?c * hz\<^sub>+"
-  sorry
+    "HOL_Nat_To_IMP.terminates_with_res_time_IMP_Tailcall
+      (to_imp_tc f_args crgt [] r [] f) (to_imp_tc f_args crgt bs r keep t) s r hv (the_hol_to_imp_c frgt crgt f * hz\<^sub>+)"
+proof-
+  from rgt relate_rgt_combine_correctness_time
+    have rgt_correctness: "relate_rgt_correctness frgt crgt (calls_names_set f)"
+      and rgt_time: "relate_rgt_time frgt crgt (calls_names_set f)" by simp_all
+
+  from bigstep invar HOL_TCN_Timing.bigstep_trace_end obtain hk hT
+    where 5: "HOL_TCN_Timing.interp_trace frgt hk hT = hz"
+    and htrace: "(f, frgt) \<turnstile> (t, vs_b, vs_arg) \<Rightarrow>\<^bsup>(hk, hT)\<^esup>  hv" by blast
+
+  from calls_bound rgt_correctness have
+      "relate_rgt_correctness frgt crgt (calls_names_set t)"
+    unfolding relate_rgt_correctness_def by blast
+  with invar size_bound htrace prereq rgt_correctness state compiler_rel_trace_end obtain k cT s'
+    where ctrace: "to_imp_tc f_args crgt [] r [] f \<turnstile>(to_imp_tc f_args crgt bs r keep t, s) \<Rightarrow>\<^bsup>(k, cT)\<^esup> s'"
+    and rel_tr: "rel_trace_to_end crgt r hT hv cT s'"
+    and rel_tr_time: "rel_trace_time f hk k" by blast
+
+  from ctrace IMP_Tailcall_Traces.trace_end_bigstep obtain z
+    where "IMP_Tailcall_Traces.interp_trace k cT z"
+    and cexec: "to_imp_tc f_args crgt [] r [] f \<turnstile> (to_imp_tc f_args crgt bs r keep t, s) \<Rightarrow>\<^bsup>z :: nat\<^esup> s'" by blast
+  then obtain cTz
+    where 1: "z = k + cTz"
+      and cTz: "IMP_Tailcall_Traces.interp_trace 0 cT cTz"
+    by (metis IMP_Tailcall_Traces.interp_trace_def add.commute add_0)
+
+
+  show ?thesis
+  proof (rule HOL_Nat_To_IMP.terminates_with_res_time_IMP_TailcallI[OF cexec])
+    from rel_tr show "s' r = hv" unfolding rel_trace_to_end_def by blast
+  next
+    from rel_tr_time have 2: "k \<le> 35 * HOL_TCN_Timing.num_commands f * (hk + 1)"
+      unfolding rel_trace_time_def by blast
+
+    from calls_bound htrace htrace_to_end_calls_in have calls_in: "set (map fst hT) \<subseteq> calls_names_set f" by blast
+
+    from calls_in some_constant_trace_to_term have some_const:
+      "some_constant_fs frgt crgt (map fst hT) \<le> some_constant_t frgt crgt f" by blast
+
+    from rel_tr have "rel_trace_calls crgt hT cT" unfolding rel_trace_to_end_def by blast
+    moreover with calls_in rgt_time have "relate_rgt_time frgt crgt (set (map fst hT))"
+      unfolding relate_rgt_time_def by blast
+    ultimately have x:
+      "cTz \<le> some_constant_fs frgt crgt (map fst hT) * (length hT + HOL_TCN_Timing.interp_trace frgt 0 hT)"
+      using rel_trace_time interp_trace_determ cTz by blast
+    then have 3: "cTz \<le> some_constant_t frgt crgt f * (length hT + HOL_TCN_Timing.interp_trace frgt 0 hT)"
+      using some_const mult_le_mono1 le_trans by blast
+
+    from size_bound htrace htrace_to_end_length_bound have 4:
+        "length hT \<le> HOL_TCN_Timing.num_commands f * (hk + 1)"
+      by fastforce
+
+    from 1 have "z = k + cTz" .
+    also from 2 3 have
+      "... \<le> 35 * HOL_TCN_Timing.num_commands f * (hk + 1) +
+             some_constant_t frgt crgt f * (length hT + HOL_TCN_Timing.interp_trace frgt 0 hT)" by linarith
+    also from 4 have
+      "... \<le> 35 * HOL_TCN_Timing.num_commands f * (hk + 1) +
+             some_constant_t frgt crgt f *
+              (HOL_TCN_Timing.num_commands f * (hk + 1) + HOL_TCN_Timing.interp_trace frgt 0 hT)" by simp
+    also have
+      "... = ((35 + some_constant_t frgt crgt f) * HOL_TCN_Timing.num_commands f) * hk +
+             some_constant_t frgt crgt f * HOL_TCN_Timing.interp_trace frgt 0 hT +
+             ((35 + some_constant_t frgt crgt f) * HOL_TCN_Timing.num_commands f)" by algebra
+    also have
+      "... \<le> ((35 + some_constant_t frgt crgt f) * HOL_TCN_Timing.num_commands f) * hk +
+             ((35 + some_constant_t frgt crgt f) * HOL_TCN_Timing.num_commands f) * HOL_TCN_Timing.interp_trace frgt 0 hT +
+             ((35 + some_constant_t frgt crgt f) * HOL_TCN_Timing.num_commands f)"
+    proof-
+      have "some_constant_t frgt crgt f \<le> 35 + some_constant_t frgt crgt f" by linarith
+      also with num_commands_nonzero have "... \<le> (35 + some_constant_t frgt crgt f) * HOL_TCN_Timing.num_commands f" by simp
+      finally show ?thesis by simp
+    qed
+    also have
+      "... = ((35 + some_constant_t frgt crgt f) * HOL_TCN_Timing.num_commands f) * (hk + HOL_TCN_Timing.interp_trace frgt 0 hT) +
+             ((35 + some_constant_t frgt crgt f) * HOL_TCN_Timing.num_commands f)" by algebra
+    also have
+      "... \<le> (2 * (35 + some_constant_t frgt crgt f) * HOL_TCN_Timing.num_commands f) * (hk + HOL_TCN_Timing.interp_trace frgt 0 hT)\<^sub>+"
+      using max1_abc by (metis mult.assoc mult_2)
+    also from 5 have "... = the_hol_to_imp_c frgt crgt f * hz\<^sub>+" unfolding the_hol_to_imp_c_def by (metis add.commute interp_trace_n)
+    finally show "z \<le> the_hol_to_imp_c frgt crgt f * hz\<^sub>+" .
+  qed
+qed
 
 
 theorem compiler_correct:
-  assumes "invar t"
-  assumes "\<And>vs_arg. length vs_arg = length f_args \<Longrightarrow> (t,frgt) \<turnstile> (t,[],vs_arg) \<Rightarrow>\<^bsup> T_f vs_arg :: nat \<^esup> f vs_arg"
-  assumes "compiler_invar crgt f_args [] keep t"
-  assumes "compiler_invar crgt f_args [] [] t" (* todo: needed ? *)
-  assumes "relate_rgt_correctness frgt crgt (calls_r t)"
-  (* assumes "relate_exec_state f_args [] vs_arg vs_b s" *)
+  assumes invar: "invar t"
+  assumes bigstep: "\<And>vs_arg. length vs_arg = length f_args \<Longrightarrow> (t,frgt) \<turnstile> (t,[],vs_arg) \<Rightarrow>\<^bsup> T_f vs_arg :: nat \<^esup> f vs_arg"
+  assumes rgt: "relate_rgt frgt crgt (calls_names_set t)"
+  assumes prereq: "compiler_invar crgt f_args [] [] t"
+  shows
+    "terminates_with_res_time_order_IMP_Tailcall
+      (to_imp_tc f_args crgt [] r [] t) (to_imp_tc f_args crgt [] r [] t) r
+      (f o lookups f_args) (T_f o lookups f_args)"
+proof-
+  let ?T = "\<lambda>s. the_hol_to_imp_c frgt crgt t * (T_f (lookups f_args s))\<^sub>+"
+
+  show ?thesis
+  proof
+    fix s
+    let ?vs_arg = "lookups f_args s"
+    have bound:
+      "HOL_TCN_Timing.num_commands t \<le> HOL_TCN_Timing.num_commands t"
+      "calls_names_set t \<subseteq> calls_names_set t" by simp_all
+    from bigstep have bigstep': "(t,frgt) \<turnstile> (t,[],?vs_arg) \<Rightarrow>\<^bsup> T_f ?vs_arg :: nat \<^esup> f ?vs_arg" by simp
+    have state: "relate_exec_state f_args [] (lookups f_args s) [] s" unfolding relate_exec_state_def by blast
+
+    from compiler_rel_time_end invar bound bigstep' rgt prereq state
+    show "HOL_Nat_To_IMP.terminates_with_res_time_IMP_Tailcall
+           (to_imp_tc f_args crgt [] r [] t) (to_imp_tc f_args crgt [] r [] t) s r
+           ((f o lookups f_args) s) (?T s)" by simp
+    next
+      show "?T \<le>\<^sub>c T_f o lookups f_args" by fastforce
+  qed
+qed
+
+corollary compiler_correct':
+  assumes invar: "invar t" and can_term: "can_terminate t"
+  assumes bigstep: "\<And>vs_arg. length vs_arg = length f_args \<Longrightarrow> (t,frgt) \<turnstile> (t,[],vs_arg) \<Rightarrow>\<^bsup> T_f vs_arg :: nat \<^esup> f vs_arg"
+  assumes rgt: "relate_rgt frgt crgt (calls_names_set t)"
+  assumes prereq: "compiler_invar crgt f_args [] [] t"
   shows
     "terminates_with_res_time_order_IMP
-      (tailcall_to_IMP (to_imp_tc f_args crgt [] r keep t)) r
+      (tailcall_to_IMP (to_imp_tc f_args crgt [] r [] t)) r
       (f o lookups f_args) (T_f o lookups f_args)"
-  sorry
+  using
+    to_imp_invar[OF invar] to_imp_r_in_vars[OF can_term]
+    compiler_correct[OF invar bigstep rgt prereq]
+    terminates_with_res_time_order_IMP_Tailcall_to_IMP
+  by blast
 
 
 
+(* primitives: +, - *)
 
-term HOL_TCN_Timing.interp_trace
-term IMP_Tailcall_Traces.interp_trace
+lemma terminates_with_res_const:
+  assumes "\<And>s. (c, s) \<Rightarrow>\<^bsup> z :: nat \<^esup> s' s"
+  assumes "\<And>s. (s' s) r = (f o lookups args) s"
+  assumes "\<And>s. T_f s = 0"
+  shows "terminates_with_res_time_order_IMP c r (f o lookups args) T_f"
+proof (rule terminates_with_res_time_order_IMP_I)
+  show "(\<lambda>_. z) \<le>\<^sub>c T_f" using assms by fastforce
+next
+  fix s show "HOL_Nat_To_IMP.terminates_with_res_time_IMP c s r ((f o lookups args) s) z"
+    apply (rule HOL_Nat_To_IMP.terminates_with_res_time_IMPI)
+    using assms by blast+
+qed
 
-(* lemma "\<exists>c. \<forall>s. tstruct_k t_imp + something \<le> c * interp_time frgt (time_to_tail frgt vs_b vs_arg t)" oops *)
-(* in fact, we can calculate c as the max of the structural-constant-factor and all T_f_const-ants or so *)
+abbreviation "mk_frgt1 f T_f \<equiv> ((f, T_f) :: fun_registry_entry)"
+abbreviation "mk_crgt1 args tcom r \<equiv> ((args, tcom, r) :: com_registry_entry)"
+
+
+definition [simp]: "plus_name \<equiv> ''+''"
+definition [simp]: "(plus_f :: nat list \<Rightarrow> nat) \<equiv> (\<lambda>xs. xs ! 0 + xs ! 1)"
+definition [simp]: "(plus_T_f :: nat list \<Rightarrow> nat) \<equiv> (\<lambda>xs. 0)"
+definition [simp]: "plus_args \<equiv> [''+.args.x'', ''+.args.y'']"
+definition [simp]: "plus_com \<equiv> Assign ''+.ret'' (V ''+.args.x'' \<oplus>  V ''+.args.y'')"
+definition [simp]: "plus_r \<equiv> ''+.ret''"
+
+lemma plus_correctness:
+  "terminates_with_res_time_order_IMP plus_com plus_r (plus_f o lookups plus_args) (plus_T_f o lookups plus_args)"
+  by (rule terminates_with_res_const) fastforce+
+
+definition [simp]: "plus_frgt_upd upd = upd(plus_name := mk_frgt1 plus_f plus_T_f)"
+definition [simp]: "plus_crgt_upd upd = upd(plus_name := mk_crgt1 plus_args plus_com plus_r)"
+
+(* callers will use this; make it general since each caller will have their own f/crgt *)
+lemma plus_correctness_rgt:
+  assumes "frgt plus_name = plus_frgt_upd null plus_name"
+  assumes "crgt plus_name = plus_crgt_upd null plus_name"
+  shows "relate_rgt_f frgt crgt plus_name"
+  unfolding relate_rgt_f_def
+  using assms plus_correctness by simp
+
+
+definition [simp]: "minus_name \<equiv> ''-''"
+definition [simp]: "(minus_f :: nat list \<Rightarrow> nat) \<equiv> (\<lambda>xs. xs ! 0 - xs ! 1)"
+definition [simp]: "(minus_T_f :: nat list \<Rightarrow> nat) \<equiv> (\<lambda>xs. 0)"
+definition [simp]: "minus_args \<equiv> [''-.args.x'', ''-.args.y'']"
+definition [simp]: "minus_com \<equiv> Assign ''-.ret'' (V ''-.args.x'' \<ominus>  V ''-.args.y'')"
+definition [simp]: "minus_r \<equiv> ''-.ret''"
+
+lemma minus_correctness:
+  "terminates_with_res_time_order_IMP minus_com minus_r (minus_f o lookups minus_args) (minus_T_f o lookups minus_args)"
+  by (rule terminates_with_res_const) fastforce+
+
+definition [simp]: "minus_frgt_upd upd = upd(minus_name := mk_frgt1 minus_f minus_T_f)"
+definition [simp]: "minus_crgt_upd upd = upd(minus_name := mk_crgt1 minus_args minus_com minus_r)"
+
+lemma minus_correctness_rgt:
+  assumes "frgt minus_name = minus_frgt_upd null minus_name"
+  assumes "crgt minus_name = minus_crgt_upd null minus_name"
+  shows "relate_rgt_f frgt crgt minus_name"
+  unfolding relate_rgt_f_def
+  using assms minus_correctness by simp
+
+
+(* using the compiler *)
+
+abbreviation (input) revapp (infixl "|>" 55) where "revapp x f \<equiv> f x"
+
+lemma eq_on_lookup:
+  fixes frgt :: fun_registry and f_frgt :: fun_registry
+  assumes "frgt = f_frgt on f_aux"
+  assumes "g \<in> f_aux"
+  shows "frgt g = f_frgt g"
+  using assms by blast
+
+lemma bigstep_start:
+  assumes "f \<equiv> f_def"
+  assumes "(f, frgt) \<turnstile> (f_def, bs, xs)\<Rightarrow>\<^bsup> eq_T_f xs :: nat \<^esup> eq_f xs"
+  shows "(f, frgt) \<turnstile> (f, bs, xs)\<Rightarrow>\<^bsup> eq_T_f xs :: nat \<^esup> eq_f xs"
+  using assms by simp
+
+lemma forall_i_cons:
+  assumes "P 0 x"
+  assumes "\<forall>i < length xs. P (Suc i) (xs ! i)"
+  shows "\<forall>i < length (x # xs). P i ((x # xs) ! i)"
+  using assms by (simp add: All_less_Suc2)
+
+lemma relate_rgt_unfold:
+  assumes "f_aux = fs"
+  assumes "\<forall>f \<in> fs. relate_rgt_f frgt crgt f"
+  shows "relate_rgt frgt crgt f_aux"
+  using assms unfolding relate_rgt_def by blast
+
+lemma hbig_step_t_hArg':
+  assumes "z = 0"
+  assumes "v = (xs ! n)"
+  assumes "n < length xs"
+  shows "(f, frgt) \<turnstile> (hArg n, bs, xs) \<Rightarrow>\<^bsup>z :: nat\<^esup> v"
+  using assms by blast
+
+lemma hbig_step_t_hLetBound':
+  assumes "z = 0"
+  assumes "v = (bs ! n)"
+  assumes "n < length bs"
+  shows "(f, frgt) \<turnstile> (hLetBound n, bs, xs) \<Rightarrow>\<^bsup>z :: nat\<^esup> v"
+  using assms by blast
+
+lemma hbig_step_t_hNumber':
+  assumes "z = 0"
+  assumes "v = n"
+  shows "(f, frgt) \<turnstile> (hNumber n, bs, xs) \<Rightarrow>\<^bsup>z :: nat\<^esup> v"
+  using assms by blast
+
+lemma hbig_step_t_hIf':
+  assumes "(f, frgt) \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup>x :: nat\<^esup> v1"
+  assumes "v1 \<noteq> 0 \<Longrightarrow> (f, frgt) \<turnstile>(t2, bs, xs) \<Rightarrow>\<^bsup>y :: nat\<^esup> v"
+  assumes "v1 = 0 \<Longrightarrow> (f, frgt) \<turnstile>(t3, bs, xs) \<Rightarrow>\<^bsup>y :: nat\<^esup> v"
+  assumes "z = x + y"
+  shows "(f, frgt) \<turnstile> (IF t1\<noteq>0 THEN t2 ELSE t3, bs, xs) \<Rightarrow>\<^bsup>z :: nat\<^esup> v"
+proof (cases "v1 = 0")
+  case False
+  show ?thesis
+  proof (rule hbig_step_t.hIfTrue)
+    show "(f, frgt) \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup>x\<^esup> v1" using assms(1) .
+    show "(f, frgt) \<turnstile> (t2, bs, xs) \<Rightarrow>\<^bsup>y\<^esup>  v" using False assms(2) by blast
+  qed (simp_all add: False assms(4))
+next
+  case True
+  show ?thesis
+  proof (rule hbig_step_t.hIfFalse)
+    show "(f, frgt) \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup>x\<^esup> v1" using assms(1) .
+    show "(f, frgt) \<turnstile> (t3, bs, xs) \<Rightarrow>\<^bsup>y\<^esup>  v" using True assms(3) by blast
+  qed (simp_all add: True assms(4))
+qed
+
+
+(* equality *)
+
+(* the following comments refer to hypothetical future work to embed HOL functions to HOL-TCNat
+    and prove their relatedness lemmas automatically *)
+
+(* a function and its timing function are provided by the user *)
+fun eq :: "nat \<Rightarrow> nat \<Rightarrow> nat" where
+  "eq x y = (let a = x - y in let b = y - x in if a + b \<noteq> 0 then 0 else 1)"
+time_fun eq
+
+(* the corresponding list-based functions are generated *)
+definition [simp]: "(eq_f :: nat list \<Rightarrow> nat) \<equiv> (\<lambda>xs. eq (xs ! 0) (xs ! 1))"
+definition [simp]: "(eq_T_f :: nat list \<Rightarrow> nat) \<equiv> (\<lambda>xs. T_eq (xs ! 0) (xs ! 1))"
+
+(* the function is embedded into an HOL-TCNat term *)
+definition [simp]: "eq_hol_tcn \<equiv>
+  LET hCall ''-'' [hArg 0, hArg 1] IN
+  LET hCall ''-'' [hArg 1, hArg 0] IN
+  IF hCall ''+'' [hLetBound 1, hLetBound 0] \<noteq>0 THEN hNumber 0 ELSE hNumber 1"
+
+(* the following auxiliary data is generated *)
+
+(* set of called functions *)
+definition [simp]: "eq_aux \<equiv> calls_names_set eq_hol_tcn"
+(* note: *) lemma "eq_aux = {''+'', ''-''}" by auto
+
+(* f/crgt for called functions *)
+definition [simp]: "eq_frgt \<equiv> null |> plus_frgt_upd |> minus_frgt_upd"
+definition [simp]: "eq_crgt \<equiv> null |> plus_crgt_upd |> minus_crgt_upd"
+
+(* name/arguments/return register *)
+definition [simp]: "eq_name \<equiv> ''=''"
+definition [simp]: "eq_args \<equiv> [''=.args.x'', ''=.args.y'']"
+definition [simp]: "eq_r \<equiv> ''=.ret''"
+
+(* finally, the HOL-TCNat term is compiled *)
+definition [simp]: "eq_tcom \<equiv> to_imp_tc eq_args eq_crgt [] eq_r [] eq_hol_tcn"
+definition [simp]: "eq_com \<equiv> tailcall_to_IMP eq_tcom"
+
+(* used by any callers of eq *)
+definition [simp]: "eq_frgt_upd upd = upd(eq_name := mk_frgt1 eq_f eq_T_f)"
+definition [simp]: "eq_crgt_upd upd = upd(eq_name := mk_crgt1 eq_args eq_com eq_r)"
+
+
+(* just for show ;) *)
+value eq_tcom
+(* value eq_com \<rightarrow> fails, why? *)
+
+(* this proof gets generated; instantiating frgt with eq_frgt provides a "concrete" registry,
+    but morally the generalization tells us we only depend on functions we actually call *)
+(* note that here we "guess" the correct values for schematic goals, because Isar forces us to,
+   a generated proof would need to leave them schematic and then fill them in at the end *)
+lemma eq_hol_tcn_correctness:
+  assumes rgt: "frgt = eq_frgt on eq_aux"
+  assumes *: "length xs = length eq_args"
+  shows "(eq_hol_tcn, frgt) \<turnstile> (eq_hol_tcn, [], xs)\<Rightarrow>\<^bsup> eq_T_f xs :: nat \<^esup> eq_f xs"
+proof-
+  have frgt:
+      "frgt ''+'' = mk_frgt1 plus_f plus_T_f"
+      "frgt ''-'' = mk_frgt1 minus_f minus_T_f"
+    using eq_on_lookup[of frgt eq_frgt, OF rgt] by auto
+
+  show "(eq_hol_tcn, frgt) \<turnstile> (eq_hol_tcn, [], xs)\<Rightarrow>\<^bsup> eq_T_f xs :: nat \<^esup> eq_f xs"
+  proof (rule bigstep_start[OF eq_hol_tcn_def])
+    show
+      "(eq_hol_tcn, frgt)
+       \<turnstile> (LET hCall ''-'' [hArg 0, hArg 1] IN LET hCall ''-'' [hArg 1, hArg 0] IN
+          IF hCall ''+'' [hLetBound 1, hLetBound 0]\<noteq>0 THEN hNumber 0 ELSE hNumber 1,
+          [], xs)
+       \<Rightarrow>\<^bsup>eq_T_f xs\<^esup>  eq_f xs"
+    proof (rule hbig_step_t.hLet)
+      show "(eq_hol_tcn, frgt) \<turnstile> (hCall ''-'' [hArg 0, hArg 1], [], xs) \<Rightarrow>\<^bsup>0\<^esup> xs ! 0 - xs ! 1"
+      proof (rule hbig_step_t.hCall)
+        show "\<forall>i<length [hArg 0, hArg 1]. (eq_hol_tcn, frgt) \<turnstile> ([hArg 0, hArg 1] ! i, [], xs) \<Rightarrow>\<^bsup> [0, 0] ! i\<^esup>  [xs ! 0, xs ! 1] ! i"
+        proof (repeat \<open>rule forall_i_cons\<close>)
+          show "(eq_hol_tcn, frgt) \<turnstile> (hArg 0, [], xs) \<Rightarrow>\<^bsup>[0, 0] ! 0\<^esup>  [xs ! 0, xs ! 1] ! 0"
+          proof (rule hbig_step_t_hArg') qed (auto simp add: *)
+          show "(eq_hol_tcn, frgt) \<turnstile> (hArg 1, [], xs) \<Rightarrow>\<^bsup>[0, 0] ! Suc 0\<^esup>  [xs ! 0, xs ! 1] ! Suc 0"
+          proof (rule hbig_step_t_hArg') qed (auto simp add: *)
+        qed simp
+      qed (simp_all add: frgt)
+      show
+        "(eq_hol_tcn, frgt)
+         \<turnstile> (LET hCall ''-'' [hArg 1, hArg 0] IN
+            IF hCall ''+'' [hLetBound 1, hLetBound 0]\<noteq>0 THEN hNumber 0 ELSE hNumber 1,
+            [xs ! 0 - xs ! 1], xs)
+         \<Rightarrow>\<^bsup>0\<^esup>  eq_f xs"
+      proof (rule hbig_step_t.hLet)
+        show "(eq_hol_tcn, frgt) \<turnstile> (hCall ''-'' [hArg 1, hArg 0], [xs ! 0 - xs ! 1], xs) \<Rightarrow>\<^bsup>0\<^esup> xs ! 1 - xs ! 0"
+        proof (rule hbig_step_t.hCall)
+          show "\<forall>i<length [hArg 1, hArg 0]. (eq_hol_tcn, frgt) \<turnstile> ([hArg 1, hArg 0] ! i, [xs ! 0 - xs ! 1], xs) \<Rightarrow>\<^bsup> [0, 0] ! i\<^esup>  [xs ! 1, xs ! 0] ! i"
+          proof (repeat \<open>rule forall_i_cons\<close>)
+            show "(eq_hol_tcn, frgt) \<turnstile> (hArg 1, [xs ! 0 - xs ! 1], xs) \<Rightarrow>\<^bsup>[0, 0] ! 0\<^esup>  [xs ! 1, xs ! 0] ! 0"
+            proof (rule hbig_step_t_hArg') qed (auto simp add: *)
+            show "(eq_hol_tcn, frgt) \<turnstile> (hArg 0, [xs ! 0 - xs ! 1], xs) \<Rightarrow>\<^bsup>[0, 0] ! Suc 0\<^esup>  [xs ! 1, xs ! 0] ! Suc 0"
+            proof (rule hbig_step_t_hArg') qed (auto simp add: *)
+          qed simp
+        qed (simp_all add: frgt)
+        show
+          "(eq_hol_tcn, frgt)
+           \<turnstile> (IF hCall ''+'' [hLetBound 1, hLetBound 0]\<noteq>0 THEN hNumber 0 ELSE hNumber 1,
+              [xs ! 1 - xs ! 0, xs ! 0 - xs ! 1], xs)
+           \<Rightarrow>\<^bsup>0\<^esup>  eq_f xs"
+        proof (rule hbig_step_t_hIf')
+          show
+            "(eq_hol_tcn, frgt)
+             \<turnstile> (hCall ''+'' [hLetBound 1, hLetBound 0],
+                [xs ! 1 - xs ! 0, xs ! 0 - xs ! 1], xs)
+             \<Rightarrow>\<^bsup>0\<^esup> (xs ! 0 - xs ! 1) + (xs ! 1 - xs ! 0)"
+          proof (rule hbig_step_t.hCall)
+            show "\<forall>i<length [hLetBound 1, hLetBound 0].
+                    (eq_hol_tcn, frgt) \<turnstile> ([hLetBound 1, hLetBound 0] ! i,
+                      [xs ! 1 - xs ! 0, xs ! 0 - xs ! 1], xs)
+                    \<Rightarrow>\<^bsup>[0, 0] ! i\<^esup> [xs ! 0 - xs ! 1, xs ! 1 - xs ! 0] ! i"
+            proof (repeat \<open>rule forall_i_cons\<close>)
+              show "(eq_hol_tcn, frgt) \<turnstile> (hLetBound 1,
+                      [xs ! 1 - xs ! 0, xs ! 0 - xs ! 1], xs)
+                    \<Rightarrow>\<^bsup>[0, 0] ! 0\<^esup>  [xs ! 0 - xs ! 1, xs ! 1 - xs ! 0] ! 0"
+              proof (rule hbig_step_t_hLetBound') qed (auto simp add: *)
+              show "(eq_hol_tcn, frgt) \<turnstile> (hLetBound 0,
+                      [xs ! 1 - xs ! 0, xs ! 0 - xs ! 1], xs)
+                    \<Rightarrow>\<^bsup>[0, 0] ! Suc 0\<^esup>  [xs ! 0 - xs ! 1, xs ! 1 - xs ! 0] ! Suc 0"
+              proof (rule hbig_step_t_hLetBound') qed (auto simp add: *)
+            qed simp
+          qed (simp_all add: frgt)
+        next
+          assume **: "xs ! 0 - xs ! 1 + (xs ! 1 - xs ! 0) \<noteq> 0"
+          show "(eq_hol_tcn, frgt) \<turnstile> (hNumber 0, [xs ! 1 - xs ! 0, xs ! 0 - xs ! 1], xs) \<Rightarrow>\<^bsup>0\<^esup> eq_f xs"
+          proof (rule hbig_step_t_hNumber')
+            show "eq_f xs = 0" using ** by auto
+          qed simp
+        next
+          assume **: "xs ! 0 - xs ! 1 + (xs ! 1 - xs ! 0) = 0"
+          show "(eq_hol_tcn, frgt) \<turnstile> (hNumber 1, [xs ! 1 - xs ! 0, xs ! 0 - xs ! 1], xs) \<Rightarrow>\<^bsup>0\<^esup> eq_f xs"
+          proof (rule hbig_step_t_hNumber')
+            show "eq_f xs = 1" using ** by auto
+          qed simp
+        qed simp
+      qed simp
+    qed simp
+  qed
+qed
+
+(* now the compiler correctness lemma shall be used! *)
+lemma eq_correctness:
+  "terminates_with_res_time_order_IMP eq_com eq_r (eq_f o lookups eq_args) (eq_T_f o lookups eq_args)"
+  unfolding eq_com_def eq_tcom_def
+proof (rule compiler_correct')
+  (* this is the correctness lemma for HOL-TCN *)
+  fix vs_arg :: "nat list"
+  assume "length vs_arg = length eq_args"
+  then show "(eq_hol_tcn, eq_frgt) \<turnstile> (eq_hol_tcn, [], vs_arg) \<Rightarrow>\<^bsup>eq_T_f vs_arg\<^esup>  eq_f vs_arg"
+    using eq_hol_tcn_correctness by blast
+next
+  (* here we use correctness lemmas for each called function *)
+  show "relate_rgt eq_frgt eq_crgt (calls_names_set eq_hol_tcn)"
+    apply (rule relate_rgt_unfold) apply simp
+    using plus_correctness_rgt minus_correctness_rgt by fastforce
+next
+  (* these last three goals are just rewriting/simplifying function definitions *)
+  show "compiler_invar eq_crgt eq_args [] [] eq_hol_tcn"
+    unfolding compiler_invar_def call_registers_def calls'_def calls_n_def by simp
+  show "HOL_TCN_Timing.invar eq_hol_tcn" "can_terminate eq_hol_tcn" by simp_all
+qed
+
+lemma eq_correctness_rgt:
+  assumes "frgt eq_name = eq_frgt_upd null eq_name"
+  assumes "crgt eq_name = eq_crgt_upd null eq_name"
+  shows "relate_rgt_f frgt crgt eq_name"
+proof-
+  from assms(1) have *: "frgt eq_name = mk_frgt1 eq_f eq_T_f"
+    by (metis eq_frgt_upd_def fun_upd_same)
+  from assms(2) have **: "crgt eq_name = mk_crgt1 eq_args eq_com eq_r"
+    by (metis eq_crgt_upd_def fun_upd_same)
+  show ?thesis
+    unfolding relate_rgt_f_def using eq_correctness * ** by (metis split_pairs)
+  (* perhaps need a way to make this more automatic *)
+qed
+
 
 end

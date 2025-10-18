@@ -72,6 +72,40 @@ proof (induction xs)
   case (Cons a xs) then show ?case using max_list0_cons by simp
 qed
 
+lemma max_list0_elem_bound: "x \<in> set xs \<Longrightarrow> x \<le> max_list0 xs"
+proof (induction xs arbitrary: x)
+  case (Cons y xs) show ?case
+  proof (cases "x = y")
+    assume "x \<noteq> y"
+    with \<open>x \<in> set (y # xs)\<close> have "x \<in> set xs" by simp
+    with Cons.IH have "x \<le> max_list0 xs" by blast
+    then show "x \<le> max_list0 (y # xs)" using max_list0_cons by simp
+  qed (simp_all add: max_list0_cons)
+qed simp
+
+lemma max_list0_elem: "xs \<noteq> [] \<Longrightarrow> max_list0 xs \<in> set xs"
+proof (induction xs rule: list_nonempty_induct)
+  case (cons x xs)
+  consider "max_list0 (x # xs) = x" | "max_list0 (x # xs) = max_list0 xs"
+    using max_list0_cons by fastforce
+  then show ?case by cases (simp_all add: cons)
+qed (simp add: max_list0_def)
+
+lemma max_list0_subset:
+  assumes "set xs \<subseteq> set ys"
+  shows "max_list0 xs \<le> max_list0 ys"
+proof (cases "xs = []")
+  assume "xs \<noteq> []"
+  with max_list0_elem have "max_list0 xs \<in> set xs" by blast
+  with assms have "max_list0 xs \<in> set ys" by blast
+  with max_list0_elem_bound show "max_list0 xs \<le> max_list0 ys" by blast
+qed (simp add: max_list0_def)
+
+lemma max_list0_set:
+  assumes "set xs = set ys"
+  shows "max_list0 xs = max_list0 ys"
+  using max_list0_subset[of xs ys] max_list0_subset[of ys xs] assms by auto
+
 
 (* max1 *)
 
@@ -90,6 +124,26 @@ lemma max1_zero[simp]: "0\<^sub>+ = 1" unfolding max1_def by simp
 lemma max1_plus1[simp]: "x \<noteq> 0 \<Longrightarrow> (x + y)\<^sub>+ = x + y" by simp
 lemma max1_plus2[simp]: "y \<noteq> 0 \<Longrightarrow> (x + y)\<^sub>+ = x + y" by simp
 
+lemma max1I (* [intro] *): (* why does this break things as an intro rule? *)
+  assumes "x = 0 \<Longrightarrow> P 1" "x \<noteq> 0 \<Longrightarrow> P x"
+  shows "P (x\<^sub>+)"
+  using assms by (cases "x = 0") simp_all
+
+lemma max1E (* [elim] *): (* also breaks things *)
+  assumes "P (x\<^sub>+)" "P 1 \<Longrightarrow> Q 0" "\<And>x. x \<noteq> 0 \<Longrightarrow> P x \<Longrightarrow> Q x"
+  shows "Q x"
+  using assms by (cases "x = 0") auto
+
+lemma max1_abc: "a * x + b \<le> (a + b) * x\<^sub>+"
+proof (rule max1I)
+  assume "x \<noteq> 0"
+  then have "a * x + b \<le> a * x + b * x" by simp
+  also have "... = (a + b) * x" by algebra
+  finally show "a * x + b \<le> (a + b) * x" .
+qed simp
+
+lemma max1_cab: "c * x\<^sub>+ \<le> c * x + c"
+  by (rule max1I) auto
 
 
 end
