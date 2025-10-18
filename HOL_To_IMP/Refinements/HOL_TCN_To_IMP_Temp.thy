@@ -30,9 +30,15 @@ lemma disjoint_subset2:
 lemma fresh_not_in_stale_subset: assumes "set stale' \<subseteq> set stale" shows "fresh stale name \<notin> set stale'"
   using fresh_not_in_stale assms by blast
 
-fun tail_has_n_args where
-  "tail_has_n_args _ = True"
-
+fun tails_have_n_args :: "nat \<Rightarrow> thol \<Rightarrow> bool" where
+  "tails_have_n_args n (LET t1 IN t2) \<longleftrightarrow> tails_have_n_args n t1 \<and> tails_have_n_args n t2" |
+  "tails_have_n_args _ (hLetBound _) = True" |
+  "tails_have_n_args _ (hArg _) = True" |
+  "tails_have_n_args _ (hNumber _) = True" |
+  "tails_have_n_args n (IF t1\<noteq>0 THEN t2 ELSE t3) \<longleftrightarrow>
+    tails_have_n_args n t1 \<and> tails_have_n_args n t2 \<and> tails_have_n_args n t3" |
+  "tails_have_n_args n (hCall f ts) = list_all (tails_have_n_args n) ts" |
+  "tails_have_n_args n (hTAIL ts) \<longleftrightarrow> length ts = n \<and> list_all (tails_have_n_args n) ts"
 
 definition "compiler_invar crgt f_args bs keep t \<longleftrightarrow>
   HOL_TCN_Timing.invar t
@@ -43,7 +49,8 @@ definition "compiler_invar crgt f_args bs keep t \<longleftrightarrow>
   \<and> set keep \<inter>\<^sub>\<emptyset> set f_args
   \<and> set keep \<inter>\<^sub>\<emptyset> set (call_registers crgt t)
   \<and> (\<forall>g\<in>set (calls_names t). distinct (args_from_crgt crgt g))
-  \<and> (\<forall>(g,n)\<in>set (calls_n t). n = length (args_from_crgt crgt g))"
+  \<and> (\<forall>(g,n)\<in>set (calls_n t). n = length (args_from_crgt crgt g))
+  \<and> tails_have_n_args (length f_args) t"
 (*
 - The term must be tail-recursive, i.e. satisfy the invariant.
 
@@ -95,6 +102,7 @@ lemma compiler_invarE[elim]:
     "set keep \<inter>\<^sub>\<emptyset> set (call_registers crgt t)"
     "\<And>g. g \<in> set (calls_names t) \<Longrightarrow> distinct (args_from_crgt crgt g)" (* what's the canonical way to write this? *)
     "\<And>g n. (g,n)\<in>set (calls_n t) \<Longrightarrow> n = length (args_from_crgt crgt g)"
+    "tails_have_n_args (length f_args) t"
   using assms unfolding compiler_invar_def by auto
 
 lemma compiler_invarI[intro]:
@@ -108,12 +116,14 @@ lemma compiler_invarI[intro]:
     "set keep \<inter>\<^sub>\<emptyset> set (call_registers crgt t)"
     "\<And>g. g \<in> set (calls_names t) \<Longrightarrow> distinct (args_from_crgt crgt g)"
     "\<And>g n. (g,n)\<in>set (calls_n t) \<Longrightarrow> n = length (args_from_crgt crgt g)"
+    "tails_have_n_args (length f_args) t"
   shows "compiler_invar crgt f_args bs keep t"
   using assms unfolding compiler_invar_def by blast
 
 lemma compiler_invar_subset:
   assumes invar: "invar t"
-  assumes calls: "set (calls t) \<subseteq> set (calls t')" (* subset on calls_n would be enough... *)
+  assumes tails: "tails_have_n_args (length f_args) t"
+  assumes calls: "set (calls t) \<subseteq> set (calls t')" (* subset on calls_names would be enough... *)
   assumes comp_invar: "compiler_invar crgt f_args bs keep t'"
   shows "compiler_invar crgt f_args bs keep t"
 proof
@@ -132,7 +142,7 @@ next
   fix g n assume "(g,n) \<in> set (calls_n t)"
   then have "(g,n) \<in> set (calls_n t')" using calls calls_n_set by auto
   then show "n = length (args_from_crgt crgt g)" using comp_invar by auto
-qed (auto simp add: invar compiler_invarE[OF comp_invar])
+qed (auto simp add: invar tails compiler_invarE[OF comp_invar])
 
 lemma compiler_invar_let:
   fixes crgt f_args bs keep t1 t2
@@ -142,11 +152,13 @@ lemma compiler_invar_let:
     "compiler_invar crgt f_args bs keep t1"
     "compiler_invar crgt f_args (r # bs) (r # keep) t2"
 proof -
-  have "invar t1" using comp_invar unfolding compiler_invar_def by simp
+  have "HOL_TCN_Timing.invar t1" "tails_have_n_args (length f_args) t1"
+    using compiler_invarE[OF comp_invar] by simp_all
   then show "compiler_invar crgt f_args bs keep t1"
     using comp_invar compiler_invar_subset[where t' = "LET t1 IN t2"] by simp
 next
-  have "invar t2" using comp_invar unfolding compiler_invar_def by simp
+  have "HOL_TCN_Timing.invar t2" "tails_have_n_args (length f_args) t2"
+    using compiler_invarE[OF comp_invar] by simp_all
   then have "compiler_invar crgt f_args bs keep t2"
     using comp_invar compiler_invar_subset[where t' = "LET t1 IN t2"] by simp
 
@@ -170,17 +182,20 @@ lemma compiler_invar_if:
     "compiler_invar crgt f_args bs keep t2"
     "compiler_invar crgt f_args bs keep t3"
 proof -
-  have "HOL_TCN_Timing.invar t1" using assms unfolding compiler_invar_def by simp
+  have "HOL_TCN_Timing.invar t1" "tails_have_n_args (length f_args) t1"
+    using compiler_invarE[OF assms] by simp_all
   moreover have "set (calls t1) \<subseteq> set (calls (IF t1\<noteq>0 THEN t2 ELSE t3))" by fastforce
   ultimately show "compiler_invar crgt f_args bs keep t1"
     using assms compiler_invar_subset by metis
 next
-  have "HOL_TCN_Timing.invar t2" using assms unfolding compiler_invar_def by simp
+  have "HOL_TCN_Timing.invar t2" "tails_have_n_args (length f_args) t2"
+    using compiler_invarE[OF assms] by simp_all
   moreover have "set (calls t2) \<subseteq> set (calls (IF t1\<noteq>0 THEN t2 ELSE t3))" by fastforce
   ultimately show "compiler_invar crgt f_args bs keep t2"
     using assms compiler_invar_subset by metis
 next
-  have "HOL_TCN_Timing.invar t3" using assms unfolding compiler_invar_def by simp
+  have "HOL_TCN_Timing.invar t3" "tails_have_n_args (length f_args) t3"
+    using compiler_invarE[OF assms] by simp_all
   moreover have "set (calls t3) \<subseteq> set (calls (IF t1\<noteq>0 THEN t2 ELSE t3))" by fastforce
   ultimately show "compiler_invar crgt f_args bs keep t3"
     using assms compiler_invar_subset by metis
@@ -193,7 +208,8 @@ lemma compiler_invar_call:
   assumes t: "t \<in> set ts"
   shows "compiler_invar crgt f_args bs (xs @ keep) t"
 proof -
-  have "HOL_TCN_Timing.invar t" using compiler_invar t unfolding compiler_invar_def by simp
+  have "HOL_TCN_Timing.invar t" "tails_have_n_args (length f_args) t"
+    using compiler_invarE(1,10)[OF compiler_invar] t by (auto simp add: list.pred_set)
   with t compiler_invar compiler_invar_subset[where t = t and t' = "hCall gr ts"]
   have inv: "compiler_invar crgt f_args bs keep t" by fastforce
 
@@ -215,7 +231,8 @@ lemma compiler_invar_tail:
   assumes t: "t \<in> set ts"
   shows "compiler_invar crgt f_args bs (xs @ keep) t"
 proof -
-  have "HOL_TCN_Timing.invar t" using compiler_invar t unfolding compiler_invar_def by simp
+  have "HOL_TCN_Timing.invar t" "tails_have_n_args (length f_args) t"
+    using compiler_invarE(1,10)[OF compiler_invar] t by (auto simp add: list.pred_set)
   with t compiler_invar compiler_invar_subset[where t = t and t' = "hTAIL ts"]
   have inv: "compiler_invar crgt f_args bs keep t" by fastforce
 
@@ -1457,7 +1474,7 @@ next
   moreover have 3: "length ?xs = length ts"
     unfolding make_n_fresh_def generate_def by simp
   moreover have 4: "length f_args = length ts"
-    using hTail.prems unfolding compiler_invar_def calls_n_set sorry (* need to change invariant *)
+    using hTail.prems unfolding compiler_invar_def calls_n_set by simp
 
   ultimately obtain s3 where trace2: "(?c2, s2) \<Rightarrow>\<^bsup>(?k2, [])\<^esup> (s3,False)"
        "lookups f_args s3 = lookups ?xs s2" "s3 = s2 on - set f_args"
