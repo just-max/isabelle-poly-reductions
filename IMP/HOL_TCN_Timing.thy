@@ -55,14 +55,20 @@ lemma calls_subset_tail[simp]:
     "\<And>t. t \<in> set ts \<Longrightarrow> set (calls t) \<subseteq> set (calls (hTAIL ts))"
   by auto
 
-definition "calls' = map fst o calls"
-lemma calls'_set: "set (calls' t) = fst ` set (calls t)" unfolding calls'_def by simp
-(* lemma calls'_subset:
-  assumes "set (calls t) \<subseteq> set (calls t')"
-  shows "set (calls' t) \<subseteq> set (calls' t')"
-  using calls'_set assms by blast *)
 
-(* lemma in_calls_in_calls': "(g,ts) \<in> set (calls t) \<Longrightarrow> g \<in> set (calls' t)" using calls'_set by force *)
+definition "calls_names \<equiv> map fst o calls"
+abbreviation "calls_names_set t \<equiv> set (calls_names t)"
+
+lemma calls_names: "calls_names t = map fst (calls t)"
+  unfolding calls_names_def by simp
+
+lemma calls_names_set: "calls_names_set t = fst ` set (calls t)" unfolding calls_names_def by simp
+(* lemma calls_names_subset:
+  assumes "set (calls t) \<subseteq> set (calls t')"
+  shows "set (calls_names t) \<subseteq> set (calls_names t')"
+  using calls_names_set assms by blast *)
+
+(* lemma in_calls_in_calls_names: "(g,ts) \<in> set (calls t) \<Longrightarrow> g \<in> set (calls_names t)" using calls_names_set by force *)
 
 definition "calls_n = map (\<lambda>(gr, ts). (gr, length ts)) o calls"
 lemma calls_n_set: "set (calls_n t) = (\<lambda>(gr, ts). (gr, length ts)) ` set (calls t)" unfolding calls_n_def by simp

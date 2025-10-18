@@ -30,6 +30,9 @@ lemma disjoint_subset2:
 lemma fresh_not_in_stale_subset: assumes "set stale' \<subseteq> set stale" shows "fresh stale name \<notin> set stale'"
   using fresh_not_in_stale assms by blast
 
+fun tail_has_n_args where
+  "tail_has_n_args _ = True"
+
 
 definition "compiler_invar crgt f_args bs keep t \<longleftrightarrow>
   HOL_TCN_Timing.invar t
@@ -39,7 +42,7 @@ definition "compiler_invar crgt f_args bs keep t \<longleftrightarrow>
   \<and> set bs \<inter>\<^sub>\<emptyset> set f_args
   \<and> set keep \<inter>\<^sub>\<emptyset> set f_args
   \<and> set keep \<inter>\<^sub>\<emptyset> set (call_registers crgt t)
-  \<and> (\<forall>g\<in>set (calls' t). distinct (args_from_crgt crgt g))
+  \<and> (\<forall>g\<in>set (calls_names t). distinct (args_from_crgt crgt g))
   \<and> (\<forall>(g,n)\<in>set (calls_n t). n = length (args_from_crgt crgt g))"
 (*
 - The term must be tail-recursive, i.e. satisfy the invariant.
@@ -90,7 +93,7 @@ lemma compiler_invarE[elim]:
     "set bs \<inter>\<^sub>\<emptyset> set f_args"
     "set keep \<inter>\<^sub>\<emptyset> set f_args"
     "set keep \<inter>\<^sub>\<emptyset> set (call_registers crgt t)"
-    "\<And>g. g \<in> set (calls' t) \<Longrightarrow> distinct (args_from_crgt crgt g)" (* what's the canonical way to write this? *)
+    "\<And>g. g \<in> set (calls_names t) \<Longrightarrow> distinct (args_from_crgt crgt g)" (* what's the canonical way to write this? *)
     "\<And>g n. (g,n)\<in>set (calls_n t) \<Longrightarrow> n = length (args_from_crgt crgt g)"
   using assms unfolding compiler_invar_def by auto
 
@@ -103,7 +106,7 @@ lemma compiler_invarI[intro]:
     "set bs \<inter>\<^sub>\<emptyset> set f_args"
     "set keep \<inter>\<^sub>\<emptyset> set f_args"
     "set keep \<inter>\<^sub>\<emptyset> set (call_registers crgt t)"
-    "\<And>g. g \<in> set (calls' t) \<Longrightarrow> distinct (args_from_crgt crgt g)"
+    "\<And>g. g \<in> set (calls_names t) \<Longrightarrow> distinct (args_from_crgt crgt g)"
     "\<And>g n. (g,n)\<in>set (calls_n t) \<Longrightarrow> n = length (args_from_crgt crgt g)"
   shows "compiler_invar crgt f_args bs keep t"
   using assms unfolding compiler_invar_def by blast
@@ -115,15 +118,15 @@ lemma compiler_invar_subset:
   shows "compiler_invar crgt f_args bs keep t"
 proof
   have "set (call_registers crgt t) \<subseteq> set (call_registers crgt t')"
-    using calls calls'_set unfolding call_registers_def by auto
+    using calls calls_names_set unfolding call_registers_def by auto
   then show
       "set f_args \<inter>\<^sub>\<emptyset> set (call_registers crgt t)"
       "set bs \<inter>\<^sub>\<emptyset> set (call_registers crgt t)"
       "set keep \<inter>\<^sub>\<emptyset> set (call_registers crgt t)"
     using compiler_invarE[OF comp_invar] by blast+
 next
-  fix g assume "g \<in> set (calls' t)"
-  then have "g \<in> set (calls' t')" using calls calls'_set by auto
+  fix g assume "g \<in> set (calls_names t)"
+  then have "g \<in> set (calls_names t')" using calls calls_names_set by auto
   then show "distinct (args_from_crgt crgt g)" using comp_invar by auto
 next
   fix g n assume "(g,n) \<in> set (calls_n t)"
@@ -153,7 +156,7 @@ next
   moreover have "r \<notin> set (call_registers crgt t2)"
   unfolding r_def proof (rule fresh_not_in_stale_subset)
     show "set (call_registers crgt t2) \<subseteq> set (stale_registers f_args crgt bs keep LET t1 IN t2)"
-      unfolding stale_registers_def call_registers_def using calls'_set by auto
+      unfolding stale_registers_def call_registers_def using calls_names_set by auto
   qed
 
   ultimately show "compiler_invar crgt f_args (r # bs) (r # keep) t2"
@@ -197,7 +200,7 @@ proof -
   show "compiler_invar crgt f_args bs (xs @ keep) t"
   proof
     have "set (call_registers crgt t) \<subseteq> set (call_registers crgt (hCall gr ts))"
-      using t calls'_set unfolding call_registers_def by auto
+      using t calls_names_set unfolding call_registers_def by auto
     then have "set xs \<inter>\<^sub>\<emptyset> set f_args" "set xs \<inter>\<^sub>\<emptyset> set (call_registers crgt t)"
       unfolding xs_def stale_registers_def using make_n_fresh_not_in_stale by fastforce+
     then show "set (xs @ keep) \<inter>\<^sub>\<emptyset> set f_args" "set (xs @ keep) \<inter>\<^sub>\<emptyset> set (call_registers crgt t)"
@@ -219,7 +222,7 @@ proof -
   show "compiler_invar crgt f_args bs (xs @ keep) t"
   proof
     have "set (call_registers crgt t) \<subseteq> set (call_registers crgt (hTAIL ts))"
-      using t calls'_set unfolding call_registers_def by auto
+      using t calls_names_set unfolding call_registers_def by auto
     then have "set xs \<inter>\<^sub>\<emptyset> set f_args" "set xs \<inter>\<^sub>\<emptyset> set (call_registers crgt t)"
       unfolding xs_def stale_registers_def using make_n_fresh_not_in_stale by fastforce+
     then show "set (xs @ keep) \<inter>\<^sub>\<emptyset> set f_args" "set (xs @ keep) \<inter>\<^sub>\<emptyset> set (call_registers crgt t)"
@@ -518,9 +521,6 @@ lemma copy_list_bigstep':
   using copy_list_bigstep[where xs = xs and ys = ys] assms by auto
 
 
-abbreviation "calls_names t \<equiv> map fst (calls t)"
-abbreviation "calls_names_set t \<equiv> set (calls_names t)"
-
 theorem compiler_correct_no_tails:
   assumes "\<not> tails t"
   assumes "(f,frgt) \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup>z :: nat\<^esup> v"
@@ -558,7 +558,7 @@ using assms proof (induction t arbitrary: vs_b z v bs keep s r crgt)
   have rel_rgt:
       "relate_rgt_correctness frgt crgt (calls_names_set t1)"
       "relate_rgt_correctness frgt crgt (calls_names_set t2)"
-    unfolding relate_rgt_correctness_def by simp_all
+    unfolding relate_rgt_correctness_def using calls_names_set by simp_all
 
   from hLet.prems have rel_state1: "relate_exec_state f_args bs vs_arg vs_b s" by blast
 
@@ -639,7 +639,7 @@ next
       "relate_rgt_correctness frgt crgt (calls_names_set t1)"
       "relate_rgt_correctness frgt crgt (calls_names_set t2)"
       "relate_rgt_correctness frgt crgt (calls_names_set t3)"
-    unfolding relate_rgt_correctness_def by simp_all
+    unfolding relate_rgt_correctness_def using calls_names_set by simp_all
 
   from hIf.prems have rel_state1: "relate_exec_state f_args bs vs_arg vs_b s" by blast
 
@@ -740,7 +740,7 @@ next
     show "compiler_invar crgt f_args bs (?xs @ keep) (ts ! i)" by simp
   next
     from that show "relate_rgt_correctness frgt crgt (calls_names_set (ts ! i))"
-      using hCall.prems(4) unfolding relate_rgt_correctness_def by fastforce
+      using hCall.prems(4) calls_names_set unfolding relate_rgt_correctness_def by fastforce
   next
     from that show "relate_exec_state f_args bs vs_arg vs_b s" by blast
   qed
@@ -755,11 +755,11 @@ next
   let ?z2 = "Suc (2 * length ts)"
 
   have "set (args_from_crgt crgt gr) \<subseteq> set (stale_registers f_args crgt bs keep (hCall gr ts))"
-    unfolding stale_registers_def call_registers_def using calls'_set by auto
+    unfolding stale_registers_def call_registers_def using calls_names_set by auto
   then have "set ?xs \<inter>\<^sub>\<emptyset> set (args_from_crgt crgt gr)"
     using make_n_fresh_not_in_stale by blast
   moreover have "distinct (args_from_crgt crgt gr)"
-    using hCall.prems unfolding compiler_invar_def calls'_set by simp
+    using hCall.prems unfolding compiler_invar_def calls_names_set by simp
   moreover have "length ?xs = length ts"
     unfolding make_n_fresh_def generate_def by simp
   moreover have "length (args_from_crgt crgt gr) = length ts"
@@ -775,7 +775,7 @@ next
   let ?c3 = "CALL ?gcom RETURN ?gret :: tcom"
   let ?s4 = "s3(?gret := ?gv)"
 
-  have "terminates_with_res_IMP ?gcom s3 ?gret ?gv" using hCall.prems unfolding relate_rgt_correctness_def by simp
+  have "terminates_with_res_IMP ?gcom s3 ?gret ?gv" using hCall.prems calls_names_set unfolding relate_rgt_correctness_def by simp
   then obtain z3 s4' where "(?gcom, s3) \<Rightarrow>\<^bsup>z3\<^esup> s4'" "s4' ?gret = ?gv"
     unfolding terminates_with_res_IMP_def terminates_with_res_pred_time_IMP_def terminates_with_pred_time_IMP_def by blast
   then have exec_c3: "f_c \<turnstile> (?c3, s3) \<Rightarrow>\<^bsup>z3\<^esup> ?s4" using tbig_step_t.tCall by metis
@@ -807,12 +807,12 @@ next
       using exec_c1 by blast
 
     have "set f_args \<union> set bs \<union> set keep \<inter>\<^sub>\<emptyset> set (args_from_crgt crgt gr)"
-      using hCall.prems(3) unfolding compiler_invar_def call_registers_def using calls'_set by auto
+      using hCall.prems(3) unfolding compiler_invar_def call_registers_def using calls_names_set by auto
     then have **: "s3 = s2 on set f_args \<union> set bs \<union> set keep - {r}"
       using hCall.prems(3) exec_c2 unfolding compiler_invar_def by auto
 
     have "ret_from_crgt crgt gr \<notin> set f_args \<union> set bs \<union> set keep"
-      using hCall.prems(3) unfolding compiler_invar_def call_registers_def using calls'_set by auto
+      using hCall.prems(3) unfolding compiler_invar_def call_registers_def using calls_names_set by auto
     then have ***: "?s5 = s3 on set f_args \<union> set bs \<union> set keep - {r}" by auto
 
     show "?s5 = s on set f_args \<union> set bs \<union> set keep - {r}"
@@ -1057,7 +1057,7 @@ using assms(2) assms(1,3-) proof (induction arbitrary: bs keep s r crgt rule: ht
   have rel_rgt:
       "relate_rgt_correctness frgt crgt (calls_names_set t1)"
       "relate_rgt_correctness frgt crgt (calls_names_set t2)"
-    unfolding relate_rgt_correctness_def by simp_all
+    unfolding relate_rgt_correctness_def using calls_names_set by simp_all
 
   from hLet.prems have rel_state1: "relate_exec_state f_args bs vs_arg vs_b s" by blast
 
@@ -1147,7 +1147,7 @@ next
   have rel_rgt:
       "relate_rgt_correctness frgt crgt (calls_names_set t1)"
       "relate_rgt_correctness frgt crgt (calls_names_set t2)"
-    unfolding relate_rgt_correctness_def by simp_all
+    unfolding relate_rgt_correctness_def using calls_names_set by simp_all
 
   from hIfTrue.prems have rel_state1: "relate_exec_state f_args bs vs_arg vs_b s" by blast
 
@@ -1213,7 +1213,7 @@ next
   have rel_rgt:
       "relate_rgt_correctness frgt crgt (calls_names_set t1)"
       "relate_rgt_correctness frgt crgt (calls_names_set t3)"
-    unfolding relate_rgt_correctness_def by simp_all
+    unfolding relate_rgt_correctness_def using calls_names_set by simp_all
 
   from hIfFalse.prems have rel_state1: "relate_exec_state f_args bs vs_arg vs_b s" by blast
 
@@ -1277,7 +1277,8 @@ next
   have comp_invar: "compiler_invar crgt f_args bs (?xs @ keep) (ts ! i)"
     if "i < length ts" for i using that by simp
 
-  have "calls_names_set (ts ! i) \<subseteq> calls_names_set (hCall gr ts)" if "i < length ts" for i using that by fastforce
+  have "calls_names_set (ts ! i) \<subseteq> calls_names_set (hCall gr ts)" if "i < length ts" for i
+    using calls_names that by fastforce
   with hCall.prems have rel_rgt:
       "relate_rgt_correctness frgt crgt (calls_names_set (ts ! i))"
     if "i < length ts" for i using that unfolding relate_rgt_correctness_def by blast
@@ -1324,11 +1325,11 @@ next
   let ?k2 = "Suc (2 * length ts)"
 
   have "set (args_from_crgt crgt gr) \<subseteq> set (stale_registers f_args crgt bs keep (hCall gr ts))"
-    unfolding stale_registers_def call_registers_def using calls'_set by auto
+    unfolding stale_registers_def call_registers_def using calls_names_set by auto
   then have 1: "set ?xs \<inter>\<^sub>\<emptyset> set (args_from_crgt crgt gr)"
     using make_n_fresh_not_in_stale by blast
   moreover have 2: "distinct (args_from_crgt crgt gr)"
-    using hCall.prems unfolding compiler_invar_def calls'_set by simp
+    using hCall.prems unfolding compiler_invar_def calls_names_set by simp
   moreover have 3: "length ?xs = length ts"
     unfolding make_n_fresh_def generate_def by simp
   moreover have 4: "length (args_from_crgt crgt gr) = length ts"
@@ -1345,7 +1346,7 @@ next
   let ?k3 = "0 :: nat"
   let ?s4 = "s3(?gret := ?gv)"
 
-  have "terminates_with_res_IMP ?gcom s3 ?gret ?gv" using hCall.prems unfolding relate_rgt_correctness_def by simp
+  have "terminates_with_res_IMP ?gcom s3 ?gret ?gv" using hCall.prems calls_names_set unfolding relate_rgt_correctness_def by simp
   then obtain z3 s4' where "(?gcom, s3) \<Rightarrow>\<^bsup>z3\<^esup> s4'" "s4' ?gret = ?gv"
     unfolding terminates_with_res_IMP_def terminates_with_res_pred_time_IMP_def terminates_with_pred_time_IMP_def by blast
   then have trace3: "(?c3, s3) \<Rightarrow>\<^bsup>(?k3, [(?gcom, s3)])\<^esup> (?s4, False)" using ttrace_to_leaf.tCall by metis
@@ -1400,7 +1401,8 @@ next
   have comp_invar: "compiler_invar crgt f_args bs (?xs @ keep) (ts ! i)"
     if "i < length ts" for i using that by simp
 
-  have "calls_names_set (ts ! i) \<subseteq> calls_names_set (hTAIL ts)" if "i < length ts" for i using that by fastforce
+  have "calls_names_set (ts ! i) \<subseteq> calls_names_set (hTAIL ts)" if "i < length ts" for i
+    using calls_names that by fastforce
   with hTail.prems have rel_rgt:
       "relate_rgt_correctness frgt crgt (calls_names_set (ts ! i))"
     if "i < length ts" for i using that unfolding relate_rgt_correctness_def by blast
@@ -1447,11 +1449,11 @@ next
   let ?k2 = "Suc (2 * length ts)"
 
   have "set f_args \<subseteq> set (stale_registers f_args crgt bs keep (hTAIL ts))"
-    unfolding stale_registers_def call_registers_def using calls'_set by auto
+    unfolding stale_registers_def call_registers_def using calls_names_set by auto
   then have 1: "set ?xs \<inter>\<^sub>\<emptyset> set f_args"
     using make_n_fresh_not_in_stale by blast
   moreover have 2: "distinct f_args"
-    using hTail.prems unfolding compiler_invar_def calls'_set by simp
+    using hTail.prems unfolding compiler_invar_def calls_names_set by simp
   moreover have 3: "length ?xs = length ts"
     unfolding make_n_fresh_def generate_def by simp
   moreover have 4: "length f_args = length ts"
@@ -1614,6 +1616,9 @@ lemma htrace_to_end_calls_in:
 using assms proof (induction rule: htrace_to_end_induct)
   case (hCall vs ts Ts f frgt bs xs T gr v)
 
+  have 1: "gr \<in> calls_names_set f \<union> calls_names_set (hCall gr ts)"
+    using calls_names_set by simp
+
   have *: "\<forall>i < length Ts. set (map fst (Ts ! i)) \<subseteq> calls_names_set f \<union> calls_names_set (ts ! i)"
     using hCall by auto
 
@@ -1622,7 +1627,9 @@ using assms proof (induction rule: htrace_to_end_induct)
     using Union_mono2 \<open>length Ts = length ts\<close> * by meson
   also have "... \<subseteq> calls_names_set f \<union> (\<Union>t\<in>set ts. calls_names_set t)" by blast
   also have "... = calls_names_set f \<union> set (concat_map calls_names ts)" by simp
-  finally show "set (map fst T) \<subseteq> calls_names_set f \<union> calls_names_set (hCall gr ts)" using \<open>T = _\<close> by auto
+  also have "... \<subseteq> calls_names_set f \<union> calls_names_set (hCall gr ts)" using calls_names by auto
+  finally show "set (map fst T) \<subseteq> calls_names_set f \<union> calls_names_set (hCall gr ts)"
+    using 1 \<open>T = _\<close> by simp
 next
   case (hTail vs ts Ts f frgt bs xs n' T' v' T k)
 
@@ -1635,10 +1642,10 @@ next
   also have "... \<subseteq> (\<Union>t\<in>set ts. calls_names_set f \<union> calls_names_set t)"
     using Union_mono2 \<open>length Ts = length ts\<close> * by meson
   also have "... \<subseteq> calls_names_set f \<union> (\<Union>t\<in>set ts. calls_names_set t)" by blast
-  also have "... = calls_names_set f \<union> calls_names_set (hTAIL ts)" by auto
+  also have "... = calls_names_set f \<union> calls_names_set (hTAIL ts)" using calls_names by auto
   finally show "set (map fst T) \<subseteq> calls_names_set f \<union> calls_names_set (hTAIL ts)"
     using tail \<open>T = _\<close> by simp
-qed auto
+qed (auto simp add: calls_names)
 
 corollary htrace_to_end_calls_in':
   assumes "(f,frgt) \<turnstile> (f,bs,xs) \<Rightarrow>\<^bsup> (k, T) :: HOL_TCN_Timing.trace \<^esup> v"
@@ -2426,7 +2433,7 @@ method to_imp_tc_unfold uses def =
   rule SIMPS_TOD,
   simp add:
     def generate_def Let_def split_beta
-    make_n_fresh_def make_nth_fresh_def stale_registers_def call_registers_def calls'_def Fresh.fresh_def
+    make_n_fresh_def make_nth_fresh_def stale_registers_def call_registers_def calls_names_def Fresh.fresh_def
     char_of_def bit_simps,
   rule SIMPS_TOI
 
@@ -2455,7 +2462,7 @@ definition [simp]: "eq_hol_tcn \<equiv>
 
 (* set of called functions *)
 definition [simp]: "eq_aux \<equiv> calls_names_set eq_hol_tcn"
-(* note: *) lemma "eq_aux = {''+'', ''-''}" by auto
+(* note: *) lemma "eq_aux = {''+'', ''-''}" using calls_names_set by auto
 
 (* f/crgt for called functions *)
 definition [simp]: "eq_frgt \<equiv> null |> plus_frgt_upd |> minus_frgt_upd"
@@ -2491,7 +2498,7 @@ proof-
   have frgt:
       "frgt ''+'' = mk_frgt1 plus_f plus_T_f"
       "frgt ''-'' = mk_frgt1 minus_f minus_T_f"
-    using eq_on_lookup[of frgt eq_frgt, OF rgt] by auto
+    using eq_on_lookup[of frgt eq_frgt, OF rgt] using calls_names_set by auto
 
   show "(eq_hol_tcn, frgt) \<turnstile> (eq_hol_tcn, [], xs)\<Rightarrow>\<^bsup> eq_T_f xs :: nat \<^esup> eq_f xs"
   proof (rule bigstep_start[OF eq_hol_tcn_def])
@@ -2588,11 +2595,11 @@ next
   (* here we use correctness lemmas for each called function *)
   show "relate_rgt eq_frgt eq_crgt (calls_names_set eq_hol_tcn)"
     apply (rule relate_rgt_unfold) apply simp
-    using plus_correctness_rgt minus_correctness_rgt by fastforce
+    using plus_correctness_rgt minus_correctness_rgt calls_names_set by fastforce
 next
   (* these last three goals are just rewriting/simplifying function definitions *)
   show "compiler_invar eq_crgt eq_args [] [] eq_hol_tcn"
-    unfolding compiler_invar_def call_registers_def calls'_def calls_n_def by simp
+    unfolding compiler_invar_def call_registers_def calls_names calls_n_def by simp
   show "HOL_TCN_Timing.invar eq_hol_tcn" "can_terminate eq_hol_tcn" by simp_all
 qed
 
@@ -2639,7 +2646,7 @@ definition [simp]: "mul_acc_hol_tcn \<equiv>
   ELSE hTAIL [hCall ''-'' [hArg 0, hNumber 1], hArg 1, hCall ''+'' [hArg 1, hArg 2]]"
 
 definition [simp]: "mul_acc_aux \<equiv> calls_names_set mul_acc_hol_tcn"
-(* note: *) lemma "mul_acc_aux = {''+'', ''-'', ''=''}" by auto
+(* note: *) lemma "mul_acc_aux = {''+'', ''-'', ''=''}" using calls_names_set by auto
 
 definition [simp]: "mul_acc_frgt \<equiv> null |> plus_frgt_upd |> minus_frgt_upd |> eq_frgt_upd"
 definition [simp]: "mul_acc_crgt \<equiv> null |> plus_crgt_upd |> minus_crgt_upd |> eq_crgt_upd"
@@ -2668,7 +2675,7 @@ proof-
       "frgt ''+'' = mk_frgt1 plus_f plus_T_f"
       "frgt ''-'' = mk_frgt1 minus_f minus_T_f"
       "frgt ''='' = mk_frgt1 eq_f eq_T_f"
-    using eq_on_lookup[of frgt mul_acc_frgt, OF rgt] by auto
+    using eq_on_lookup[of frgt mul_acc_frgt, OF rgt] using calls_names_set by auto
 
   show "(mul_acc_hol_tcn, frgt) \<turnstile> (mul_acc_hol_tcn, [], xs) \<Rightarrow>\<^bsup> mul_acc_T_f' xs \<^esup> mul_acc_f xs"
     apply (rule bigstep_start[OF mul_acc_hol_tcn_def])
@@ -2790,9 +2797,9 @@ next
   show "relate_rgt mul_acc_frgt mul_acc_crgt (calls_names_set mul_acc_hol_tcn)"
     apply (rule relate_rgt_unfold) apply simp
     apply (repeat \<open>rule forall_i_insert\<close>)
-    using plus_correctness_rgt minus_correctness_rgt eq_correctness_rgt by simp_all
+    using plus_correctness_rgt minus_correctness_rgt eq_correctness_rgt calls_names_set by simp_all
   show "compiler_invar mul_acc_crgt mul_acc_args [] [] mul_acc_hol_tcn"
-    unfolding compiler_invar_def call_registers_def calls'_def calls_n_def by simp
+    unfolding compiler_invar_def call_registers_def calls_names calls_n_def by simp
   show "HOL_TCN_Timing.invar mul_acc_hol_tcn" "can_terminate mul_acc_hol_tcn" by simp_all
 qed
 
@@ -2826,7 +2833,7 @@ definition [simp]: "(mul_T_f :: nat list \<Rightarrow> nat) \<equiv> (\<lambda>x
 definition [simp]: "mul_hol_tcn \<equiv> hCall ''mul_acc'' [hArg 0, hArg 1, hNumber 0]"
 
 definition [simp]: "mul_aux \<equiv> calls_names_set mul_hol_tcn"
-(* note: *) lemma "mul_aux = {''mul_acc''}" by auto
+(* note: *) lemma "mul_aux = {''mul_acc''}" using calls_names_set by auto
 
 definition [simp]: "mul_frgt \<equiv> null |> mul_acc_frgt_upd"
 definition [simp]: "mul_crgt \<equiv> null |> mul_acc_crgt_upd"
@@ -2848,7 +2855,7 @@ lemma mul_hol_tcn_correctness:
   shows "(mul_hol_tcn, frgt) \<turnstile> (mul_hol_tcn, [], xs)\<Rightarrow>\<^bsup> mul_T_f xs \<^esup> mul_f xs"
 proof-
   have frgt: "frgt ''mul_acc'' = mk_frgt1 mul_acc_f mul_acc_T_f"
-    using eq_on_lookup[of frgt mul_frgt, OF rgt] by auto
+    using eq_on_lookup[of frgt mul_frgt, OF rgt] using calls_names_set by auto
 
   show "(mul_hol_tcn, frgt) \<turnstile> (mul_hol_tcn, [], xs)\<Rightarrow>\<^bsup> mul_T_f xs \<^esup> mul_f xs"
     apply (rule bigstep_start[OF mul_hol_tcn_def])
@@ -2871,9 +2878,9 @@ next
   show "relate_rgt mul_frgt mul_crgt (calls_names_set mul_hol_tcn)"
     apply (rule relate_rgt_unfold) apply simp
     apply (repeat \<open>rule forall_i_insert\<close>)
-    using mul_acc_correctness_rgt by simp_all
+    using mul_acc_correctness_rgt calls_names_set by simp_all
   show "compiler_invar mul_crgt mul_args [] [] mul_hol_tcn"
-    unfolding compiler_invar_def call_registers_def calls'_def calls_n_def by simp
+    unfolding compiler_invar_def call_registers_def calls_names_def calls_n_def by simp
   show "HOL_TCN_Timing.invar mul_hol_tcn" "can_terminate mul_hol_tcn" by simp_all
 qed
 

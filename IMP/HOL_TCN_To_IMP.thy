@@ -244,11 +244,13 @@ lemma non_tails_mk_seqs[simp]:
 (* compiler! *)
 
 definition "call_registers crgt t =
-  concat_map (\<lambda>g. args_from_crgt crgt g @ [ret_from_crgt crgt g]) (calls' t)"
+  concat_map (\<lambda>g. args_from_crgt crgt g @ [ret_from_crgt crgt g]) (calls_names t)"
+
+
 
 (* lemma call_registers_set:
     "set (call_registers crgt t) =
-      (\<Union>g\<in>set (calls' t). set (args_from_crgt crgt g) \<union> {ret_from_crgt crgt g})"
+      (\<Union>g\<in>set (calls_names t). set (args_from_crgt crgt g) \<union> {ret_from_crgt crgt g})"
   apply (induction t) unfolding call_registers_def by auto *)
 
 definition "stale_registers f_args crgt bs keep t = f_args @ bs @ keep @ call_registers crgt t"
