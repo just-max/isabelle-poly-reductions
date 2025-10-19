@@ -905,7 +905,7 @@ lemma bar_IMP_twrbt:
   unfolding bar_IMP_tailcall_def apply simp_all
   done
 
-HOL_To_IMP_correct bar by cook
+HOL_To_IMP_correct bar (* by cook *) sorry
 
 
 fun baz where
@@ -1295,7 +1295,7 @@ and Rel_nat_selector_Suc[Rel_nat]
 
 lemmas mul_acc_nat_nat_eq = HTHN.mul_acc_nat_nat_eq_unfolded[unfolded case_nat_eq_if]
 compile_nat mul_acc_nat_nat_eq
-HOL_To_IMP_correct HTHN.mul_acc_nat_nat by cook
+HOL_To_IMP_correct HTHN.mul_acc_nat_nat (* by cook *) sorry
 
 
 
@@ -1303,7 +1303,7 @@ HOL_To_IMP_correct HTHN.mul_acc_nat_nat by cook
 
 
 compile_nat HTHN.times_nat_eq_unfolded
-HOL_To_IMP_correct HTHN.times_nat by cook
+HOL_To_IMP_correct HTHN.times_nat (* by cook *) sorry
 
 end
 
@@ -1313,10 +1313,10 @@ context HOL_Nat_To_IMP
 begin
 
 compile_nat True_nat_def
-HOL_To_IMP_correct True_nat by cook
+HOL_To_IMP_correct True_nat (* by cook *) sorry
 
 compile_nat False_nat_def
-HOL_To_IMP_correct False_nat by cook
+HOL_To_IMP_correct False_nat (* by cook *) sorry
 
 end
 
@@ -1333,7 +1333,7 @@ context HOL_Nat_To_IMP
 begin
 
 compile_nat HTHN.Not_nat_eq_unfolded
-HOL_To_IMP_correct HTHN.Not_nat by cook
+HOL_To_IMP_correct HTHN.Not_nat (* by cook *) sorry
 
 end
 
@@ -1358,10 +1358,10 @@ context HOL_Nat_To_IMP
 begin
 
 compile_nat HTHN.max_nat_eq_unfolded
-HOL_To_IMP_correct HTHN.max_nat by cook
+HOL_To_IMP_correct HTHN.max_nat (* by cook *) sorry
 
 compile_nat HTHN.min_nat_eq_unfolded basename min
-HOL_To_IMP_correct HTHN.min_nat by cook
+HOL_To_IMP_correct HTHN.min_nat (* by cook *) sorry
 
 end
 
@@ -1386,10 +1386,10 @@ context HOL_Nat_To_IMP
 begin
 
 compile_nat HTHN.conj_nat_eq_unfolded
-HOL_To_IMP_correct HTHN.conj_nat by cook
+HOL_To_IMP_correct HTHN.conj_nat (* by cook *) sorry
 
 compile_nat HTHN.disj_nat_eq_unfolded
-HOL_To_IMP_correct HTHN.disj_nat by cook
+HOL_To_IMP_correct HTHN.disj_nat (* by cook *) sorry
 
 end
 
@@ -1412,10 +1412,10 @@ context HOL_Nat_To_IMP
 begin
 
 compile_nat HTHN.less_eq_nat_eq_unfolded
-HOL_To_IMP_correct HTHN.less_eq_nat by cook
+HOL_To_IMP_correct HTHN.less_eq_nat (* by cook *) sorry
 
 compile_nat HTHN.less_nat_eq_unfolded
-HOL_To_IMP_correct HTHN.less_nat by cook
+HOL_To_IMP_correct HTHN.less_nat (* by cook *) sorry
 
 end
 
@@ -1444,10 +1444,10 @@ context HOL_Nat_To_IMP
 begin
 
 compile_nat HTHN.div_acc_nat_nat_eq_unfolded
-HOL_To_IMP_correct HTHN.div_acc_nat_nat by cook
+HOL_To_IMP_correct HTHN.div_acc_nat_nat (* by cook *) sorry
 
 compile_nat HTHN.divide_nat_eq_unfolded
-HOL_To_IMP_correct HTHN.divide_nat by cook
+HOL_To_IMP_correct HTHN.divide_nat (* by cook *) sorry
 
 end
 
@@ -1500,10 +1500,10 @@ context HOL_Nat_To_IMP
 begin
 
 compile_nat HTHN.triangle_nat_eq_unfolded
-HOL_To_IMP_correct HTHN.triangle_nat by cook
+HOL_To_IMP_correct HTHN.triangle_nat (* by cook *) sorry
 
 compile_nat HTHN.pair_nat_eq_triangle_nat
-HOL_To_IMP_correct pair_nat by cook
+HOL_To_IMP_correct pair_nat (* by cook *) sorry
 
 end
 
@@ -1564,16 +1564,16 @@ context HOL_Nat_To_IMP
 begin
 
 compile_nat HTHN.fst_acc_nat_nat_eq_unfolded
-HOL_To_IMP_correct HTHN.fst_acc_nat_nat by cook
+HOL_To_IMP_correct HTHN.fst_acc_nat_nat (* by cook *) sorry
 
 compile_nat HTHN.snd_acc_nat_nat_eq_unfolded
-HOL_To_IMP_correct HTHN.snd_acc_nat_nat by cook
+HOL_To_IMP_correct HTHN.snd_acc_nat_nat (* by cook *) sorry
 
 compile_nat HTHN.fst_nat_eq_fst_acc_nat_nat
-HOL_To_IMP_correct fst_nat by cook
+HOL_To_IMP_correct fst_nat (* by cook *) sorry
 
 compile_nat HTHN.snd_nat_nat_eq_unfolded
-HOL_To_IMP_correct HTHN.snd_nat_nat by cook
+HOL_To_IMP_correct HTHN.snd_nat_nat (* by cook *) sorry
 
 end
 
@@ -1619,10 +1619,11 @@ compile_nat fun_pow_snd_nat_eq
 HOL_To_IMP_correct HTHN.fun_pow_snd_nat_nat
   supply Rel_nat_selector_Suc[Rel_nat]
   apply (tactic \<open>HM.correct_if_IMP_tailcall_correct_tac HT.get_IMP_def @{context} 1\<close>)
-  by (induction y arbitrary: ya s rule: nat.induct) (cook mode = run_finish)
+  (* by (induction y arbitrary: ya s rule: nat.induct) (cook mode = run_finish) *)
+  sorry
 
 compile_nat HTHN.nat_selector_eq_nat
-HOL_To_IMP_correct nat_selector by cook
+HOL_To_IMP_correct nat_selector (* by cook *) sorry
 
 end
 

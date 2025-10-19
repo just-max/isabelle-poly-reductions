@@ -47,6 +47,19 @@ declare tbig_step_t.intros[intro]
 
 lemmas tbig_step_t_induct = tbig_step_t.induct[split_format(complete)]
 
+(* modified introduction rules that always apply when the term is of the correct shape *)
+lemma tbig_step_t_tSkip'[intro]:
+  assumes "t = s" and "z = 1"
+  shows "c \<turnstile> (tSKIP,s) \<Rightarrow>\<^bsup>z\<^esup> t" using assms[unfolded One_nat_def] tSkip by blast
+lemma tbig_step_t_tAssign'[intro]:
+  assumes "t = s(x := aval a s)" and "z = 2"
+  shows "c \<turnstile> (x ::= a,s) \<Rightarrow>\<^bsup>z\<^esup> t" using assms[unfolded numeral_2_eq_2] tAssign by blast
+lemma tbig_step_t_tCall'[intro]:
+  assumes "t' = s(r := t r)"
+  shows "(C,s) \<Rightarrow>\<^bsup>z \<^esup> t \<Longrightarrow> c \<turnstile> (CALL C RETURN r,s) \<Rightarrow>\<^bsup>z \<^esup> t'" using assms tCall by blast
+lemma tbig_step_t_tTail'[intro]:
+  assumes "z' = 5 + z"
+  shows "c \<turnstile> (c,s) \<Rightarrow>\<^bsup>z \<^esup> t \<Longrightarrow> c \<turnstile> (tTAIL,s) \<Rightarrow>\<^bsup>z'\<^esup> t" using assms tTail by blast
 
 inductive_cases tSkip_tE[elim!]: "c \<turnstile> (tSKIP,s) \<Rightarrow>\<^bsup>x \<^esup> t"
 inductive_cases tAssign_tE[elim!]: "c \<turnstile> (x ::= a,s) \<Rightarrow>\<^bsup>p \<^esup> t"
@@ -67,60 +80,37 @@ lemma tIfFalse_tE:
   obtains x where "y = Suc x" "c \<turnstile> (c2, s) \<Rightarrow>\<^bsup>x\<^esup>  t"
   using assms by fastforce
 
-
-lemma determ:
+lemma determ_value:
   assumes "f \<turnstile> (c,s) \<Rightarrow>\<^bsup>z1\<^esup> t1"
   assumes "f \<turnstile> (c,s) \<Rightarrow>\<^bsup>z2\<^esup> t2"
-  shows "z1 = z2" "t1 = t2"
+  shows "t1 = t2"
 using assms proof (induction arbitrary: z2 t2 rule: tbig_step_t_induct)
-  case (tIfTrue s b c c1 x t y c2)
-  {
-    case 1
-    with tIfTrue tbig_step_t.tIfTrue tIfTrue_tE show ?case by metis
-  next
-    case 2
-    with tIfTrue tbig_step_t.tIfTrue tIfTrue_tE show ?case by metis
-  }
+  case tIfTrue then show ?case by (meson tIfTrue_tE)
 next
-  case (tIfFalse s b c c2 x t y c1)
-  {
-    case 1
-    with tIfFalse tbig_step_t.tIfFalse tIfFalse_tE show ?case by metis
-  next
-    case 2
-    with tIfFalse tbig_step_t.tIfFalse tIfFalse_tE show ?case by metis
-  }
+  case tIfFalse then show ?case by (meson tIfFalse_tE)
 next
-  case (tCall C s z t c r)
-  {
-    case 1
-    with tCall IMP_Calls.determ show ?case by blast
-  next
-    case 2
-    with tCall IMP_Calls.determ show ?case by blast
-  }
+  case tCall then show ?case using bigstep_det by blast
 qed blast+
 
-(*
-fun k_struct :: "tcom \<Rightarrow> nat" where
-  "k_struct tSKIP = 1" |
-  "k_struct (_ ::= _) = 2" |
-  "k_struct (c1;; c2) = k_struct c1 + k_struct c2 + 1" |
-  "k_struct (IF x\<noteq>0 THEN c1 ELSE c2) = max (k_struct c1) (k_struct c2) + 1" |
-  "k_struct (CALL _ RETURN _) = 0" |
-  "k_struct tTAIL = 5" *)
+lemma determ_time:
+  assumes "f \<turnstile> (c,s) \<Rightarrow>\<^bsup>z1\<^esup> t1"
+  assumes "f \<turnstile> (c,s) \<Rightarrow>\<^bsup>z2\<^esup> t2"
+  shows "z1 = z2"
+using assms proof (induction arbitrary: z2 t2 rule: tbig_step_t_induct)
+  case (tSeq c c1 s1 x s2 c2 y s3 z)
+  then show ?case using determ_value by blast
+next
+  case (tIfTrue s b c c1 x t y c2)
+  then show ?case using determ_value by fastforce
+next
+  case (tIfFalse s b c c2 x t y c1)
+  then show ?case using determ_value by fastforce
+next
+  case (tCall C s z t c r)
+  then show ?case using bigstep_det determ by blast
+qed blast+
 
-(* number of leaves (size c + 1) plus number of inner nodes (size c) *)
-(* definition num_commands :: "tcom \<Rightarrow> nat" where "num_commands c \<equiv> 2 * size c + 1"
-
-lemma num_commands_simps[simp]:
-    "num_commands tSKIP = 1"
-    "num_commands (x ::= v) = 1"
-    "num_commands (c1;; c2) = num_commands c1 + num_commands c2 + 1"
-    "num_commands (IF x\<noteq>0 THEN c1 ELSE c2) = num_commands c1 + num_commands c2 + 1"
-    "num_commands (CALL c RETURN r) = 1"
-    "num_commands tTAIL = 1"
-  unfolding num_commands_def by simp_all *)
+lemmas determ = determ_value determ_time
 
 fun num_commands :: "tcom \<Rightarrow> nat" where
   "num_commands tSKIP = 1" |
@@ -134,11 +124,6 @@ lemma num_commands_size: "num_commands c = 2 * size c + 1"
   by (induction c) auto
 
 abbreviation "c_struct c \<equiv> 5 * num_commands c"
-
-(*
-(* cost of up to 5 per leaf and up to 1 per inner node *)
-lemma k_struct_size_bound: "k_struct c \<le> 5 * num_commands c" by (induction c) auto
-*)
 
 lemma bigstep_progress: "f \<turnstile> (c, s) \<Rightarrow>\<^bsup>z\<^esup> t \<Longrightarrow> z > 0"
   by (induct rule: tbig_step_t_induct) (auto simp add: Big_StepT.bigstep_progress) 

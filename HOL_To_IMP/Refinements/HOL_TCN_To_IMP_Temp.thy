@@ -465,52 +465,106 @@ next
   from * ** *** show ?case by blast
 qed (simp_all add: lengths)
 
-(* copying a list of registers *)
-lemma copy_list_bigstep:
-  assumes "length xs = length ys"
-  assumes "distinct ys"
+
+lemma nth_neq_if_index_neq_distinct:
+  assumes "distinct xs"
+  shows "\<And>i j. \<lbrakk>i < length xs; j < length xs; i \<noteq> j\<rbrakk> \<Longrightarrow> xs ! i \<noteq> xs ! j"
+  using assms nth_eq_iff_index_eq by blast
+
+lemma nths_neq_disjoint:
   assumes "set xs \<inter>\<^sub>\<emptyset> set ys"
-  obtains s' where
-    "f \<turnstile> (mk_seqs (generate (\<lambda>i. (ys ! i) ::= A (V (xs ! i))) (length xs)),s) \<Rightarrow>\<^bsup>Suc (2 * length xs)\<^esup> s'"
-    "lookups ys s' = lookups xs s" "s' = s on (- set ys)"
-using assms proof (induction xs ys arbitrary: thesis rule: snoc_list_induct2)
+  shows "\<And>i j. \<lbrakk>i < length xs; j < length ys\<rbrakk> \<Longrightarrow> xs ! i \<noteq> ys ! j"
+  using assms by (simp add: disjoint_iff_not_equal)
+
+lemma eq_on_nths_lookups:
+  assumes "length xs = length ys"
+  assumes "\<And>i. i < length xs \<Longrightarrow> f (xs ! i) = g (ys ! i)"
+  shows "lookups xs f = lookups ys g"
+using assms(2) proof (induction xs ys rule: snoc_list_induct2)
+  case len
+  then show ?case using assms(1) .
+next
   case Nil
-  then show ?case unfolding generate_def using tSkip_tE by auto
+  then show ?case by simp
 next
   case (snoc xs x ys y)
+  from snoc.prems have "i < length xs \<Longrightarrow> f ((xs @ [x]) ! i) = g ((ys @ [y]) ! i)" for i by simp
+  with snoc.hyps have "f (xs ! i) = g (ys ! i)" if "i < length xs" for i using that by (simp add: nth_append_left)
+  with snoc.IH have *: "lookups xs f = lookups ys g" by blast
 
-  let ?cs = "\<lambda>xs ys. generate (\<lambda>i. (ys ! i) ::= A (V (xs ! i)) :: tcom) (length xs)"
+  from snoc.prems[where i = "length xs"]
+  have "f ((xs @ [x]) ! length xs) = g ((ys @ [y]) ! length xs)" by simp
+  with snoc.hyps have **: "f x = g y" using nth_append_length by metis
 
-  let ?cs1 = "?cs xs ys"
-  let ?c2 = "y ::= A (V x) :: tcom"
-  let ?cs' = "?cs (xs @ [x]) (ys @ [y])"
+  from * ** show ?case by simp
+qed
 
-  have cs': "?cs' = ?cs1 @ [?c2]"
-    apply (simp add: generate_snoc)
-    unfolding generate_def using nth_append_left snoc by fastforce
+lemma eq_on_complement:
+  assumes "\<And>x. (\<And>i. i < length xs \<Longrightarrow> x \<noteq> xs ! i) \<Longrightarrow> f x = g x"
+  shows "f = g on - set xs"
+proof (rule eq_onI)
+  fix x assume "x \<in> - set xs"
+  then have "i < length xs \<Longrightarrow> x \<noteq> xs ! i" for i by auto
+  with assms show "f x = g x" by blast
+qed
 
-  from snoc obtain s2 where ih:
-      "f \<turnstile> (mk_seqs ?cs1, s) \<Rightarrow>\<^bsup>Suc (2 * length xs)\<^esup> s2"
-      "lookups ys s2 = lookups xs s" "s2 = s on (- set ys)"
-    by auto
-  moreover obtain s3 where step:
-      "f \<turnstile> (?c2, s2) \<Rightarrow>\<^bsup>Suc (Suc 0)\<^esup> s3"
-      "s3 y = s2 x" "s3 = s2 on (- {y})"
-    by fastforce
-  ultimately have "f \<turnstile> (mk_seqs ?cs1;; ?c2, s) \<Rightarrow>\<^bsup>Suc (2 * length (xs @ [x]))\<^esup> s3" by auto
-  then have "f \<turnstile> (mk_seqs (?cs1 @ [?c2]), s) \<Rightarrow>\<^bsup>Suc (2 * length (xs @ [x]))\<^esup> s3" 
-    (* using *) (* t_seqs'_snoc *) (* t_seqs'_t_seqs *) sorry (* need case distinction on cs1 *)
-  then have 1: "f \<turnstile> (mk_seqs ?cs', s) \<Rightarrow>\<^bsup>Suc (2 * length (xs @ [x]))\<^esup> s3"
-    by (subst cs') assumption
+(* copying a list of registers *)
+lemma copy_list_bigstep:
+  fixes x y :: "nat \<Rightarrow> vname"
+  assumes "\<And>i j. \<lbrakk>i < n; j < n; i \<noteq> j\<rbrakk> \<Longrightarrow> y i \<noteq> y j"
+  assumes "\<And>i j. \<lbrakk>i < n; j < n\<rbrakk> \<Longrightarrow> x i \<noteq> y j"
+  shows
+    "\<exists>s'. f \<turnstile> (mk_seqs (generate (\<lambda>i. (y i) ::= A (V (x i))) n), s) \<Rightarrow>\<^bsup>(2 * n)\<^sub>+\<^esup> s' \<and>
+          (\<forall>i < n. s' (y i) = s (x i)) \<and> (\<forall>y'. (\<forall>i < n. y' \<noteq> y i) \<longrightarrow> s' y' = s y')"
+using assms proof (induction n rule: induct_nat_012)
+  case 0
+  show ?case proof (rule exI, repeat \<open>rule conjI\<close>)
+    show "f \<turnstile> (mk_seqs (generate (\<lambda>i. (y i) ::= A (V (x i))) 0), s) \<Rightarrow>\<^bsup>(2 * 0)\<^sub>+\<^esup> s"
+      unfolding generate_def by auto
+  qed simp_all
+next
+  case 1
+  show ?case proof (rule exI, repeat \<open>rule conjI\<close>)
+    show "f \<turnstile> (mk_seqs (generate (\<lambda>i. (y i) ::= A (V (x i))) (Suc 0)), s) \<Rightarrow>\<^bsup>(2 * Suc 0)\<^sub>+\<^esup> (s(y 0 := s (x 0)))"
+      unfolding generate_def by auto
+  qed (simp_all add: 1)
+next
+  case (ge2 n)
 
-  have 2: "lookups (ys @ [y]) s3 = lookups (xs @ [x]) s"
-    using ih step snoc by auto
+  let ?cs = "\<lambda>n. generate (\<lambda>i. (y i) ::= A (V (x i)) :: tcom) n"
 
-  have 3: "s3 = s on (- set (ys @ [y]))"
-    using ih step by auto
+  let ?n = "Suc n"
+  from ge2.IH(2) ge2.prems obtain s2 where ih:
+      "f \<turnstile> (mk_seqs (?cs ?n), s) \<Rightarrow>\<^bsup>(2 * ?n)\<^sub>+\<^esup> s2"
+      "\<And>i. i < ?n \<Longrightarrow> s2 (y i) = s (x i)"
+      "\<And>y'. (\<forall>i < ?n. y' \<noteq> y i) \<longrightarrow> s2 y' = s y'" by auto
 
-  from 1 2 3 snoc show ?case by blast
-qed (simp add: assms)
+  from ge2.prems(2) have "i < ?n \<Longrightarrow> x ?n \<noteq> y i" for i by simp
+  with ih have s2_xn: "s2 (x ?n) = s (x ?n)" by blast
+
+  let ?c' = "(y ?n) ::= A (V (x ?n)) :: tcom"
+  let ?s3 = "s2(y ?n := s2 (x ?n))"
+  have step: "f \<turnstile> (?c', s2) \<Rightarrow>\<^bsup>Suc (Suc 0)\<^esup> ?s3" by auto
+
+  let ?n' = "Suc ?n"
+
+  show ?case
+  proof (rule exI; repeat \<open>rule conjI; (rule allI)?\<close>)
+    from tbig_step_t.tSeq [OF ih(1) step(1)] have
+      "f \<turnstile> (mk_seqs (?cs ?n);; ?c', s) \<Rightarrow>\<^bsup>(2 * ?n)\<^sub>+ + Suc (Suc 0)\<^esup> ?s3" by blast
+    moreover have *: "linearize (mk_seqs (?cs ?n);; ?c') = linearize (mk_seqs (?cs ?n @ [?c']))" by simp
+    moreover have "?cs ?n @ [?c'] = ?cs ?n'" unfolding generate_def by simp
+    moreover have "(2 * ?n)\<^sub>+ + Suc (Suc 0) = (2 * ?n')\<^sub>+" by simp
+    ultimately show "f \<turnstile> (mk_seqs (?cs ?n'), s) \<Rightarrow>\<^bsup>(2 * ?n')\<^sub>+\<^esup> ?s3"
+      using same_linearize_bigstep[OF *] by simp
+  next
+    show "i < ?n' \<longrightarrow> ?s3 (y i) = s (x i)" for i
+      using s2_xn ge2.prems(1) ih(2) by (cases "i = ?n") simp_all
+  next
+    show "\<And>y'. (\<forall>i<?n'. y' \<noteq> y i) \<longrightarrow> ?s3 y' = s y'"
+      using ih(3) by simp
+  qed
+qed
 
 lemma compiled_arguments_bigstep':
   assumes "length vs = length ts" "length xs = length ts"
@@ -528,14 +582,26 @@ lemma compiled_arguments_bigstep':
   using compiled_arguments_bigstep[OF assms] by blast
 
 lemma copy_list_bigstep':
-  assumes "length xs = n"
-  assumes "length ys = n"
-  assumes "distinct ys"
-  assumes "set xs \<inter>\<^sub>\<emptyset> set ys"
+  assumes lengths: "length xs = n" "length ys = n"
+  assumes distinct: "distinct ys"
+  assumes disjoint: "set xs \<inter>\<^sub>\<emptyset> set ys"
   obtains s' where
-    "f \<turnstile> (mk_seqs (generate (\<lambda>i. (ys ! i) ::= A (V (xs ! i))) n),s) \<Rightarrow>\<^bsup>Suc (2 * n)\<^esup> s'"
+    "f \<turnstile> (mk_seqs (generate (\<lambda>i. (ys ! i) ::= A (V (xs ! i))) n), s) \<Rightarrow>\<^bsup>(2 * n)\<^sub>+\<^esup> s'"
     "lookups ys s' = lookups xs s" "s' = s on (- set ys)"
-  using copy_list_bigstep[where xs = xs and ys = ys] assms by auto
+proof goal_cases
+  case obt: 1
+  note distinct' = nth_neq_if_index_neq_distinct[OF distinct, unfolded lengths]
+  note disjoint' = nths_neq_disjoint[OF disjoint, unfolded lengths]
+  from copy_list_bigstep[where x = "nth xs" and y = "nth ys" and n = n, OF distinct' disjoint']
+  obtain s' where cp:
+    "f \<turnstile> (mk_seqs (generate (\<lambda>i. (ys ! i) ::= A (V (xs ! i))) n), s) \<Rightarrow>\<^bsup>(2 * n)\<^sub>+\<^esup> s'"
+    "\<And>i. i < n \<Longrightarrow> s' (ys ! i) = s (xs ! i)" "\<And>y'. (\<And>i. i < n \<Longrightarrow> y' \<noteq> ys ! i) \<Longrightarrow> s' y' = s y'"
+    by blast
+  note lookups = eq_on_nths_lookups[of ys xs s' s, unfolded lengths, OF refl cp(2)]
+  note eq_on = eq_on_complement[of ys s' s, unfolded lengths, OF cp(3)]
+  from obt[OF cp(1) lookups eq_on] show ?case by blast
+qed
+
 
 
 theorem compiler_correct_no_tails:
@@ -769,7 +835,7 @@ next
   (* part 2: copying from temporaries to argument registers *)
 
   let ?c2 = "mk_seqs (generate (\<lambda>i. (args_from_crgt crgt gr ! i) ::= A (V (?xs ! i))) (length ts))"
-  let ?z2 = "Suc (2 * length ts)"
+  let ?z2 = "(2 * length ts)\<^sub>+"
 
   have "set (args_from_crgt crgt gr) \<subseteq> set (stale_registers f_args crgt bs keep (hCall gr ts))"
     unfolding stale_registers_def call_registers_def using calls_names_set by auto
@@ -866,7 +932,7 @@ proof -
       "s2 = s on set f_args \<union> set bs \<union> set keep - {r}"
     using compiler_correct_no_tails[where t = t] assms by blast
 
-  have "s2 = s'" using correct(1) IMP_Tailcall_Traces.trace_leaf_nontail_bigstep[OF comp_rel(1)] determ(2) by blast
+  have "s2 = s'" using correct(1) IMP_Tailcall_Traces.trace_leaf_nontail_bigstep[OF comp_rel(1)] determ_value by blast
 
   then show "s' r = v" "s' = s on set f_args \<union> set bs \<union> set keep - {r}" using correct by simp_all
 qed
