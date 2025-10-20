@@ -334,552 +334,6 @@ proof -
   then show "P xs ys" by simp
 qed
 
-
-
-(* lemma nth_append_length_eq:
-  assumes "length xs = n"
-  shows "(xs @ y # zs) ! n = y"
-  apply (subst nth_append) using assms by simp *)
-
-
-
-
-(*   assumes "\<And>i j. \<lbrakk>i < n; j < n; i \<noteq> j\<rbrakk> \<Longrightarrow> y i \<noteq> y j"
-  assumes "\<And>i j. \<lbrakk>i < n; j < n\<rbrakk> \<Longrightarrow> x i \<noteq> y j"
-
- *)
-(* 
-
-
-(* executing a list of terms (as in the call and tail-call cases) *)
-lemma compiled_arguments_bigstep:
-(*   assumes lengths: "length vs = length ts" "length xs = length ts"
-  assumes rel: "relate_exec_state f_args bs vs_arg vs_b s"
-  assumes dist: "distinct xs"
-  assumes keep_xs: "set xs \<subseteq> set keep"
-  assumes disj: "set f_args \<inter>\<^sub>\<emptyset> set xs" "set bs \<inter>\<^sub>\<emptyset> set xs"
-  assumes sem: "\<And>i s.
-    \<lbrakk> i < length ts; relate_exec_state f_args bs vs_arg vs_b s \<rbrakk> \<Longrightarrow>
-    \<exists>z s'. f \<turnstile> (to_imp_tc f_args crgt bs (xs ! i) keep (ts ! i), s) \<Rightarrow>\<^bsup>z :: nat\<^esup> s' \<and>
-           s' (xs ! i) = (vs ! i) \<and> s' = s on set f_args \<union> set bs \<union> set keep - {xs ! i}"
-  shows "\<exists>z s'. f \<turnstile> (mk_seqs (generate (\<lambda>i. to_imp_tc f_args crgt bs (xs ! i) keep (ts ! i)) (length ts)), s) \<Rightarrow>\<^bsup>z :: nat\<^esup> s' \<and>
-                lookups xs s' = vs \<and> s' = s on set f_args \<union> set bs \<union> set keep - set xs" *)
-
-  (* assumes lengths: "length vs = length ts" "length xs = length ts" *)
-  assumes rel: "relate_exec_state f_args bs vs_arg vs_b s"
-  assumes dist: "distinct xs"
-  assumes keep_xs: "set xs \<subseteq> set keep"
-  assumes disj: "set f_args \<inter>\<^sub>\<emptyset> set xs" "set bs \<inter>\<^sub>\<emptyset> set xs"
-  assumes sem: "\<And>i s.
-    \<lbrakk> i < n; relate_exec_state f_args bs vs_arg vs_b s \<rbrakk> \<Longrightarrow>
-    \<exists>z s'. f \<turnstile> (to_imp_tc f_args crgt bs (x i) keep (t i), s) \<Rightarrow>\<^bsup>z :: nat\<^esup> s' \<and>
-           s' (x i) = v i \<and> s' = s on set f_args \<union> set bs \<union> set keep - {x i}"
-  shows "\<exists>z s'. f \<turnstile> (mk_seqs (generate (\<lambda>i. to_imp_tc f_args crgt bs (x i) keep (t i)) n), s) \<Rightarrow>\<^bsup>z :: nat\<^esup> s' \<and>
-                lookups xs s' = vs \<and> s' = s on set f_args \<union> set bs \<union> set keep - set xs"
-
-using dist keep_xs disj sem proof (induction ts xs vs rule: snoc_list_induct3)
-  case Nil
-  then show ?case unfolding generate_def by auto
-next
-  case (snoc ts t xs x vs v)
-
-  (* obtain the IH *)
-
-  from snoc have *: "distinct xs" "set xs \<subseteq> set keep" "set f_args \<inter>\<^sub>\<emptyset> set xs" "set bs \<inter>\<^sub>\<emptyset> set xs" by simp_all
-
-  have "i < length (ts @ [t])" if "i < length ts" for i using that by simp
-  with snoc.prems(5) have **: "\<exists>z s'.
-      f \<turnstile> (to_imp_tc f_args crgt bs (xs ! i) keep (ts ! i), s) \<Rightarrow>\<^bsup>z :: nat\<^esup>  s' \<and>
-      s' (xs ! i) = vs ! i \<and> s' = s on set f_args \<union> set bs \<union> set keep - {xs ! i}"
-    if "i < length ts" "relate_exec_state f_args bs vs_arg vs_b s" for i s
-    using that nth_append_left snoc.hyps by metis
-
-  with snoc.IH[OF * **] obtain z1 s2 where exec1:
-    "f \<turnstile> (mk_seqs (generate (\<lambda>i. to_imp_tc f_args crgt bs (xs ! i) keep (ts ! i)) (length ts)), s) \<Rightarrow>\<^bsup>z1 :: nat\<^esup> s2"
-    "lookups xs s2 = vs" "s2 = s on set f_args \<union> set bs \<union> set keep - set xs"
-    by blast
-
-  (* obtain the step *)
-
-  have *: "length ts < length (ts @ [t])" by simp
-
-  from rel exec1(3) snoc.prems(3,4) have **: "relate_exec_state f_args bs vs_arg vs_b s2"
-    unfolding relate_exec_state_def by fastforce
-
-  from snoc.prems(5)[OF * **]
-  obtain z2 s3 where exec2:
-      "f \<turnstile> (to_imp_tc f_args crgt bs ((xs @ [x]) ! length ts) keep ((ts @ [t]) ! length ts), s2) \<Rightarrow>\<^bsup>z2 :: nat\<^esup> s3"
-      "s3 ((xs @ [x]) ! length ts) = (vs @ [v]) ! length ts"
-      "s3 = s2 on set f_args \<union> set bs \<union> set keep - {(xs @ [x]) ! length ts}"
-    by blast
-
-  (* put it together *)
-
-  have "(xs @ [x]) ! i = xs ! i" "(ts @ [t]) ! i = ts ! i" if "i < length ts" for i
-    using nth_append_left snoc.hyps that by metis+
-  then have "generate (\<lambda>i. to_imp_tc f_args crgt bs (xs ! i) keep (ts ! i)) (length ts) =
-      generate (\<lambda>i. to_imp_tc f_args crgt bs ((xs @ [x]) ! i) keep ((ts @ [t]) ! i)) (length ts)"
-    unfolding generate_def by simp
-  then have append_cs: "generate (\<lambda>i. to_imp_tc f_args crgt bs ((xs @ [x]) ! i) keep ((ts @ [t]) ! i)) (length (ts @ [t])) =
-    generate (\<lambda>i. to_imp_tc f_args crgt bs (xs ! i) keep (ts ! i)) (length ts) @
-    [to_imp_tc f_args crgt bs ((xs @ [x]) ! length ts) keep ((ts @ [t]) ! length ts)]"
-    by (simp add: generate_snoc)
-
-  have "f \<turnstile> (mk_seqs (generate (\<lambda>i. to_imp_tc f_args crgt bs (xs ! i) keep (ts ! i)) (length ts));;
-              to_imp_tc f_args crgt bs ((xs @ [x]) ! length ts) keep ((ts @ [t]) ! length ts), s) \<Rightarrow>\<^bsup>z1 + z2\<^esup> s3"
-    using exec1 exec2 by blast
-  then have *: "f \<turnstile> (mk_seqs (generate (\<lambda>i. to_imp_tc f_args crgt bs ((xs @ [x]) ! i) keep ((ts @ [t]) ! i)) (length (ts @ [t]))), s) \<Rightarrow>\<^bsup>z1 + z2\<^esup> s3"
-    apply (subst append_cs ) using mk_seqs_append_bigstep sorry (* need case distinction on xs! *)
-
-  have nth: "(xs @ [x]) ! length ts = x" "(vs @ [v]) ! length ts = v"
-    using nth_append_length_eq snoc.hyps by metis+
-
-  from exec2(2) have "s3 x = v" using snoc.hyps nth_append_length by metis
-  moreover from exec2(3) nth(1) snoc.prems(1,2) have "s3 = s2 on set xs" by auto
-  ultimately have **: "lookups (xs @ [x]) s3 = vs @ [v]" using exec1(2) by auto
-
-  have ***: "s3 = s on set f_args \<union> set bs \<union> set keep - set (xs @ [x])"
-    using DiffE DiffI UnCI empty_set eq_on_def exec1(3) exec2(3) nth(1) by auto
-
-  from * ** *** show ?case by blast
-qed (simp_all add: lengths)
-
-
-
-
-(* copying a list of registers *)
-lemma copy_list_bigstep:
-  fixes x y :: "nat \<Rightarrow> vname"
-  assumes "\<And>i j. \<lbrakk>i < n; j < n; i \<noteq> j\<rbrakk> \<Longrightarrow> y i \<noteq> y j"
-  assumes "\<And>i j. \<lbrakk>i < n; j < n\<rbrakk> \<Longrightarrow> x i \<noteq> y j"
-  shows
-    "\<exists>s'. f \<turnstile> (mk_seqs (generate (\<lambda>i. (y i) ::= A (V (x i))) n), s) \<Rightarrow>\<^bsup>(2 * n)\<^sub>+\<^esup> s' \<and>
-          (\<forall>i < n. s' (y i) = s (x i)) \<and> (\<forall>y'. (\<forall>i < n. y' \<noteq> y i) \<longrightarrow> s' y' = s y')"
-using assms proof (induction n rule: induct_nat_012)
-  case 0
-  show ?case proof (rule exI, repeat \<open>rule conjI\<close>)
-    show "f \<turnstile> (mk_seqs (generate (\<lambda>i. (y i) ::= A (V (x i))) 0), s) \<Rightarrow>\<^bsup>(2 * 0)\<^sub>+\<^esup> s"
-      unfolding generate_def by auto
-  qed simp_all
-next
-  case 1
-  show ?case proof (rule exI, repeat \<open>rule conjI\<close>)
-    show "f \<turnstile> (mk_seqs (generate (\<lambda>i. (y i) ::= A (V (x i))) (Suc 0)), s) \<Rightarrow>\<^bsup>(2 * Suc 0)\<^sub>+\<^esup> (s(y 0 := s (x 0)))"
-      unfolding generate_def by auto
-  qed (simp_all add: 1)
-next
-  case (ge2 n)
-
-  let ?cs = "\<lambda>n. generate (\<lambda>i. (y i) ::= A (V (x i)) :: tcom) n"
-
-  let ?n = "Suc n"
-  from ge2.IH(2) ge2.prems obtain s2 where ih:
-      "f \<turnstile> (mk_seqs (?cs ?n), s) \<Rightarrow>\<^bsup>(2 * ?n)\<^sub>+\<^esup> s2"
-      "\<And>i. i < ?n \<Longrightarrow> s2 (y i) = s (x i)"
-      "\<And>y'. (\<forall>i < ?n. y' \<noteq> y i) \<longrightarrow> s2 y' = s y'" by auto
-
-  from ge2.prems(2) have "i < ?n \<Longrightarrow> x ?n \<noteq> y i" for i by simp
-  with ih have s2_xn: "s2 (x ?n) = s (x ?n)" by blast
-
-  let ?c' = "(y ?n) ::= A (V (x ?n)) :: tcom"
-  let ?s3 = "s2(y ?n := s2 (x ?n))"
-  have step: "f \<turnstile> (?c', s2) \<Rightarrow>\<^bsup>Suc (Suc 0)\<^esup> ?s3" by auto
-
-  let ?n' = "Suc ?n"
-
-  show ?case
-  proof (rule exI; repeat \<open>rule conjI; (rule allI)?\<close>)
-    from tbig_step_t.tSeq [OF ih(1) step(1)] have
-      "f \<turnstile> (mk_seqs (?cs ?n);; ?c', s) \<Rightarrow>\<^bsup>(2 * ?n)\<^sub>+ + Suc (Suc 0)\<^esup> ?s3" by blast
-    moreover have *: "linearize (mk_seqs (?cs ?n);; ?c') = linearize (mk_seqs (?cs ?n @ [?c']))" by simp
-    moreover have "?cs ?n @ [?c'] = ?cs ?n'" unfolding generate_def by simp
-    moreover have "(2 * ?n)\<^sub>+ + Suc (Suc 0) = (2 * ?n')\<^sub>+" by simp
-    ultimately show "f \<turnstile> (mk_seqs (?cs ?n'), s) \<Rightarrow>\<^bsup>(2 * ?n')\<^sub>+\<^esup> ?s3"
-      using same_linearize_bigstep[OF *] by simp
-  next
-    show "i < ?n' \<longrightarrow> ?s3 (y i) = s (x i)" for i
-      using s2_xn ge2.prems(1) ih(2) by (cases "i = ?n") simp_all
-  next
-    show "\<And>y'. (\<forall>i<?n'. y' \<noteq> y i) \<longrightarrow> ?s3 y' = s y'"
-      using ih(3) by simp
-  qed
-qed
-
-lemma compiled_arguments_bigstep':
-  assumes "length vs = length ts" "length xs = length ts"
-  assumes "relate_exec_state f_args bs vs_arg vs_b s"
-  assumes "distinct xs"
-  assumes "set xs \<subseteq> set keep"
-  assumes "set f_args \<inter>\<^sub>\<emptyset> set xs" "set bs \<inter>\<^sub>\<emptyset> set xs"
-  assumes "\<And>i s.
-    \<lbrakk> i < length ts; relate_exec_state f_args bs vs_arg vs_b s \<rbrakk> \<Longrightarrow>
-    \<exists>z s'. f \<turnstile> (to_imp_tc f_args crgt bs (xs ! i) keep (ts ! i), s) \<Rightarrow>\<^bsup>z :: nat\<^esup> s' \<and>
-             s' (xs ! i) = (vs ! i) \<and> s' = s on set f_args \<union> set bs \<union> set keep - {xs ! i}"
-  obtains z s' where
-    "f \<turnstile> (mk_seqs (generate (\<lambda>i. to_imp_tc f_args crgt bs (xs ! i) keep (ts ! i)) (length ts)), s) \<Rightarrow>\<^bsup>z :: nat\<^esup> s'"
-    "lookups xs s' = vs" "s' = s on set f_args \<union> set bs \<union> set keep - set xs"
-  using compiled_arguments_bigstep[OF assms] by blast
-
-lemma copy_list_bigstep':
-  assumes lengths: "length xs = n" "length ys = n"
-  assumes distinct: "distinct ys"
-  assumes disjoint: "set xs \<inter>\<^sub>\<emptyset> set ys"
-  obtains s' where
-    "f \<turnstile> (mk_seqs (generate (\<lambda>i. (ys ! i) ::= A (V (xs ! i))) n), s) \<Rightarrow>\<^bsup>(2 * n)\<^sub>+\<^esup> s'"
-    "lookups ys s' = lookups xs s" "s' = s on (- set ys)"
-proof goal_cases
-  case obt: 1
-  note distinct' = nth_neq_if_index_neq_distinct[OF distinct, unfolded lengths]
-  note disjoint' = nths_neq_disjoint[OF disjoint, unfolded lengths]
-  from copy_list_bigstep[where x = "nth xs" and y = "nth ys" and n = n, OF distinct' disjoint']
-  obtain s' where cp:
-    "f \<turnstile> (mk_seqs (generate (\<lambda>i. (ys ! i) ::= A (V (xs ! i))) n), s) \<Rightarrow>\<^bsup>(2 * n)\<^sub>+\<^esup> s'"
-    "\<And>i. i < n \<Longrightarrow> s' (ys ! i) = s (xs ! i)" "\<And>y'. (\<And>i. i < n \<Longrightarrow> y' \<noteq> ys ! i) \<Longrightarrow> s' y' = s y'"
-    by blast
-  note lookups = eq_on_nths_lookups[of ys xs s' s, unfolded lengths, OF refl cp(2)]
-  note eq_on = eq_on_complement[of ys s' s, unfolded lengths, OF cp(3)]
-  from obt[OF cp(1) lookups eq_on] show ?case by blast
-qed
-
-*)
-(*
-theorem compiler_correct_no_tails:
-  assumes "\<not> tails t"
-  assumes "(f,frgt) \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup>z :: nat\<^esup> v"
-  assumes "compiler_invar crgt f_args bs keep t"
-  assumes "relate_rgt_correctness frgt crgt (calls_names_set t)"
-  assumes "relate_exec_state f_args bs vs_arg vs_b s"
-  shows "\<exists>z_c s'.
-    f_c \<turnstile> (to_imp_tc f_args crgt bs r keep t,s) \<Rightarrow>\<^bsup>z_c :: nat\<^esup> s'
-    \<and> s' r = v
-    \<and> s' = s on set f_args \<union> set bs \<union> set keep - {r}"
-using assms proof (induction t arbitrary: vs_b z v bs keep s r crgt)
-  case (hLet t1 t2)
-
-  let ?r1 = "fresh' (stale_registers f_args crgt bs keep LET t1 IN t2) ''Let.x''"
-  let ?c1 = "to_imp_tc f_args crgt bs ?r1 keep t1"
-  let ?c2 = "to_imp_tc f_args crgt (?r1 # bs) r (?r1 # keep) t2"
-
-  from hLet.prems hLet_case
-  obtain z1 v1 z2 :: nat where inv:
-      "(f, frgt) \<turnstile> (t1, vs_b, vs_arg) \<Rightarrow>\<^bsup>z1\<^esup> v1"
-      "(f, frgt) \<turnstile> (t2, v1 # vs_b, vs_arg) \<Rightarrow>\<^bsup>z2\<^esup> v"
-    by blast
-
-  (* solve assumptions and obtain IH for t1 *)
-
-  from hLet.prems
-  have no_tails: "\<not> HOL_TCN_Timing.tails t1" "\<not> HOL_TCN_Timing.tails t2" by simp_all
-
-  from hLet.prems compiler_invar_let
-  have comp_invar:
-      "compiler_invar crgt f_args bs keep t1"
-      "compiler_invar crgt f_args (?r1 # bs) (?r1 # keep) t2" by auto
-
-  from hLet.prems
-  have rel_rgt:
-      "relate_rgt_correctness frgt crgt (calls_names_set t1)"
-      "relate_rgt_correctness frgt crgt (calls_names_set t2)"
-    unfolding relate_rgt_correctness_def using calls_names_set by simp_all
-
-  from hLet.prems have rel_state1: "relate_exec_state f_args bs vs_arg vs_b s" by blast
-
-  obtain z1_c :: nat and s2 where ih1:
-      "f_c \<turnstile> (?c1, s) \<Rightarrow>\<^bsup>z1_c\<^esup> s2" "s2 ?r1 = v1" "s2 = s on set f_args \<union> set bs \<union> set keep - {?r1}"
-    using hLet.IH(1) no_tails(1) inv(1) comp_invar(1) rel_rgt(1) rel_state1 by blast
-
-  (* solve assumptions and obtain IH for t2 *)
-
-  have s2_like_s: "s2 = s on set f_args \<union> set bs \<union> set keep" (* TODO *)
-    by (metis Diff_empty Diff_insert0 Un_iff fresh_not_in_stale ih1(3) set_append stale_registers_def)
-  then have rel_state2: "relate_exec_state f_args (?r1 # bs) vs_arg (v1 # vs_b) s2"
-    using hLet.prems unfolding relate_exec_state_def using ih1 by fastforce
-
-  obtain z2_c :: nat and s3 where ih2:
-      "f_c \<turnstile> (?c2, s2) \<Rightarrow>\<^bsup>z2_c\<^esup>  s3" "s3 r = v"
-      "s3 = s2 on set f_args \<union> set (?r1 # bs) \<union> set (?r1 # keep) - {r}"
-    using hLet.IH(2) no_tails(2) inv(2) comp_invar(2) rel_rgt(2) rel_state2 by blast
-
-  (* put it together *)
-
-  have "s3 = s2 on set f_args \<union> set bs \<union> set keep - {r}"
-    using Un_Diff ih2(3) by auto
-  with s2_like_s have "s3 = s on set f_args \<union> set bs \<union> set keep - {r}"
-    by (simp add: eq_on_def)
-
-  then show ?case
-    unfolding to_imp_tc.simps Let_def
-    using ih1 ih2 by blast
-next
-  case (hLetBound n)
-  show ?case
-  proof (repeat \<open>rule exI\<close>; repeat \<open>rule conjI\<close>)
-    from hLetBound_case hLetBound have "v = vs_b ! n" "n < length vs_b" by auto
-    then have "aval (A (V (bs ! n))) s = v" using hLetBound unfolding relate_exec_state_def by auto
-    then show "f_c \<turnstile> (to_imp_tc f_args crgt bs r keep (hLetBound n), s) \<Rightarrow>\<^bsup>Suc (Suc 0)\<^esup> s(r := v)"
-      by (metis tbig_step_t.tAssign to_imp_tc.simps(3))
-  qed (simp_all add: eq_on_def)
-next
-  case (hArg n)
-  show ?case
-  proof (repeat \<open>rule exI\<close>; repeat \<open>rule conjI\<close>)
-    from hArg_case hArg have "v = vs_arg ! n" "n < length vs_arg" by auto
-    then have "aval (A (V (f_args ! n))) s = v" using hArg unfolding relate_exec_state_def by auto
-    then show "f_c \<turnstile> (to_imp_tc f_args crgt bs r keep (hArg n), s) \<Rightarrow>\<^bsup>Suc (Suc 0)\<^esup> s(r := v)"
-      by (metis tbig_step_t.tAssign to_imp_tc.simps(4))
-  qed (simp_all add: eq_on_def)
-next
-  case (hNumber n)
-  show ?case
-  proof (repeat \<open>rule exI\<close>; repeat \<open>rule conjI\<close>)
-    have "aval (A (N n)) s = v" using hNumber unfolding relate_exec_state_def by auto
-    then show "f_c \<turnstile> (to_imp_tc f_args crgt bs r keep (hNumber n), s) \<Rightarrow>\<^bsup>Suc (Suc 0)\<^esup> s(r := v)"
-      by (metis tbig_step_t.tAssign to_imp_tc.simps(5))
-  qed (simp_all add: eq_on_def)
-next
-  case (hIf t1 t2 t3)
-
-  let ?r1 = "fresh' (stale_registers f_args crgt bs keep (IF t1\<noteq>0 THEN t2 ELSE t3)) ''If.x''"
-  let ?c1 = "to_imp_tc f_args crgt bs ?r1 keep t1"
-  let ?c2 = "to_imp_tc f_args crgt bs r keep t2"
-  let ?c3 = "to_imp_tc f_args crgt bs r keep t3"
-
-  from hIf.prems
-  have no_tails:
-    "\<not> HOL_TCN_Timing.tails t1"
-    "\<not> HOL_TCN_Timing.tails t2"
-    "\<not> HOL_TCN_Timing.tails t3" by simp_all
-
-  from compiler_invar_if[OF hIf.prems(3)]
-  have comp_invar:
-      "compiler_invar crgt f_args bs keep t1"
-      "compiler_invar crgt f_args bs keep t2"
-      "compiler_invar crgt f_args bs keep t3" by auto
-
-  from hIf.prems
-  have rel_rgt:
-      "relate_rgt_correctness frgt crgt (calls_names_set t1)"
-      "relate_rgt_correctness frgt crgt (calls_names_set t2)"
-      "relate_rgt_correctness frgt crgt (calls_names_set t3)"
-    unfolding relate_rgt_correctness_def using calls_names_set by simp_all
-
-  from hIf.prems have rel_state1: "relate_exec_state f_args bs vs_arg vs_b s" by blast
-
-  show ?case
-  proof (cases rule: hIf_case[OF hIf.prems(2)])
-    case ifTrue: (1 z1 v1 z2)
-
-    obtain z1_c :: nat and s2 where ih1:
-        "f_c \<turnstile> (?c1, s) \<Rightarrow>\<^bsup>z1_c\<^esup> s2"
-        "s2 ?r1 = v1" "s2 = s on set f_args \<union> set bs \<union> set keep - {?r1}"
-      using hIf.IH(1) no_tails(1) ifTrue comp_invar(1) rel_rgt(1) rel_state1 by blast
-
-    have s2_like_s: "s2 = s on set f_args \<union> set bs \<union> set keep" (* TODO *)
-      by (metis Diff_empty Diff_insert0 Un_iff fresh_not_in_stale ih1(3) set_append stale_registers_def)
-    then have rel_state2: "relate_exec_state f_args bs vs_arg vs_b s2"
-      using hIf.prems unfolding relate_exec_state_def using ih1 by fastforce
-
-    obtain z2_c :: nat and s3 where ih2:
-        "f_c \<turnstile> (?c2, s2) \<Rightarrow>\<^bsup>z2_c\<^esup>  s3" "s3 r = v"
-        "s3 = s2 on set f_args \<union> set bs \<union> set keep - {r}"
-      using hIf.IH(2) no_tails(2) ifTrue comp_invar(2) rel_rgt(2) rel_state2 by blast
-  
-    have "s3 = s2 on set f_args \<union> set bs \<union> set keep - {r}"
-      using Un_Diff ih2(3) by auto
-    with s2_like_s have "s3 = s on set f_args \<union> set bs \<union> set keep - {r}"
-      by (simp add: eq_on_def)
-  
-    then show ?thesis
-      unfolding to_imp_tc.simps Let_def
-      using ih1 ih2 ifTrue by blast
-  next
-    case ifFalse: (2 z1 z2)
-
-    obtain z1_c :: nat and s2 where ih1:
-        "f_c \<turnstile> (?c1, s) \<Rightarrow>\<^bsup>z1_c\<^esup> s2"
-        "s2 ?r1 = 0" "s2 = s on set f_args \<union> set bs \<union> set keep - {?r1}"
-      using hIf.IH(1) no_tails(1) ifFalse comp_invar(1) rel_rgt(1) rel_state1 by metis
-
-    have s2_like_s: "s2 = s on set f_args \<union> set bs \<union> set keep" (* TODO *)
-      by (metis Diff_empty Diff_insert0 Un_iff fresh_not_in_stale ih1(3) set_append stale_registers_def)
-    then have rel_state3: "relate_exec_state f_args bs vs_arg vs_b s2"
-      using hIf.prems(5) unfolding relate_exec_state_def using ih1 by fastforce
-
-    obtain z2_c :: nat and s3 where ih3:
-        "f_c \<turnstile> (?c3, s2) \<Rightarrow>\<^bsup>z2_c\<^esup>  s3" "s3 r = v"
-        "s3 = s2 on set f_args \<union> set bs \<union> set keep - {r}"
-      using hIf.IH(3) no_tails(3) ifFalse comp_invar(3) rel_rgt(3) rel_state3 by blast
-  
-    have "s3 = s2 on set f_args \<union> set bs \<union> set keep - {r}"
-      using Un_Diff ih3(3) by auto
-    with s2_like_s have "s3 = s on set f_args \<union> set bs \<union> set keep - {r}"
-      by (simp add: eq_on_def)
-  
-    then show ?thesis
-      unfolding to_imp_tc.simps Let_def
-      using ih1 ih3 ifFalse by blast
-  qed
-next
-  case (hCall gr ts)
-
-  let ?g = "f_from_frgt frgt gr"
-  let ?T_g = "T_f_from_frgt frgt gr"
-
-  from hCall.prems hCall_case
-  obtain zs vs :: "nat list" where
-          z: "z = sum_list zs + ?T_g vs"
-      and lengths: "length zs = length ts" "length vs = length ts"
-      and args_bigstep: "\<forall>i<length ts. (f, frgt) \<turnstile> (ts ! i, vs_b, vs_arg) \<Rightarrow>\<^bsup>zs ! i\<^esup> vs ! i"
-      and gvs: "?g vs = v"
-    using split_from_frgt by auto
-
-  (* part 1: computing the arguments *)
-
-  let ?xs = "make_n_fresh (stale_registers f_args crgt bs keep (hCall gr ts)) ''Call.x.'' (length ts)"
-  let ?c1 = "mk_seqs (generate (\<lambda>i. to_imp_tc f_args crgt bs (?xs ! i) (?xs @ keep) (ts ! i)) (length ts))"
-
-  have "length vs = length ts" "length ?xs = length ts"
-    using lengths unfolding make_n_fresh_def generate_def by simp_all
-  moreover have "relate_exec_state f_args bs vs_arg vs_b s" using hCall by blast
-  moreover have "distinct ?xs" using distinct_make_n_fresh by blast
-  moreover have "set ?xs \<subseteq> set (?xs @ keep)" by simp
-  moreover have "set f_args \<inter>\<^sub>\<emptyset> set ?xs" "set bs \<inter>\<^sub>\<emptyset> set ?xs"
-    unfolding stale_registers_def using make_n_fresh_not_in_stale by fastforce+
-  moreover have
-      "\<exists>z_c s'. f_c \<turnstile> (to_imp_tc f_args crgt bs (?xs ! i) (?xs @ keep) (ts ! i), s) \<Rightarrow>\<^bsup>z_c :: nat\<^esup>  s' \<and>
-                s' (?xs ! i) = (vs ! i) \<and> s' = s on set f_args \<union> set bs \<union> set (?xs @ keep) - {?xs ! i}"
-    if "i < length ts" "relate_exec_state f_args bs vs_arg vs_b s" for i s
-  proof (rule hCall.IH)
-    from that show "ts ! i \<in> set ts" by simp
-  next
-    from that hCall.prems
-    show "\<not> HOL_TCN_Timing.tails (ts ! i)" by simp
-  next
-    from that args_bigstep
-    show "(f, frgt) \<turnstile> (ts ! i, vs_b, vs_arg) \<Rightarrow>\<^bsup>zs ! i\<^esup>  vs ! i" by simp
-  next
-    from that hCall.prems compiler_invar_call
-    show "compiler_invar crgt f_args bs (?xs @ keep) (ts ! i)" by simp
-  next
-    from that show "relate_rgt_correctness frgt crgt (calls_names_set (ts ! i))"
-      using hCall.prems(4) calls_names_set unfolding relate_rgt_correctness_def by fastforce
-  next
-    from that show "relate_exec_state f_args bs vs_arg vs_b s" by blast
-  qed
-
-  ultimately obtain z1 :: nat and s2 where exec_c1: "f_c \<turnstile> (?c1, s) \<Rightarrow>\<^bsup>z1\<^esup>  s2"
-      "lookups ?xs s2 = vs" "s2 = s on set f_args \<union> set bs \<union> set (?xs @ keep) - set ?xs"
-    (* using compiled_arguments_bigstep' by blast *)
-    sorry
-
-  (* part 2: copying from temporaries to argument registers *)
-
-  let ?c2 = "mk_seqs (generate (\<lambda>i. (args_from_crgt crgt gr ! i) ::= A (V (?xs ! i))) (length ts))"
-  let ?z2 = "(2 * length ts)\<^sub>+"
-
-  have "set (args_from_crgt crgt gr) \<subseteq> set (stale_registers f_args crgt bs keep (hCall gr ts))"
-    unfolding stale_registers_def call_registers_def using calls_names_set by auto
-  then have "set ?xs \<inter>\<^sub>\<emptyset> set (args_from_crgt crgt gr)"
-    using make_n_fresh_not_in_stale by blast
-  moreover have "distinct (args_from_crgt crgt gr)"
-    using hCall.prems unfolding compiler_invar_def calls_names_set by simp
-  moreover have "length ?xs = length ts"
-    unfolding make_n_fresh_def generate_def by simp
-  moreover have "length (args_from_crgt crgt gr) = length ts"
-    using hCall.prems unfolding compiler_invar_def calls_n_set by simp
-
-  ultimately obtain s3 where exec_c2: "f_c \<turnstile> (?c2, s2) \<Rightarrow>\<^bsup>?z2\<^esup> s3"
-       "lookup_args crgt gr s3 = lookups ?xs s2" "s3 = s2 on - set (args_from_crgt crgt gr)"
-    (* using copy_list_bigstep' by blast *)
-    sorry
-
-  (* part 3: calling g *)
-  
-  let ?gcom = "com_from_crgt crgt gr" and ?gret = "ret_from_crgt crgt gr" and ?gv = "f_from_frgt frgt gr (lookup_args crgt gr s3)"
-  let ?c3 = "CALL ?gcom RETURN ?gret :: tcom"
-  let ?s4 = "s3(?gret := ?gv)"
-
-  have "terminates_with_res_IMP ?gcom s3 ?gret ?gv" using hCall.prems calls_names_set unfolding relate_rgt_correctness_def by simp
-  then obtain z3 s4' where "(?gcom, s3) \<Rightarrow>\<^bsup>z3\<^esup> s4'" "s4' ?gret = ?gv"
-    unfolding terminates_with_res_IMP_def terminates_with_res_pred_time_IMP_def terminates_with_pred_time_IMP_def by blast
-  then have exec_c3: "f_c \<turnstile> (?c3, s3) \<Rightarrow>\<^bsup>z3\<^esup> ?s4" using tbig_step_t.tCall by metis
-
-  have "f_from_frgt frgt gr = ?g" using split_from_frgt by simp
-  then have vfrom: "?gv = v" using exec_c1(2) exec_c2(2) gvs by simp
-
-  (* part 4: copying to r *)
-
-  let ?c4 = "r ::= A (V (ret_from_crgt crgt gr)) :: tcom"
-
-  let ?s5 = "?s4(r := aval (A (V ?gret)) ?s4)"
-  obtain z4 :: nat where exec_c4: "f_c \<turnstile> (?c4, ?s4) \<Rightarrow>\<^bsup>z4\<^esup> ?s5" by blast
-  then have s5: "?s5 = ?s4(r := v)" using vfrom exec_c3 by simp
-
-  (* putting it together *)
-
-  show ?case unfolding to_imp_tc.simps Let_def split_beta
-  proof (repeat \<open>rule exI\<close>; repeat \<open>rule conjI\<close>)
-    show "f_c \<turnstile> (?c1;; ?c2;; ?c3;; ?c4, s) \<Rightarrow>\<^bsup>z1 + ?z2 + z3 + z4\<^esup> ?s5"
-    apply (repeat \<open>rule tbig_step_t.tSeq\<close>)
-      using exec_c1 exec_c2 exec_c3 exec_c4 using tbig_step_t.tSeq by auto
-  next
-    show "?s5 r = v" using s5 by simp
-  next
-    have "set f_args \<union> set bs \<union> set (?xs @ keep) - set ?xs = set f_args \<union> set bs \<union> set keep"
-      using make_n_fresh_not_in_stale unfolding stale_registers_def by fastforce
-    then have *: "s2 = s on set f_args \<union> set bs \<union> set keep - {r}"
-      using exec_c1 by blast
-
-    have "set f_args \<union> set bs \<union> set keep \<inter>\<^sub>\<emptyset> set (args_from_crgt crgt gr)"
-      using hCall.prems(3) unfolding compiler_invar_def call_registers_def using calls_names_set by auto
-    then have **: "s3 = s2 on set f_args \<union> set bs \<union> set keep - {r}"
-      using hCall.prems(3) exec_c2 unfolding compiler_invar_def by auto
-
-    have "ret_from_crgt crgt gr \<notin> set f_args \<union> set bs \<union> set keep"
-      using hCall.prems(3) unfolding compiler_invar_def call_registers_def using calls_names_set by auto
-    then have ***: "?s5 = s3 on set f_args \<union> set bs \<union> set keep - {r}" by auto
-
-    show "?s5 = s on set f_args \<union> set bs \<union> set keep - {r}"
-      using * ** *** by fastforce
-  qed
-
-next
-  case (hTAIL x)
-  then show ?case by simp
-qed *)
-
-(* 
-(* In the compiled trace relatedness proof, we frequently apply the IH to obtain relatedness
-   theorems for subterms (assumption comp_rel). By using the theorems relating traces and bigstep
-   semantics, we can add the compiler correctness results for the execution of those subterms.
-   Those we need to continue applying the IH to further subterms, e.g. the IH for the second
-   LET subterm requires a well-formed starting state. *)
-lemma compiler_augment_rel_trace:
-  assumes no_tails: "\<not> HOL_TCN_Timing.tails t"
-  assumes htrace: "frgt \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup> hT :: HOL_TCN_Timing.call_trace \<^esup> Value v"
-  assumes comp_assms:
-    "compiler_invar crgt f_args bs keep t"
-    and "relate_rgt_correctness frgt crgt (calls_names_set t)"
-    and "relate_exec_state f_args bs vs_arg vs_b s"
-  assumes comp_rel:
-    "(to_imp_tc f_args crgt bs r keep t,s) \<Rightarrow>\<^bsup>(k, cT)\<^esup> (s', False)"
-    and "rel_trace_to_leaf crgt f_args r hT (Value v) cT s' False"
-  shows "s' r = v" "s' = s on set f_args \<union> set bs \<union> set keep - {r}"
-proof -
-  from assms trace_leaf_nontail_bigstep
-  obtain f z where "(f,frgt) \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup>z :: nat\<^esup> v" by blast
-
-  then obtain f_c z_c s2 where correct:
-      "f_c \<turnstile> (to_imp_tc f_args crgt bs r keep t,s) \<Rightarrow>\<^bsup>z_c :: nat\<^esup> s2" "s2 r = v"
-      "s2 = s on set f_args \<union> set bs \<union> set keep - {r}"
-    using compiler_correct_no_tails[where t = t] assms by blast
-
-  have "s2 = s'" using correct(1) IMP_Tailcall_Traces.trace_leaf_nontail_bigstep[OF comp_rel(1)] determ_value by blast
-
-  then show "s' r = v" "s' = s on set f_args \<union> set bs \<union> set keep - {r}" using correct by simp_all
-qed
-*)
-
 (* x_0,..x_n-1 are disjoint from y_0..y_m-1 *)
 abbreviation "disjoint_v x n y m \<equiv> (\<And>i j. \<lbrakk>i < n; j < m\<rbrakk> \<Longrightarrow> x i \<noteq> y j)"
 
@@ -952,26 +406,6 @@ proof (rule eq_onI)
   then have "i < length xs \<Longrightarrow> x \<noteq> xs ! i" for i by auto
   with assms show "f x = g x" by blast
 qed
-
-(* lemma disjoint_from_v_disjoint:
-  "disjoint_from_v (nth xs) (length xs) A \<equiv> Trueprop (set xs \<inter>\<^sub>\<emptyset> A)" for A
-proof
-  assume *: "PROP disjoint_from_v (nth xs) (length xs) A"
-  show "set xs \<inter>\<^sub>\<emptyset> A"
-  proof (rule ccontr)
-    assume "set xs \<inter> A \<noteq> {}"
-    then obtain x where "x \<in> set xs" "x \<in> A" by blast
-    then obtain i where "x = xs ! i" "i < length xs" using in_set_conv_nth by metis
-    with * have "x \<notin> A" by blast
-    with \<open>x \<in> A\<close> show False by blast
-  qed
-next
-  assume *: "set xs \<inter>\<^sub>\<emptyset> A"
-  show "PROP disjoint_from_v (nth xs) (length xs) A"
-  apply (rule ccontr) using * by force
-qed *)
-
-
 
 method truth_nuke = blast
 
@@ -1155,108 +589,6 @@ next
   qed
 qed
 
-(* 
-using assms proof (induction xs ys arbitrary: thesis rule: snoc_list_induct2)
-  case Nil
-  then show ?case unfolding generate_def using ttrace_to_leaf.tSkip by auto
-next
-  case (snoc xs x ys y)
-
-  let ?cs = "\<lambda>xs ys. generate (\<lambda>i. (ys ! i) ::= A (V (xs ! i)) :: tcom) (length xs)"
-
-  let ?cs1 = "?cs xs ys"
-  let ?c2 = "y ::= A (V x) :: tcom"
-  let ?cs' = "?cs (xs @ [x]) (ys @ [y])"
-
-  have cs': "?cs' = ?cs1 @ [?c2]"
-    apply (simp add: generate_snoc)
-    unfolding generate_def using nth_append_left snoc by fastforce
-
-  from snoc obtain s2 where ih:
-      "(mk_seqs ?cs1, s) \<Rightarrow>\<^bsup>(Suc (2 * length xs), [])\<^esup> (s2,False)"
-      "lookups ys s2 = lookups xs s" "s2 = s on (- set ys)"
-    by auto
-  moreover obtain s3 where step:
-      "(?c2, s2) \<Rightarrow>\<^bsup>(Suc (Suc 0), [])\<^esup> (s3, False)"
-      "s3 y = s2 x" "s3 = s2 on (- {y})"
-    using ttrace_to_leaf.tAssign by fastforce
-  ultimately have "(mk_seqs ?cs1;; ?c2, s) \<Rightarrow>\<^bsup>(Suc (2 * length (xs @ [x])), [])\<^esup> (s3,False)"
-    using ttrace_to_leaf.tSeq by auto
-  then have "(mk_seqs (?cs1 @ [?c2]), s) \<Rightarrow>\<^bsup>(Suc (2 * length (xs @ [x])), [])\<^esup> (s3,False)" 
-    (* using (* t_seqs'_snoc *) t_seqs'_t_seqs *) sorry
-  then have 1: "(mk_seqs ?cs', s) \<Rightarrow>\<^bsup>(Suc (2 * length (xs @ [x])), [])\<^esup> (s3,False)"
-    by (subst cs') assumption
-
-  have "s3 = s2 on set ys" using snoc step by auto
-  then have "lookups ys s3 = lookups ys s2" by auto
-  then have 2: "lookups (ys @ [y]) s3 = lookups (xs @ [x]) s"
-    using ih step snoc by auto
-
-  have 3: "s3 = s on (- set (ys @ [y]))"
-    using ih step by auto
-
-  from 1 2 3 snoc show ?case by blast
-qed (simp add: assms) *)
-
-(* 
-(* copying a list of registers *)
-lemma copy_list_bigstep:
-  fixes x y :: "nat \<Rightarrow> vname"
-  assumes "\<And>i j. \<lbrakk>i < n; j < n; i \<noteq> j\<rbrakk> \<Longrightarrow> y i \<noteq> y j"
-  assumes "\<And>i j. \<lbrakk>i < n; j < n\<rbrakk> \<Longrightarrow> x i \<noteq> y j"
-  shows
-    "\<exists>s'. f \<turnstile> (mk_seqs (generate (\<lambda>i. (y i) ::= A (V (x i))) n), s) \<Rightarrow>\<^bsup>(2 * n)\<^sub>+\<^esup> s' \<and>
-          (\<forall>i < n. s' (y i) = s (x i)) \<and> (\<forall>y'. (\<forall>i < n. y' \<noteq> y i) \<longrightarrow> s' y' = s y')"
-using assms proof (induction n rule: induct_nat_012)
-  case 0
-  show ?case proof (rule exI, repeat \<open>rule conjI\<close>)
-    show "f \<turnstile> (mk_seqs (generate (\<lambda>i. (y i) ::= A (V (x i))) 0), s) \<Rightarrow>\<^bsup>(2 * 0)\<^sub>+\<^esup> s"
-      unfolding generate_def by auto
-  qed simp_all
-next
-  case 1
-  show ?case proof (rule exI, repeat \<open>rule conjI\<close>)
-    show "f \<turnstile> (mk_seqs (generate (\<lambda>i. (y i) ::= A (V (x i))) (Suc 0)), s) \<Rightarrow>\<^bsup>(2 * Suc 0)\<^sub>+\<^esup> (s(y 0 := s (x 0)))"
-      unfolding generate_def by auto
-  qed (simp_all add: 1)
-next
-  case (ge2 n)
-
-  let ?cs = "\<lambda>n. generate (\<lambda>i. (y i) ::= A (V (x i)) :: tcom) n"
-
-  let ?n = "Suc n"
-  from ge2.IH(2) ge2.prems obtain s2 where ih:
-      "f \<turnstile> (mk_seqs (?cs ?n), s) \<Rightarrow>\<^bsup>(2 * ?n)\<^sub>+\<^esup> s2"
-      "\<And>i. i < ?n \<Longrightarrow> s2 (y i) = s (x i)"
-      "\<And>y'. (\<forall>i < ?n. y' \<noteq> y i) \<longrightarrow> s2 y' = s y'" by auto
-
-  from ge2.prems(2) have "i < ?n \<Longrightarrow> x ?n \<noteq> y i" for i by simp
-  with ih have s2_xn: "s2 (x ?n) = s (x ?n)" by blast
-
-  let ?c' = "(y ?n) ::= A (V (x ?n)) :: tcom"
-  let ?s3 = "s2(y ?n := s2 (x ?n))"
-  have step: "f \<turnstile> (?c', s2) \<Rightarrow>\<^bsup>Suc (Suc 0)\<^esup> ?s3" by auto
-
-  let ?n' = "Suc ?n"
-
-  show ?case
-  proof (rule exI; repeat \<open>rule conjI; (rule allI)?\<close>)
-    from tbig_step_t.tSeq [OF ih(1) step(1)] have
-      "f \<turnstile> (mk_seqs (?cs ?n);; ?c', s) \<Rightarrow>\<^bsup>(2 * ?n)\<^sub>+ + Suc (Suc 0)\<^esup> ?s3" by blast
-    moreover have *: "linearize (mk_seqs (?cs ?n);; ?c') = linearize (mk_seqs (?cs ?n @ [?c']))" by simp
-    moreover have "?cs ?n @ [?c'] = ?cs ?n'" unfolding generate_def by simp
-    moreover have "(2 * ?n)\<^sub>+ + Suc (Suc 0) = (2 * ?n')\<^sub>+" by simp
-    ultimately show "f \<turnstile> (mk_seqs (?cs ?n'), s) \<Rightarrow>\<^bsup>(2 * ?n')\<^sub>+\<^esup> ?s3"
-      using same_linearize_bigstep[OF *] by simp
-  next
-    show "i < ?n' \<longrightarrow> ?s3 (y i) = s (x i)" for i
-      using s2_xn ge2.prems(1) ih(2) by (cases "i = ?n") simp_all
-  next
-    show "\<And>y'. (\<forall>i<?n'. y' \<noteq> y i) \<longrightarrow> ?s3 y' = s y'"
-      using ih(3) by simp
-  qed
-qed *)
-
 lemma copy_list_trace':
   assumes lengths: "length xs = n" "length ys = n"
   assumes distinct: "distinct ys"
@@ -1274,37 +606,9 @@ proof goal_cases
     "\<And>i. i < n \<Longrightarrow> s' (ys ! i) = s (xs ! i)" "\<And>y'. (\<And>i. i < n \<Longrightarrow> y' \<noteq> ys ! i) \<Longrightarrow> s' y' = s y'"
     by blast
   note lookups = lookups_v[of ys xs s' s, unfolded lengths, OF refl cp(2)]
-  note eq_on = eq_on_complement[of ys s' s, unfolded lengths, OF cp(3)]
+  note eq_on = eq_on_v_complement[of ys s' s, unfolded lengths, OF cp(3)]
   from obt[OF cp(1) lookups eq_on] show ?case by blast
 qed
-
-(* lemma compiled_arguments_trace':
-  assumes lengths: "length vs = length ts" "length xs = length ts" "length hTs = length ts"
-  assumes rel: "relate_exec_state f_args bs vs_arg vs_b s"
-  assumes dist: "distinct xs"
-  assumes keep_xs: "set xs \<subseteq> set keep"
-  assumes disj: "set f_args \<inter>\<^sub>\<emptyset> set xs" "set bs \<inter>\<^sub>\<emptyset> set xs"
-  assumes trace: "\<And>i. i < length ts \<Longrightarrow> frgt \<turnstile> (ts ! i, vs_b, vs_arg) \<Rightarrow>\<^bsup>hTs ! i\<^esup>  Value (vs ! i)"
-  assumes sem: "\<And>i s.
-    \<lbrakk> i < length ts; relate_exec_state f_args bs vs_arg vs_b s \<rbrakk> \<Longrightarrow>
-    \<exists>k cT s'. (to_imp_tc f_args crgt bs (xs ! i) keep (ts ! i), s) \<Rightarrow>\<^bsup>(k, cT)\<^esup>  (s', False) \<and>
-              rel_trace_to_leaf crgt f_args (xs ! i) (hTs ! i) (Value (vs ! i)) cT s' False \<and>
-              s' = s on set f_args \<union> set bs \<union> set keep - {xs ! i}"
-  obtains k cT s' where
-    "(mk_seqs (generate (\<lambda>i. to_imp_tc f_args crgt bs (xs ! i) keep (ts ! i)) (length ts)), s) \<Rightarrow>\<^bsup>(k, cT)\<^esup> (s', False)"
-    "rel_trace_calls crgt (concat hTs) cT"
-    "lookups xs s' = vs \<and> s' = s on set f_args \<union> set bs \<union> set keep - set xs"
-  using compiled_arguments_trace[OF assms] by blast *)
-
-(* lemma copy_list_trace':
-  assumes "length xs = n"
-  assumes "length ys = n"
-  assumes "distinct ys"
-  assumes "set xs \<inter>\<^sub>\<emptyset> set ys"
-  obtains s' where
-    "(mk_seqs (generate (\<lambda>i. (ys ! i) ::= A (V (xs ! i))) (length xs)),s) \<Rightarrow>\<^bsup>(Suc (2 * length xs), [])\<^esup> (s', False)"
-    "lookups ys s' = lookups xs s" "s' = s on (- set ys)"
-  using copy_list_trace[where xs = xs and ys = ys] assms by auto *)
 
 
 (* needed multiple times and slow \<rightarrow> pull out *)
@@ -1606,7 +910,7 @@ next
   (* part 2: copying from temporaries to argument registers *)
 
   let ?c2 = "mk_seqs (generate (\<lambda>i. (args_from_crgt crgt gr ! i) ::= A (V (?xs ! i))) (length ts))"
-  let ?k2 = "Suc (2 * length ts)"
+  let ?k2 = "(2 * length ts)\<^sub>+"
 
   have "set (args_from_crgt crgt gr) \<subseteq> set (stale_registers f_args crgt bs keep (hCall gr ts))"
     unfolding stale_registers_def call_registers_def using calls_names_set by auto
@@ -1736,7 +1040,7 @@ next
   (* part 2: copying from temporaries to argument registers *)
 
   let ?c2 = "mk_seqs (generate (\<lambda>i. (f_args ! i) ::= A (V (?xs ! i))) (length ts))"
-  let ?k2 = "Suc (2 * length ts)"
+  let ?k2 = "(2 * length ts)\<^sub>+"
 
   have "set f_args \<subseteq> set (stale_registers f_args crgt bs keep (hTAIL ts))"
     unfolding stale_registers_def call_registers_def using calls_names_set by auto
@@ -2592,6 +1896,9 @@ corollary compiler_correct':
   by blast
 
 
+section \<open>Examples\<close>
+
+subsection \<open>Primitives\<close>
 
 (* primitives: +, - *)
 
@@ -2657,6 +1964,8 @@ lemma minus_correctness_rgt:
   unfolding relate_rgt_f_def
   using assms minus_correctness by simp
 
+
+subsection \<open>Compiled functions\<close>
 
 (* using the compiler *)
 
@@ -2753,7 +2062,7 @@ method to_imp_tc_unfold uses def =
   rule SIMPS_TOI
 
 
-(* equality *)
+subsubsection \<open>Equality\<close>
 
 (* the following comments refer to hypothetical future work to embed HOL functions to HOL-TCNat
     and prove their relatedness lemmas automatically *)
@@ -2934,6 +2243,7 @@ proof-
 qed
 
 
+subsubsection \<open>Multiplication (with accumulator)\<close>
 (* multiplication, see above for general comments *)
 
 fun mul_acc :: "nat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> nat" where
@@ -3137,6 +2447,8 @@ proof-
   then show ?thesis unfolding relate_rgt_f_def using mul_acc_correctness by (metis split_pairs2)
 qed
 
+
+subsubsection \<open>Multiplication\<close>
 (* now without an accumulator *)
 
 definition "mul x y = mul_acc x y 0"
