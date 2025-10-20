@@ -306,10 +306,18 @@ definition "h_sum3 = hLet (hCall ''plus'' [hArg 0, hArg 1]) (hCall ''plus'' [hLe
 value "to_imp_tc [''x'', ''y'', ''z''] (null(''plus'' := com_plus)) [] ''r'' [] h_sum3"
 
 
-(* basic relatedness lemmas of to_imp_tc: nontail, invar, and size *)
+(* basic relatedness lemmas of to_imp_tc: tails, invar, and size *)
+
+lemma to_imp_tails: "HOL_TCN_Timing.invar t \<Longrightarrow> HOL_TCN_Timing.tails t \<Longrightarrow> IMP_Tailcall.tails (to_imp_tc f_args crgt bs r keep t)"
+  by (induction t arbitrary: bs r keep) (auto simp add: Let_def split_beta generate_def)
 
 lemma to_imp_nontail: "\<not> HOL_TCN_Timing.tails t \<Longrightarrow> \<not> IMP_Tailcall.tails (to_imp_tc f_args crgt bs r keep t)"
   by (induction t arbitrary: bs r keep) (simp_all add: Let_def split_beta generate_def)
+
+lemma to_imp_tails_iff:
+  assumes "HOL_TCN_Timing.invar t"
+  shows "HOL_TCN_Timing.tails t \<longleftrightarrow> IMP_Tailcall.tails (to_imp_tc f_args crgt bs r keep t)"
+  using to_imp_tails to_imp_nontail assms by blast
 
 lemma to_imp_invar: "HOL_TCN_Timing.invar t \<Longrightarrow> IMP_Tailcall.invar (to_imp_tc f_args crgt bs r keep t)"
   by (induction t arbitrary: bs r keep) (simp_all add: Let_def split_beta generate_def to_imp_nontail)
