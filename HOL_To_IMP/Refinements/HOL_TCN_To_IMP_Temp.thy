@@ -257,13 +257,6 @@ section \<open>Notions of trace relatedness\<close>
 definition "relate_exec_state f_args bs vs_arg vs_b s \<longleftrightarrow>
   lookups f_args s = vs_arg \<and> lookups bs s = vs_b"
 
-(*
-definition "called_correctness crgt frgt fs \<longleftrightarrow> (\<forall>f \<in> fs.
-    HOL_Nat_To_IMP.terminates_with_res_time_order_IMP
-      (com_from_crgt crgt f) (ret_from_crgt crgt f)
-      (f_from_frgt frgt f o lookup_args crgt f) (T_f_from_frgt frgt f o lookup_args crgt f))" (* can we replace ...  with existential ? *)
-*)
-
 definition "relate_rgt_correctness frgt crgt fs \<longleftrightarrow> (\<forall>f \<in> fs.
   \<forall>s. terminates_with_res_IMP (com_from_crgt crgt f) s (ret_from_crgt crgt f) (f_from_frgt frgt f (lookup_args crgt f s)))"
 
@@ -293,11 +286,6 @@ definition rel_trace_to_leaf ::
 definition rel_trace_to_end where
   "rel_trace_to_end crgt r hT v cT s \<longleftrightarrow>
     rel_trace_calls crgt hT cT \<and> s r = v"
-
-(* lemma
-  assumes "length xs = length ys"
-  shows "(\<forall>i<length xs. P (xs ! i) (ys ! i)) = list_all (\<lambda>(x, y). P x y) (zip xs ys)"
-   apply (induction rule: snoc_list_induct2[OF assms])  *)
 
 lemma rel_trace_to_leaf_cl:
   shows "rel_trace_to_leaf crgt f_args r hT (Value v) cT s cl \<Longrightarrow> \<not> cl"
@@ -346,50 +334,12 @@ proof -
   then show "P xs ys" by simp
 qed
 
-(* lemma snoc_obtain:
-  assumes "xs \<noteq> []"
-  obtains x xs' where "xs = xs' @ [x]"
-  using assms by (meson rev_exhaust)
 
 
-lemma snoc_list_induct3 [case_names len1 len2 Nil snoc]:
-  assumes len: "length xs = length ys" "length ys = length zs"
-  assumes nil: "P [] [] []"
-  assumes snoc: "\<And>xs x ys y zs z. length xs = length ys \<Longrightarrow> length ys = length zs \<Longrightarrow> P xs ys zs \<Longrightarrow> P (xs @ [x]) (ys @ [y]) (zs @ [z])"
-  shows "P xs ys zs"
-proof -
-  let ?P = "\<lambda>xs ys zs. P (rev xs) (rev ys) (rev zs)"
-  have "length (rev xs) = length (rev ys)" "length (rev ys) = length (rev zs)" using len by simp_all
-  then have "?P (rev xs) (rev ys) (rev zs)"
-  proof (induction rule: list_induct3)
-  qed (simp_all add: nil snoc)
-  then show "P xs ys zs" by simp
-qed
-
-lemma snoc_list_induct4 [case_names len1 len2 len3 Nil snoc]:
-  assumes len: "length xs1 = length xs2" "length xs2 = length xs3" "length xs3 = length xs4"
-  assumes nil: "P [] [] [] []"
-  assumes snoc: "\<And>xs1 x1 xs2 x2 xs3 x3 xs4 x4.
-    length xs1 = length xs2 \<Longrightarrow> length xs2 = length xs3 \<Longrightarrow> length xs3 = length xs4 \<Longrightarrow>
-    P xs1 xs2 xs3 xs4 \<Longrightarrow> P (xs1 @ [x1]) (xs2 @ [x2]) (xs3 @ [x3]) (xs4 @ [x4])"
-  shows "P xs1 xs2 xs3 xs4"
-proof -
-  let ?P = "\<lambda>xs1 xs2 xs3 xs4. P (rev xs1) (rev xs2) (rev xs3) (rev xs4)"
-  have
-    "length (rev xs1) = length (rev xs2)"
-    "length (rev xs2) = length (rev xs3)"
-    "length (rev xs3) = length (rev xs4)" using len by simp_all
-  then have "?P (rev xs1) (rev xs2) (rev xs3) (rev xs4)"
-  proof (induction rule: list_induct4)
-  qed (simp_all add: nil snoc)
-  then show "P xs1 xs2 xs3 xs4" by simp
-qed *)
-
-
-lemma nth_append_length_eq:
+(* lemma nth_append_length_eq:
   assumes "length xs = n"
   shows "(xs @ y # zs) ! n = y"
-  apply (subst nth_append) using assms by simp
+  apply (subst nth_append) using assms by simp *)
 
 
 
@@ -994,9 +944,7 @@ proof (rule eq_onI)
   ultimately show "f x = g x" using assms by blast
 qed
 
-
-
-lemma eq_on_complement:
+lemma eq_on_v_complement:
   assumes "\<And>x. (\<And>i. i < length xs \<Longrightarrow> x \<noteq> xs ! i) \<Longrightarrow> f x = g x"
   shows "f = g on - set xs"
 proof (rule eq_onI)
@@ -1094,7 +1042,7 @@ next
       unfolding rel_trace_to_leaf_def by simp
   next
     fix i assume *: "i < ?n'"
-    then consider (ltn) "i < ?n" | (n) "i = ?n" by linarith
+    then consider "i < ?n" | "i = ?n" by linarith
     then show "s3 (x i) = v i"
       using ge2.prems(1,2) trace2(2,3) trace1(3) unfolding rel_trace_to_leaf_def by cases simp_all
   next
@@ -1152,12 +1100,62 @@ qed
 
 (* copying a list of registers *)
 lemma copy_list_trace:
-  assumes "length xs = length ys"
-  assumes "distinct ys"
-  assumes "set xs \<inter>\<^sub>\<emptyset> set ys"
-  obtains s' where
-    "(mk_seqs (generate (\<lambda>i. (ys ! i) ::= A (V (xs ! i))) (length xs)),s) \<Rightarrow>\<^bsup>(Suc (2 * length xs), [])\<^esup> (s', False)"
-    "lookups ys s' = lookups xs s" "s' = s on (- set ys)"
+  fixes x y :: "nat \<Rightarrow> vname"
+  assumes "PROP distinct_v y n"
+  assumes "PROP disjoint_v x n y n"
+  shows
+    "\<exists>s'. (mk_seqs (generate (\<lambda>i. (y i) ::= A (V (x i))) n), s) \<Rightarrow>\<^bsup>((2 * n)\<^sub>+, [])\<^esup> (s', False) \<and>
+          (\<forall>i < n. s' (y i) = s (x i)) \<and> (\<forall>y'. (\<forall>i < n. y' \<noteq> y i) \<longrightarrow> s' y' = s y')"
+using assms proof (induction n rule: induct_nat_012)
+  case 0
+  show ?case proof (rule exI, repeat \<open>rule conjI\<close>)
+    show "(mk_seqs (generate (\<lambda>i. (y i) ::= A (V (x i))) 0), s) \<Rightarrow>\<^bsup>((2 * 0)\<^sub>+, [])\<^esup>  (s, False)"
+      unfolding generate_def by auto
+  qed simp_all
+next
+  case 1
+  show ?case proof (rule exI, repeat \<open>rule conjI\<close>)
+    show "(mk_seqs (generate (\<lambda>i. (y i) ::= A (V (x i))) (Suc 0)), s) \<Rightarrow>\<^bsup>((2 * Suc 0)\<^sub>+, [])\<^esup>  ((s(y 0 := s (x 0))), False)"
+      unfolding generate_def by auto
+  qed (simp_all add: 1)
+next
+  case (ge2 n)
+
+  let ?cs = "\<lambda>n. generate (\<lambda>i. (y i) ::= A (V (x i)) :: tcom) n"
+
+  let ?n = "Suc n"
+  from ge2.IH(2) ge2.prems obtain s2 where trace1[rule_format]:
+      "(mk_seqs (?cs ?n), s) \<Rightarrow>\<^bsup>((2 * ?n)\<^sub>+, [])\<^esup> (s2, False)"
+      "\<And>i. i < ?n \<Longrightarrow> s2 (y i) = s (x i)"
+      "\<And>y'. (\<forall>i < ?n. y' \<noteq> y i) \<longrightarrow> s2 y' = s y'" by auto
+
+  let ?c' = "(y ?n) ::= A (V (x ?n)) :: tcom"
+  let ?s3 = "s2(y ?n := s2 (x ?n))"
+  have trace2: "(?c', s2) \<Rightarrow>\<^bsup>(Suc (Suc 0), [])\<^esup> (?s3, False)" by auto
+
+  let ?n' = "Suc ?n"
+
+  show ?case
+  proof (repeat \<open>rule exI conjI allI impI\<close>)
+    show "(mk_seqs (?cs ?n'), s) \<Rightarrow>\<^bsup>((2 * ?n')\<^sub>+, [])\<^esup> (?s3, False)"
+    proof (rule same_linearize_trace_leaf[THEN iffD1])
+      show "(mk_seqs (?cs ?n);; ?c', s) \<Rightarrow>\<^bsup>((2 * ?n')\<^sub>+, [])\<^esup> (?s3, False)"
+        using ttrace_to_leaf.tSeq[OF trace1(1) trace2] by simp
+      show "linearize (mk_seqs (?cs ?n);; ?c') = linearize (mk_seqs (?cs ?n'))"
+        unfolding generate_def by simp
+    qed
+  next
+    fix i assume "i < ?n'"
+    then consider "i < ?n" | "i = ?n" by linarith
+    then show "?s3 (y i) = s (x i)"
+      using ge2.prems(1,2) trace1(2,3) by cases simp_all
+  next
+    show "\<And>y'. \<forall>i<?n'. y' \<noteq> y i \<Longrightarrow> ?s3 y' = s y'"
+      using trace1(3) by simp
+  qed
+qed
+
+(* 
 using assms proof (induction xs ys arbitrary: thesis rule: snoc_list_induct2)
   case Nil
   then show ?case unfolding generate_def using ttrace_to_leaf.tSkip by auto
@@ -1198,7 +1196,87 @@ next
     using ih step by auto
 
   from 1 2 3 snoc show ?case by blast
-qed (simp add: assms)
+qed (simp add: assms) *)
+
+(* 
+(* copying a list of registers *)
+lemma copy_list_bigstep:
+  fixes x y :: "nat \<Rightarrow> vname"
+  assumes "\<And>i j. \<lbrakk>i < n; j < n; i \<noteq> j\<rbrakk> \<Longrightarrow> y i \<noteq> y j"
+  assumes "\<And>i j. \<lbrakk>i < n; j < n\<rbrakk> \<Longrightarrow> x i \<noteq> y j"
+  shows
+    "\<exists>s'. f \<turnstile> (mk_seqs (generate (\<lambda>i. (y i) ::= A (V (x i))) n), s) \<Rightarrow>\<^bsup>(2 * n)\<^sub>+\<^esup> s' \<and>
+          (\<forall>i < n. s' (y i) = s (x i)) \<and> (\<forall>y'. (\<forall>i < n. y' \<noteq> y i) \<longrightarrow> s' y' = s y')"
+using assms proof (induction n rule: induct_nat_012)
+  case 0
+  show ?case proof (rule exI, repeat \<open>rule conjI\<close>)
+    show "f \<turnstile> (mk_seqs (generate (\<lambda>i. (y i) ::= A (V (x i))) 0), s) \<Rightarrow>\<^bsup>(2 * 0)\<^sub>+\<^esup> s"
+      unfolding generate_def by auto
+  qed simp_all
+next
+  case 1
+  show ?case proof (rule exI, repeat \<open>rule conjI\<close>)
+    show "f \<turnstile> (mk_seqs (generate (\<lambda>i. (y i) ::= A (V (x i))) (Suc 0)), s) \<Rightarrow>\<^bsup>(2 * Suc 0)\<^sub>+\<^esup> (s(y 0 := s (x 0)))"
+      unfolding generate_def by auto
+  qed (simp_all add: 1)
+next
+  case (ge2 n)
+
+  let ?cs = "\<lambda>n. generate (\<lambda>i. (y i) ::= A (V (x i)) :: tcom) n"
+
+  let ?n = "Suc n"
+  from ge2.IH(2) ge2.prems obtain s2 where ih:
+      "f \<turnstile> (mk_seqs (?cs ?n), s) \<Rightarrow>\<^bsup>(2 * ?n)\<^sub>+\<^esup> s2"
+      "\<And>i. i < ?n \<Longrightarrow> s2 (y i) = s (x i)"
+      "\<And>y'. (\<forall>i < ?n. y' \<noteq> y i) \<longrightarrow> s2 y' = s y'" by auto
+
+  from ge2.prems(2) have "i < ?n \<Longrightarrow> x ?n \<noteq> y i" for i by simp
+  with ih have s2_xn: "s2 (x ?n) = s (x ?n)" by blast
+
+  let ?c' = "(y ?n) ::= A (V (x ?n)) :: tcom"
+  let ?s3 = "s2(y ?n := s2 (x ?n))"
+  have step: "f \<turnstile> (?c', s2) \<Rightarrow>\<^bsup>Suc (Suc 0)\<^esup> ?s3" by auto
+
+  let ?n' = "Suc ?n"
+
+  show ?case
+  proof (rule exI; repeat \<open>rule conjI; (rule allI)?\<close>)
+    from tbig_step_t.tSeq [OF ih(1) step(1)] have
+      "f \<turnstile> (mk_seqs (?cs ?n);; ?c', s) \<Rightarrow>\<^bsup>(2 * ?n)\<^sub>+ + Suc (Suc 0)\<^esup> ?s3" by blast
+    moreover have *: "linearize (mk_seqs (?cs ?n);; ?c') = linearize (mk_seqs (?cs ?n @ [?c']))" by simp
+    moreover have "?cs ?n @ [?c'] = ?cs ?n'" unfolding generate_def by simp
+    moreover have "(2 * ?n)\<^sub>+ + Suc (Suc 0) = (2 * ?n')\<^sub>+" by simp
+    ultimately show "f \<turnstile> (mk_seqs (?cs ?n'), s) \<Rightarrow>\<^bsup>(2 * ?n')\<^sub>+\<^esup> ?s3"
+      using same_linearize_bigstep[OF *] by simp
+  next
+    show "i < ?n' \<longrightarrow> ?s3 (y i) = s (x i)" for i
+      using s2_xn ge2.prems(1) ih(2) by (cases "i = ?n") simp_all
+  next
+    show "\<And>y'. (\<forall>i<?n'. y' \<noteq> y i) \<longrightarrow> ?s3 y' = s y'"
+      using ih(3) by simp
+  qed
+qed *)
+
+lemma copy_list_trace':
+  assumes lengths: "length xs = n" "length ys = n"
+  assumes distinct: "distinct ys"
+  assumes disjoint: "set xs \<inter>\<^sub>\<emptyset> set ys"
+  obtains s' where
+    "(mk_seqs (generate (\<lambda>i. (ys ! i) ::= A (V (xs ! i))) n),s) \<Rightarrow>\<^bsup>((2 * n)\<^sub>+, [])\<^esup> (s', False)"
+    "lookups ys s' = lookups xs s" "s' = s on (- set ys)"
+proof goal_cases
+  case obt: 1
+  note distinct' = distinct_v[OF distinct, unfolded lengths]
+  note disjoint' = disjoint_v[OF disjoint, unfolded lengths]
+  from copy_list_trace[where x = "nth xs" and y = "nth ys" and n = n, OF distinct' disjoint']
+  obtain s' where cp:
+    "(mk_seqs (generate (\<lambda>i. (ys ! i) ::= A (V (xs ! i))) n), s) \<Rightarrow>\<^bsup>((2 * n)\<^sub>+, [])\<^esup> (s', False)"
+    "\<And>i. i < n \<Longrightarrow> s' (ys ! i) = s (xs ! i)" "\<And>y'. (\<And>i. i < n \<Longrightarrow> y' \<noteq> ys ! i) \<Longrightarrow> s' y' = s y'"
+    by blast
+  note lookups = lookups_v[of ys xs s' s, unfolded lengths, OF refl cp(2)]
+  note eq_on = eq_on_complement[of ys s' s, unfolded lengths, OF cp(3)]
+  from obt[OF cp(1) lookups eq_on] show ?case by blast
+qed
 
 (* lemma compiled_arguments_trace':
   assumes lengths: "length vs = length ts" "length xs = length ts" "length hTs = length ts"
@@ -1218,7 +1296,7 @@ qed (simp add: assms)
     "lookups xs s' = vs \<and> s' = s on set f_args \<union> set bs \<union> set keep - set xs"
   using compiled_arguments_trace[OF assms] by blast *)
 
-lemma copy_list_trace':
+(* lemma copy_list_trace':
   assumes "length xs = n"
   assumes "length ys = n"
   assumes "distinct ys"
@@ -1226,7 +1304,7 @@ lemma copy_list_trace':
   obtains s' where
     "(mk_seqs (generate (\<lambda>i. (ys ! i) ::= A (V (xs ! i))) (length xs)),s) \<Rightarrow>\<^bsup>(Suc (2 * length xs), [])\<^esup> (s', False)"
     "lookups ys s' = lookups xs s" "s' = s on (- set ys)"
-  using copy_list_trace[where xs = xs and ys = ys] assms by auto
+  using copy_list_trace[where xs = xs and ys = ys] assms by auto *)
 
 
 (* needed multiple times and slow \<rightarrow> pull out *)

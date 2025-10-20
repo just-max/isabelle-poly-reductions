@@ -121,6 +121,20 @@ tTail: "(tTAIL,s) \<Rightarrow>\<^bsup>(5, [])\<^esup> (s, True)"
 declare ttrace_to_leaf.intros[intro]
 lemmas ttrace_to_leaf_induct = ttrace_to_leaf.induct[split_format(complete)]
 
+(* modified introduction rules that always apply when the term is of the correct shape *)
+lemma ttrace_to_leaf_tSkip'[intro]:
+  assumes "t = s" and "z = 1" and "T = []" and "\<not> l"
+  shows "(tSKIP,s) \<Rightarrow>\<^bsup>(z,T)\<^esup> (t,l)" using assms[unfolded One_nat_def] tSkip by simp
+lemma ttrace_to_leaf_tAssign'[intro]:
+  assumes "t = s(x := aval a s)" and "z = 2" and "T = []" and "\<not> l"
+  shows "(x ::= a,s) \<Rightarrow>\<^bsup>(z,T)\<^esup> (t,l)" using assms[unfolded numeral_2_eq_2] tAssign by simp
+lemma ttrace_to_leaf_tCall'[intro]:
+  assumes "t' = s(r := t r)" and "z' = 0" and "T = [(C,s)]" and "\<not> l"
+  shows "(C,s) \<Rightarrow>\<^bsup>z \<^esup> t \<Longrightarrow> (CALL C RETURN r,s) \<Rightarrow>\<^bsup>(z',T) \<^esup> (t',l)" using assms tCall by simp
+lemma ttrace_to_leaf_tTail'[intro]:
+  assumes "t = s" "z' = 5" and "T = []" and "l"
+  shows "(tTAIL,s) \<Rightarrow>\<^bsup>(z',T)\<^esup> (t,l)" using assms tTail by simp
+
 inductive_cases tSkip_trace_leafE[elim!]: "(tSKIP,s) \<Rightarrow>\<^bsup>T \<^esup> l"
 inductive_cases tAssign_trace_leafE[elim!]: "(x ::= a,s) \<Rightarrow>\<^bsup>T \<^esup> l"
 inductive_cases tSeq_trace_leafE[elim!]: "(c1;;c2,s1) \<Rightarrow>\<^bsup>T \<^esup> l"
