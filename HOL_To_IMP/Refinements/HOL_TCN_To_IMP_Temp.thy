@@ -116,7 +116,7 @@ abbreviation "check_args f_args bs keep \<equiv>
   distinct f_args \<and> set bs \<inter>\<^sub>\<emptyset> set f_args \<and> set keep \<inter>\<^sub>\<emptyset> set f_args"
 
 abbreviation "check_term crgt f_args bs keep t \<equiv>
-  HOL_TCN_Timing.invar t \<and> (length f_args, crgt) \<turnstile> t \<and>
+  (length f_args, crgt) \<turnstile> t \<and>
   (\<forall>g \<in> calls_names_set t. check_call crgt (set f_args \<union> set bs \<union> set keep) g)"
 
 definition "check_compile crgt f_args bs keep t \<equiv>
@@ -125,7 +125,7 @@ definition "check_compile crgt f_args bs keep t \<equiv>
 lemma check_compileI[intro]:
   assumes
     "distinct f_args" "set bs \<inter>\<^sub>\<emptyset> set f_args" "set keep \<inter>\<^sub>\<emptyset> set f_args"
-    "HOL_TCN_Timing.invar t" "(length f_args, crgt) \<turnstile> t"
+    "(length f_args, crgt) \<turnstile> t"
     "\<And>g. g \<in> calls_names_set t \<Longrightarrow> check_call crgt (set f_args \<union> set bs \<union> set keep) g"
   shows "check_compile crgt f_args bs keep t"
   unfolding check_compile_def using assms by blast
@@ -134,7 +134,7 @@ lemma check_compileE[elim]:
   assumes "check_compile crgt f_args bs keep t"
   assumes
     "\<lbrakk>distinct f_args; set bs \<inter>\<^sub>\<emptyset> set f_args; set keep \<inter>\<^sub>\<emptyset> set f_args;
-      HOL_TCN_Timing.invar t; (length f_args, crgt) \<turnstile> t;
+      (length f_args, crgt) \<turnstile> t;
       (\<And>g. g \<in> calls_names_set t \<Longrightarrow> check_call crgt (set f_args \<union> set bs \<union> set keep) g)\<rbrakk> \<Longrightarrow> P"
   shows P
   using assms unfolding check_compile_def by blast
@@ -143,7 +143,7 @@ lemma check_compileD[dest]:
   assumes "check_compile crgt f_args bs keep t"
   shows
     "distinct f_args" "set bs \<inter>\<^sub>\<emptyset> set f_args" "set keep \<inter>\<^sub>\<emptyset> set f_args"
-    "HOL_TCN_Timing.invar t" "(length f_args, crgt) \<turnstile> t"
+    "(length f_args, crgt) \<turnstile> t"
     "\<And>g. g \<in> calls_names_set t \<Longrightarrow> check_call crgt (set f_args \<union> set bs \<union> set keep) g"
   using assms unfolding check_compile_def by blast+
 
@@ -161,7 +161,7 @@ proof -
 
   show "check_compile crgt f_args (bs' @ bs) (keep' @ keep) t"
   proof (rule check_compileI)
-    show "distinct f_args" "HOL_TCN_Timing.invar t" "(length f_args, crgt) \<turnstile> t" using check by auto
+    show "distinct f_args" "(length f_args, crgt) \<turnstile> t" using check by auto
     show "set (bs' @ bs) \<inter>\<^sub>\<emptyset> set f_args" "set (keep' @ keep) \<inter>\<^sub>\<emptyset> set f_args" using * check by auto
   next
     fix g assume g: "g \<in> calls_names_set t"
@@ -1247,7 +1247,7 @@ corollary htrace_to_end_calls_in':
 
 
 theorem compiler_rel_trace_end:
-  (* assumes "invar t" "invar f" *)
+  assumes "invar t" "invar f"
   assumes "HOL_TCN_Timing.num_commands t \<le> HOL_TCN_Timing.num_commands f"
   assumes "(f,frgt) \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup> (hk, hT) :: HOL_TCN_Timing.trace \<^esup> hv"
   assumes "check_compile crgt f_args bs keep t"
@@ -1258,7 +1258,7 @@ theorem compiler_rel_trace_end:
   shows "\<exists>k cT s'.
     to_imp_tc f_args crgt [] r [] f \<turnstile> (to_imp_tc f_args crgt bs r keep t,s)\<Rightarrow>\<^bsup>(k, cT)\<^esup> s'
     \<and> rel_trace_to_end crgt r hT hv cT s' \<and> rel_trace_time f hk k"
-using assms(1-2,4-) proof (induction arbitrary: s bs keep rule: ind_tail[OF assms(1,3)])
+using assms(1-3,5-) proof (induction arbitrary: s bs keep rule: ind_tail[OF assms(1,2,4)])
   (* base case: t executes to a value without a tail call *)
   case (1 f frgt t vs_b vs_arg T v)
 
@@ -1301,7 +1301,7 @@ next
     where imp2: "to_imp_tc f_args crgt [] r [] f \<turnstile>(to_imp_tc f_args crgt [] r [] f, s2) \<Rightarrow>\<^bsup>(ck2, cT2)\<^esup>  s3"
       and rel2: "rel_trace_to_end crgt r hT2 v cT2 s3"
       and rel_time2: "rel_trace_time f hk ck2"
-    by blast
+    by blast (* TODO: too slow! *)
 
   (* combine the first and second parts of the execution *)
   moreover from imp1 imp2 have
@@ -1733,8 +1733,8 @@ lemma compiler_rel_time_end:
   assumes bigstep: "(f,frgt) \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup> hz :: nat \<^esup> hv"
   assumes rgt: "relate_rgt frgt crgt (calls_names_set f)"
   assumes prereq:
-    "compiler_invar crgt f_args bs keep t"
-    "compiler_invar crgt f_args [] [] f"
+    "check_compile crgt f_args bs keep t"
+    "check_compile crgt f_args [] [] f"
   assumes state: "relate_exec_state f_args bs vs_arg vs_b s"
   shows
     "HOL_Nat_To_IMP.terminates_with_res_time_IMP_Tailcall
@@ -1751,7 +1751,7 @@ proof-
   from calls_bound rgt_correctness have
       "relate_rgt_correctness frgt crgt (calls_names_set t)"
     unfolding relate_rgt_correctness_def by blast
-  with invar size_bound htrace prereq rgt_correctness state compiler_rel_trace_end obtain k cT s'
+  with compiler_rel_trace_end[OF invar size_bound htrace prereq _ rgt_correctness state] obtain k cT s'
     where ctrace: "to_imp_tc f_args crgt [] r [] f \<turnstile>(to_imp_tc f_args crgt bs r keep t, s) \<Rightarrow>\<^bsup>(k, cT)\<^esup> s'"
     and rel_tr: "rel_trace_to_end crgt r hT hv cT s'"
     and rel_tr_time: "rel_trace_time f hk k" by blast
@@ -1827,7 +1827,7 @@ theorem compiler_correct:
   assumes invar: "invar t"
   assumes bigstep: "\<And>vs_arg. length vs_arg = length f_args \<Longrightarrow> (t,frgt) \<turnstile> (t,[],vs_arg) \<Rightarrow>\<^bsup> T_f vs_arg :: nat \<^esup> f vs_arg"
   assumes rgt: "relate_rgt frgt crgt (calls_names_set t)"
-  assumes prereq: "compiler_invar crgt f_args [] [] t"
+  assumes prereq: "check_compile crgt f_args [] [] t"
   shows
     "terminates_with_res_time_order_IMP_Tailcall
       (to_imp_tc f_args crgt [] r [] t) (to_imp_tc f_args crgt [] r [] t) r
@@ -1858,7 +1858,7 @@ corollary compiler_correct':
   assumes invar: "invar t" and can_term: "can_terminate t"
   assumes bigstep: "\<And>vs_arg. length vs_arg = length f_args \<Longrightarrow> (t,frgt) \<turnstile> (t,[],vs_arg) \<Rightarrow>\<^bsup> T_f vs_arg :: nat \<^esup> f vs_arg"
   assumes rgt: "relate_rgt frgt crgt (calls_names_set t)"
-  assumes prereq: "compiler_invar crgt f_args [] [] t"
+  assumes prereq: "check_compile crgt f_args [] [] t"
   shows
     "terminates_with_res_time_order_IMP
       (tailcall_to_IMP (to_imp_tc f_args crgt [] r [] t)) r
@@ -2031,7 +2031,7 @@ method to_imp_tc_unfold uses def =
   rule SIMPS_TOD,
   simp add:
     def generate_def Let_def split_beta
-    make_n_fresh_def make_nth_fresh_def stale_registers_def call_registers_def calls_names_def Fresh.fresh_def
+    make_n_fresh_def make_nth_fresh_def stale_registers_def call_registers_def Fresh.fresh_def
     char_of_def bit_simps,
   rule SIMPS_TOI
 
@@ -2060,7 +2060,7 @@ definition [simp]: "eq_hol_tcn \<equiv>
 
 (* set of called functions *)
 definition [simp]: "eq_aux \<equiv> calls_names_set eq_hol_tcn"
-(* note: *) lemma "eq_aux = {''+'', ''-''}" using calls_names_set by auto
+(* note: *) lemma "eq_aux = {''+'', ''-''}" by auto
 
 (* f/crgt for called functions *)
 definition [simp]: "eq_frgt \<equiv> null |> plus_frgt_upd |> minus_frgt_upd"
@@ -2096,7 +2096,7 @@ proof-
   have frgt:
       "frgt ''+'' = mk_frgt1 plus_f plus_T_f"
       "frgt ''-'' = mk_frgt1 minus_f minus_T_f"
-    using eq_on_lookup[of frgt eq_frgt, OF rgt] using calls_names_set by auto
+    using eq_on_lookup[of frgt eq_frgt, OF rgt] by auto
 
   show "(eq_hol_tcn, frgt) \<turnstile> (eq_hol_tcn, [], xs)\<Rightarrow>\<^bsup> eq_T_f xs :: nat \<^esup> eq_f xs"
   proof (rule bigstep_start[OF eq_hol_tcn_def])
@@ -2179,6 +2179,10 @@ proof-
   qed
 qed
 
+lemma Ball_cons: assumes "P x" "\<forall>y \<in> set xs. P y" shows "\<forall>y \<in> set (x # xs). P y"
+  using assms by simp
+method check_arg_count = (repeat \<open>rule Ball_cons check_arg_count.intros\<close>; simp)
+
 (* now the compiler correctness lemma shall be used! *)
 lemma eq_correctness:
   "terminates_with_res_time_order_IMP eq_com eq_r (eq_f o lookups eq_args) (eq_T_f o lookups eq_args)"
@@ -2193,11 +2197,14 @@ next
   (* here we use correctness lemmas for each called function *)
   show "relate_rgt eq_frgt eq_crgt (calls_names_set eq_hol_tcn)"
     apply (rule relate_rgt_unfold) apply simp
-    using plus_correctness_rgt minus_correctness_rgt calls_names_set by fastforce
+    using plus_correctness_rgt minus_correctness_rgt by fastforce
 next
-  (* these last three goals are just rewriting/simplifying function definitions *)
-  show "compiler_invar eq_crgt eq_args [] [] eq_hol_tcn"
-    unfolding compiler_invar_def call_registers_def calls_names calls_n_def by simp
+  (* these last three goals are mostly rewriting/simplifying function definitions *)
+  show "check_compile eq_crgt eq_args [] [] eq_hol_tcn"
+  proof (rule check_compileI)
+    show "(length eq_args, eq_crgt) \<turnstile> eq_hol_tcn"
+      unfolding eq_hol_tcn_def by check_arg_count
+  qed auto
   show "HOL_TCN_Timing.invar eq_hol_tcn" "can_terminate eq_hol_tcn" by simp_all
 qed
 
@@ -2245,7 +2252,7 @@ definition [simp]: "mul_acc_hol_tcn \<equiv>
   ELSE hTAIL [hCall ''-'' [hArg 0, hNumber 1], hArg 1, hCall ''+'' [hArg 1, hArg 2]]"
 
 definition [simp]: "mul_acc_aux \<equiv> calls_names_set mul_acc_hol_tcn"
-(* note: *) lemma "mul_acc_aux = {''+'', ''-'', ''=''}" using calls_names_set by auto
+(* note: *) lemma "mul_acc_aux = {''+'', ''-'', ''=''}" by auto
 
 definition [simp]: "mul_acc_frgt \<equiv> null |> plus_frgt_upd |> minus_frgt_upd |> eq_frgt_upd"
 definition [simp]: "mul_acc_crgt \<equiv> null |> plus_crgt_upd |> minus_crgt_upd |> eq_crgt_upd"
@@ -2274,7 +2281,7 @@ proof-
       "frgt ''+'' = mk_frgt1 plus_f plus_T_f"
       "frgt ''-'' = mk_frgt1 minus_f minus_T_f"
       "frgt ''='' = mk_frgt1 eq_f eq_T_f"
-    using eq_on_lookup[of frgt mul_acc_frgt, OF rgt] using calls_names_set by auto
+    using eq_on_lookup[of frgt mul_acc_frgt, OF rgt] by auto
 
   show "(mul_acc_hol_tcn, frgt) \<turnstile> (mul_acc_hol_tcn, [], xs) \<Rightarrow>\<^bsup> mul_acc_T_f' xs \<^esup> mul_acc_f xs"
     apply (rule bigstep_start[OF mul_acc_hol_tcn_def])
@@ -2396,9 +2403,12 @@ next
   show "relate_rgt mul_acc_frgt mul_acc_crgt (calls_names_set mul_acc_hol_tcn)"
     apply (rule relate_rgt_unfold) apply simp
     apply (repeat \<open>rule forall_i_insert\<close>)
-    using plus_correctness_rgt minus_correctness_rgt eq_correctness_rgt calls_names_set by simp_all
-  show "compiler_invar mul_acc_crgt mul_acc_args [] [] mul_acc_hol_tcn"
-    unfolding compiler_invar_def call_registers_def calls_names calls_n_def by simp
+    using plus_correctness_rgt minus_correctness_rgt eq_correctness_rgt by simp_all
+  show "check_compile mul_acc_crgt mul_acc_args [] [] mul_acc_hol_tcn"
+  proof (rule check_compileI)
+    show "(length mul_acc_args, mul_acc_crgt) \<turnstile> mul_acc_hol_tcn"
+      unfolding mul_acc_hol_tcn_def by check_arg_count
+  qed auto
   show "HOL_TCN_Timing.invar mul_acc_hol_tcn" "can_terminate mul_acc_hol_tcn" by simp_all
 qed
 
@@ -2456,7 +2466,7 @@ lemma mul_hol_tcn_correctness:
   shows "(mul_hol_tcn, frgt) \<turnstile> (mul_hol_tcn, [], xs)\<Rightarrow>\<^bsup> mul_T_f xs \<^esup> mul_f xs"
 proof-
   have frgt: "frgt ''mul_acc'' = mk_frgt1 mul_acc_f mul_acc_T_f"
-    using eq_on_lookup[of frgt mul_frgt, OF rgt] using calls_names_set by auto
+    using eq_on_lookup[of frgt mul_frgt, OF rgt] by auto
 
   show "(mul_hol_tcn, frgt) \<turnstile> (mul_hol_tcn, [], xs)\<Rightarrow>\<^bsup> mul_T_f xs \<^esup> mul_f xs"
     apply (rule bigstep_start[OF mul_hol_tcn_def])
@@ -2479,9 +2489,12 @@ next
   show "relate_rgt mul_frgt mul_crgt (calls_names_set mul_hol_tcn)"
     apply (rule relate_rgt_unfold) apply simp
     apply (repeat \<open>rule forall_i_insert\<close>)
-    using mul_acc_correctness_rgt calls_names_set by simp_all
-  show "compiler_invar mul_crgt mul_args [] [] mul_hol_tcn"
-    unfolding compiler_invar_def call_registers_def calls_names_def calls_n_def by simp
+    using mul_acc_correctness_rgt by simp_all
+  show "check_compile mul_crgt mul_args [] [] mul_hol_tcn"
+  proof (rule check_compileI)
+    show "(length mul_args, mul_crgt) \<turnstile> mul_hol_tcn"
+      unfolding mul_hol_tcn_def by check_arg_count
+  qed auto
   show "HOL_TCN_Timing.invar mul_hol_tcn" "can_terminate mul_hol_tcn" by simp_all
 qed
 
