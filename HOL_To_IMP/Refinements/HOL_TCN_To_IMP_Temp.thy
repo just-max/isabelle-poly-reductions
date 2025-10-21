@@ -29,33 +29,11 @@ lemma disjoint_subset2:
   shows "A \<inter>\<^sub>\<emptyset> B"
   using assms by blast
 
-lemma fresh_not_in_stale_subset: assumes "set stale' \<subseteq> set stale" shows "fresh stale name \<notin> set stale'"
+(* todo: move *)
+lemma fresh_not_in_stale_subset[intro]: assumes "stale' \<subseteq> set stale" shows "fresh stale name \<notin> stale'"
   using fresh_not_in_stale assms by blast
 
-fun tails_have_n_args :: "nat \<Rightarrow> thol \<Rightarrow> bool" where
-  "tails_have_n_args n (LET t1 IN t2) \<longleftrightarrow> tails_have_n_args n t1 \<and> tails_have_n_args n t2" |
-  "tails_have_n_args _ (hLetBound _) = True" |
-  "tails_have_n_args _ (hArg _) = True" |
-  "tails_have_n_args _ (hNumber _) = True" |
-  "tails_have_n_args n (IF t1\<noteq>0 THEN t2 ELSE t3) \<longleftrightarrow>
-    tails_have_n_args n t1 \<and> tails_have_n_args n t2 \<and> tails_have_n_args n t3" |
-  "tails_have_n_args n (hCall f ts) = list_all (tails_have_n_args n) ts" |
-  "tails_have_n_args n (hTAIL ts) \<longleftrightarrow> length ts = n \<and> list_all (tails_have_n_args n) ts"
-
-definition "compiler_invar crgt f_args bs keep t \<longleftrightarrow>
-  HOL_TCN_Timing.invar t
-  \<and> distinct f_args
-  \<and> set f_args \<inter>\<^sub>\<emptyset> set (call_registers crgt t)
-  \<and> set bs \<inter>\<^sub>\<emptyset> set (call_registers crgt t)
-  \<and> set bs \<inter>\<^sub>\<emptyset> set f_args
-  \<and> set keep \<inter>\<^sub>\<emptyset> set f_args
-  \<and> set keep \<inter>\<^sub>\<emptyset> set (call_registers crgt t)
-  \<and> (\<forall>g\<in>set (calls_names t). distinct (args_from_crgt crgt g))
-  \<and> (\<forall>(g,n)\<in>set (calls_n t). n = length (args_from_crgt crgt g))
-  \<and> tails_have_n_args (length f_args) t"
 (*
-- The term must be tail-recursive, i.e. satisfy the invariant.
-
 - Register lists that are written to must be distinct, otherwise writing a later register will
   overwrite a register earlier in the list. Thus, f_args and g_args for each called g must be
   distinct: f_args is written before a tail call, g_args on a call to g.
@@ -92,161 +70,185 @@ Note that this is not the *weakest* possible invariant, but that would
 significantly complicate the invariant with no obvious benefit.
 *)
 
-lemma compiler_invarE[elim]:
-  assumes "compiler_invar crgt f_args bs keep t"
-  shows
-    "HOL_TCN_Timing.invar t"
-    "distinct f_args"
-    "set f_args \<inter>\<^sub>\<emptyset> set (call_registers crgt t)"
-    "set bs \<inter>\<^sub>\<emptyset> set (call_registers crgt t)"
-    "set bs \<inter>\<^sub>\<emptyset> set f_args"
-    "set keep \<inter>\<^sub>\<emptyset> set f_args"
-    "set keep \<inter>\<^sub>\<emptyset> set (call_registers crgt t)"
-    "\<And>g. g \<in> set (calls_names t) \<Longrightarrow> distinct (args_from_crgt crgt g)" (* what's the canonical way to write this? *)
-    "\<And>g n. (g,n)\<in>set (calls_n t) \<Longrightarrow> n = length (args_from_crgt crgt g)"
-    "tails_have_n_args (length f_args) t"
-  using assms unfolding compiler_invar_def by auto
 
-lemma compiler_invarI[intro]:
+inductive check_arg_count :: "(nat \<times> com_registry) \<Rightarrow> thol \<Rightarrow> bool" ("_ \<turnstile> _") where
+  hLetBound: "_ \<turnstile> hLetBound _" | hArg: "_ \<turnstile> hArg _" | hNumber: "_ \<turnstile> hNumber _" |
+  hLet: "\<lbrakk>(n, crgt) \<turnstile> t1; (n, crgt) \<turnstile> t2\<rbrakk> \<Longrightarrow> (n, crgt) \<turnstile> LET t1 IN t2" |
+  hIf: "\<lbrakk>(n, crgt) \<turnstile> t1; (n, crgt) \<turnstile> t2; (n, crgt) \<turnstile> t3\<rbrakk> \<Longrightarrow> (n, crgt) \<turnstile> IF t1\<noteq>0 THEN t2 ELSE t3" |
+  hCall: "\<lbrakk>length ts = length (args_from_crgt crgt g); \<forall>t \<in> set ts. (n, crgt) \<turnstile> t\<rbrakk> \<Longrightarrow> (n, crgt) \<turnstile> hCall g ts" |
+  hTail: "\<lbrakk>length ts = n; \<forall>t \<in> set ts. (n, crgt) \<turnstile> t\<rbrakk> \<Longrightarrow> (n, crgt) \<turnstile> hTAIL ts"
+
+declare check_arg_count.intros[intro]
+lemmas check_arg_count_induct = check_arg_count.induct[split_format(complete)]
+code_pred [show_modes] check_arg_count .
+
+inductive_cases hLet_check_arg_count_case [elim!]: "(n, crgt) \<turnstile> LET t1 IN t2"
+inductive_cases hIf_check_arg_count_case [elim!]: "(n, crgt) \<turnstile> IF t1\<noteq>0 THEN t2 ELSE t3"
+inductive_cases hCall_check_arg_count_case [elim!, rule_format]: "(n, crgt) \<turnstile> hCall g ts"
+inductive_cases hTail_check_arg_count_case [elim!, rule_format]: "(n, crgt) \<turnstile> hTAIL ts"
+
+
+definition "check_call crgt L f \<equiv>
+  set (args_from_crgt crgt f) \<inter>\<^sub>\<emptyset> L \<and> ret_from_crgt crgt f \<notin> L \<and> distinct (args_from_crgt crgt f)"
+
+lemma check_callI[intro]:
+  assumes "set (args_from_crgt crgt f) \<inter>\<^sub>\<emptyset> L" "ret_from_crgt crgt f \<notin> L" "distinct (args_from_crgt crgt f)"
+  shows "check_call crgt L f"
+  using assms unfolding check_call_def by blast
+
+lemma check_callE[dest]:
+  assumes "check_call crgt L f"
+  assumes "\<lbrakk>set (args_from_crgt crgt f) \<inter>\<^sub>\<emptyset> L; ret_from_crgt crgt f \<notin> L; distinct (args_from_crgt crgt f)\<rbrakk> \<Longrightarrow> P"
+  shows P
+  using assms unfolding check_call_def by blast
+
+lemma check_callD[dest]:
+  assumes "check_call crgt L f"
+  shows "set (args_from_crgt crgt f) \<inter>\<^sub>\<emptyset> L" "ret_from_crgt crgt f \<notin> L" "distinct (args_from_crgt crgt f)"
+  using assms unfolding check_call_def by blast+
+
+lemma check_call_union:
+  assumes "check_call crgt L1 f" "check_call crgt L2 f"
+  shows "check_call crgt (L1 \<union> L2) f"
+  using assms by auto
+
+abbreviation "check_args f_args bs keep \<equiv>
+  distinct f_args \<and> set bs \<inter>\<^sub>\<emptyset> set f_args \<and> set keep \<inter>\<^sub>\<emptyset> set f_args"
+
+abbreviation "check_term crgt f_args bs keep t \<equiv>
+  HOL_TCN_Timing.invar t \<and> (length f_args, crgt) \<turnstile> t \<and>
+  (\<forall>g \<in> calls_names_set t. check_call crgt (set f_args \<union> set bs \<union> set keep) g)"
+
+definition "check_compile crgt f_args bs keep t \<equiv>
+  check_args f_args bs keep \<and> check_term crgt f_args bs keep t"
+
+lemma check_compileI[intro]:
   assumes
-    "HOL_TCN_Timing.invar t"
-    "distinct f_args"
-    "set f_args \<inter>\<^sub>\<emptyset> set (call_registers crgt t)"
-    "set bs \<inter>\<^sub>\<emptyset> set (call_registers crgt t)"
-    "set bs \<inter>\<^sub>\<emptyset> set f_args"
-    "set keep \<inter>\<^sub>\<emptyset> set f_args"
-    "set keep \<inter>\<^sub>\<emptyset> set (call_registers crgt t)"
-    "\<And>g. g \<in> set (calls_names t) \<Longrightarrow> distinct (args_from_crgt crgt g)"
-    "\<And>g n. (g,n)\<in>set (calls_n t) \<Longrightarrow> n = length (args_from_crgt crgt g)"
-    "tails_have_n_args (length f_args) t"
-  shows "compiler_invar crgt f_args bs keep t"
-  using assms unfolding compiler_invar_def by blast
+    "distinct f_args" "set bs \<inter>\<^sub>\<emptyset> set f_args" "set keep \<inter>\<^sub>\<emptyset> set f_args"
+    "HOL_TCN_Timing.invar t" "(length f_args, crgt) \<turnstile> t"
+    "\<And>g. g \<in> calls_names_set t \<Longrightarrow> check_call crgt (set f_args \<union> set bs \<union> set keep) g"
+  shows "check_compile crgt f_args bs keep t"
+  unfolding check_compile_def using assms by blast
 
-lemma compiler_invar_subset:
-  assumes invar: "invar t"
-  assumes tails: "tails_have_n_args (length f_args) t"
-  assumes calls: "set (calls t) \<subseteq> set (calls t')" (* subset on calls_names would be enough... *)
-  assumes comp_invar: "compiler_invar crgt f_args bs keep t'"
-  shows "compiler_invar crgt f_args bs keep t"
-proof
-  have "set (call_registers crgt t) \<subseteq> set (call_registers crgt t')"
-    using calls calls_names_set unfolding call_registers_def by auto
-  then show
-      "set f_args \<inter>\<^sub>\<emptyset> set (call_registers crgt t)"
-      "set bs \<inter>\<^sub>\<emptyset> set (call_registers crgt t)"
-      "set keep \<inter>\<^sub>\<emptyset> set (call_registers crgt t)"
-    using compiler_invarE[OF comp_invar] by blast+
-next
-  fix g assume "g \<in> set (calls_names t)"
-  then have "g \<in> set (calls_names t')" using calls calls_names_set by auto
-  then show "distinct (args_from_crgt crgt g)" using comp_invar by auto
-next
-  fix g n assume "(g,n) \<in> set (calls_n t)"
-  then have "(g,n) \<in> set (calls_n t')" using calls calls_n_set by auto
-  then show "n = length (args_from_crgt crgt g)" using comp_invar by auto
-qed (auto simp add: invar tails compiler_invarE[OF comp_invar])
+lemma check_compileE[elim]:
+  assumes "check_compile crgt f_args bs keep t"
+  assumes
+    "\<lbrakk>distinct f_args; set bs \<inter>\<^sub>\<emptyset> set f_args; set keep \<inter>\<^sub>\<emptyset> set f_args;
+      HOL_TCN_Timing.invar t; (length f_args, crgt) \<turnstile> t;
+      (\<And>g. g \<in> calls_names_set t \<Longrightarrow> check_call crgt (set f_args \<union> set bs \<union> set keep) g)\<rbrakk> \<Longrightarrow> P"
+  shows P
+  using assms unfolding check_compile_def by blast
 
-lemma compiler_invar_let:
-  fixes crgt f_args bs keep t1 t2
-  assumes comp_invar: "compiler_invar crgt f_args bs keep (LET t1 IN t2)"
-  defines "r \<equiv> fresh' (stale_registers f_args crgt bs keep LET t1 IN t2) ''Let.x''"
+lemma check_compileD[dest]:
+  assumes "check_compile crgt f_args bs keep t"
   shows
-    "compiler_invar crgt f_args bs keep t1"
-    "compiler_invar crgt f_args (r # bs) (r # keep) t2"
-proof -
-  have "HOL_TCN_Timing.invar t1" "tails_have_n_args (length f_args) t1"
-    using compiler_invarE[OF comp_invar] by simp_all
-  then show "compiler_invar crgt f_args bs keep t1"
-    using comp_invar compiler_invar_subset[where t' = "LET t1 IN t2"] by simp
-next
-  have "HOL_TCN_Timing.invar t2" "tails_have_n_args (length f_args) t2"
-    using compiler_invarE[OF comp_invar] by simp_all
-  then have "compiler_invar crgt f_args bs keep t2"
-    using comp_invar compiler_invar_subset[where t' = "LET t1 IN t2"] by simp
+    "distinct f_args" "set bs \<inter>\<^sub>\<emptyset> set f_args" "set keep \<inter>\<^sub>\<emptyset> set f_args"
+    "HOL_TCN_Timing.invar t" "(length f_args, crgt) \<turnstile> t"
+    "\<And>g. g \<in> calls_names_set t \<Longrightarrow> check_call crgt (set f_args \<union> set bs \<union> set keep) g"
+  using assms unfolding check_compile_def by blast+
 
-  moreover have "r \<notin> set f_args"
-    unfolding r_def stale_registers_def
-    using fresh_not_in_stale set_append by fastforce
-  moreover have "r \<notin> set (call_registers crgt t2)"
-  unfolding r_def proof (rule fresh_not_in_stale_subset)
-    show "set (call_registers crgt t2) \<subseteq> set (stale_registers f_args crgt bs keep LET t1 IN t2)"
-      unfolding stale_registers_def call_registers_def using calls_names_set by auto
+(* TODO: lots of *_E[elim] rules lying around, that (I think?) should actually be *_D[dest] \<rightarrow> fix *)
+
+
+lemma check_compile_fresh:
+  assumes check: "check_compile crgt f_args bs keep t"
+  assumes bs: "set bs' \<inter>\<^sub>\<emptyset> set (stale_registers f_args crgt bs keep t)"
+  assumes keep: "set keep' \<inter>\<^sub>\<emptyset> set (stale_registers f_args crgt bs keep t)"
+  shows "check_compile crgt f_args (bs' @ bs) (keep' @ keep) t"
+proof -
+  have *: "set bs' \<inter>\<^sub>\<emptyset> set f_args" "set keep'  \<inter>\<^sub>\<emptyset> set f_args"
+    using bs keep unfolding stale_registers_def by auto
+
+  show "check_compile crgt f_args (bs' @ bs) (keep' @ keep) t"
+  proof (rule check_compileI)
+    show "distinct f_args" "HOL_TCN_Timing.invar t" "(length f_args, crgt) \<turnstile> t" using check by auto
+    show "set (bs' @ bs) \<inter>\<^sub>\<emptyset> set f_args" "set (keep' @ keep) \<inter>\<^sub>\<emptyset> set f_args" using * check by auto
+  next
+    fix g assume g: "g \<in> calls_names_set t"
+
+    have 1: "set bs' \<inter>\<^sub>\<emptyset> set (args_from_crgt crgt g) \<union> {ret_from_crgt crgt g}"
+      apply (rule disjoint_subset2[OF _ bs])
+      unfolding stale_registers_def call_registers_def using g by force
+    have 2: "set keep' \<inter>\<^sub>\<emptyset> set (args_from_crgt crgt g) \<union> {ret_from_crgt crgt g}"
+      apply (rule disjoint_subset2[OF _ keep])
+      unfolding stale_registers_def call_registers_def using g by force
+
+    have "check_call crgt ((set bs' \<union> set keep') \<union> (set f_args \<union> set bs \<union> set keep)) g"
+    proof (rule check_call_union[OF check_callI])
+      show "set (args_from_crgt crgt g) \<inter>\<^sub>\<emptyset> set bs' \<union> set keep'" using 1 2 by blast
+      show "ret_from_crgt crgt g \<notin> set bs' \<union> set keep'" using 1 2 by blast
+    next
+      show "distinct (args_from_crgt crgt g)" "check_call crgt (set f_args \<union> set bs \<union> set keep) g"
+        using g check by blast+
+    qed
+    then show "check_call crgt (set f_args \<union> set (bs' @ bs) \<union> set (keep' @ keep)) g" by auto
+  qed
+qed
+
+lemma check_compile_let:
+  fixes crgt f_args bs keep t1 t2
+  assumes check_compile: "check_compile crgt f_args bs keep (LET t1 IN t2)"
+  defines "r \<equiv> fresh' (stale_registers f_args crgt bs keep LET t1 IN t2) ''Let.x''"
+  shows "check_compile crgt f_args (r # bs) (r # keep) t2"
+proof -
+  from check_compile have check_t2: "check_compile crgt f_args bs keep t2"
+    using check_compileE check_compileI by auto
+
+  have r: "r \<notin> set (stale_registers f_args crgt bs keep t2)"
+  proof (rule contra_subsetD)
+    show "r \<notin> set (stale_registers f_args crgt bs keep LET t1 IN t2)"
+      unfolding r_def using fresh_not_in_stale by blast
+    show "set (stale_registers f_args crgt bs keep t2) \<subseteq> set (stale_registers f_args crgt bs keep LET t1 IN t2)"
+      using stale_registers_def call_registers_def by auto
   qed
 
-  ultimately show "compiler_invar crgt f_args (r # bs) (r # keep) t2"
-    unfolding compiler_invar_def by auto
+  from check_compile_fresh[where bs' = "[r]" and keep' = "[r]"] check_t2 r show ?thesis by simp
 qed
 
-lemma compiler_invar_if:
-  assumes "compiler_invar crgt f_args bs keep (IF t1\<noteq>0 THEN t2 ELSE t3)"
-  shows
-    "compiler_invar crgt f_args bs keep t1"
-    "compiler_invar crgt f_args bs keep t2"
-    "compiler_invar crgt f_args bs keep t3"
-proof -
-  have "HOL_TCN_Timing.invar t1" "tails_have_n_args (length f_args) t1"
-    using compiler_invarE[OF assms] by simp_all
-  moreover have "set (calls t1) \<subseteq> set (calls (IF t1\<noteq>0 THEN t2 ELSE t3))" by fastforce
-  ultimately show "compiler_invar crgt f_args bs keep t1"
-    using assms compiler_invar_subset by metis
-next
-  have "HOL_TCN_Timing.invar t2" "tails_have_n_args (length f_args) t2"
-    using compiler_invarE[OF assms] by simp_all
-  moreover have "set (calls t2) \<subseteq> set (calls (IF t1\<noteq>0 THEN t2 ELSE t3))" by fastforce
-  ultimately show "compiler_invar crgt f_args bs keep t2"
-    using assms compiler_invar_subset by metis
-next
-  have "HOL_TCN_Timing.invar t3" "tails_have_n_args (length f_args) t3"
-    using compiler_invarE[OF assms] by simp_all
-  moreover have "set (calls t3) \<subseteq> set (calls (IF t1\<noteq>0 THEN t2 ELSE t3))" by fastforce
-  ultimately show "compiler_invar crgt f_args bs keep t3"
-    using assms compiler_invar_subset by metis
-qed
-
-lemma compiler_invar_call:
+lemma check_compile_call:
   fixes f_args crgt bs keep gr ts
-  assumes compiler_invar: "compiler_invar crgt f_args bs keep (hCall gr ts)"
+  assumes check_compile: "check_compile crgt f_args bs keep (hCall gr ts)"
   defines "xs \<equiv> make_n_fresh (stale_registers f_args crgt bs keep (hCall gr ts)) ''Call.x.'' (length ts)"
   assumes t: "t \<in> set ts"
-  shows "compiler_invar crgt f_args bs (xs @ keep) t"
+  shows "check_compile crgt f_args bs (xs @ keep) t"
 proof -
-  have "HOL_TCN_Timing.invar t" "tails_have_n_args (length f_args) t"
-    using compiler_invarE(1,10)[OF compiler_invar] t by (auto simp add: list.pred_set)
-  with t compiler_invar compiler_invar_subset[where t = t and t' = "hCall gr ts"]
-  have inv: "compiler_invar crgt f_args bs keep t" by fastforce
+  have t_calls: "g \<in> calls_names_set t \<Longrightarrow> g \<in> calls_names_set (hCall gr ts)" for g using t by auto
+  have check_t: "check_compile crgt f_args bs keep t"
+    apply (rule check_compileI)
+    using check_compileD[OF check_compile] check_compile t t_calls by auto
 
-  show "compiler_invar crgt f_args bs (xs @ keep) t"
-  proof
-    have "set (call_registers crgt t) \<subseteq> set (call_registers crgt (hCall gr ts))"
-      using t calls_names_set unfolding call_registers_def by auto
-    then have "set xs \<inter>\<^sub>\<emptyset> set f_args" "set xs \<inter>\<^sub>\<emptyset> set (call_registers crgt t)"
-      unfolding xs_def stale_registers_def using make_n_fresh_not_in_stale by fastforce+
-    then show "set (xs @ keep) \<inter>\<^sub>\<emptyset> set f_args" "set (xs @ keep) \<inter>\<^sub>\<emptyset> set (call_registers crgt t)"
-      using inv unfolding compiler_invar_def by fastforce+
-  qed (simp_all add: compiler_invarE[OF inv])
+  have xs: "set xs \<inter>\<^sub>\<emptyset> set (stale_registers f_args crgt bs keep t)"
+  proof (rule disjoint_subset2)
+    show "set xs \<inter>\<^sub>\<emptyset> set (stale_registers f_args crgt bs keep (hCall gr ts))"
+      unfolding xs_def using make_n_fresh_not_in_stale by blast
+    show "set (stale_registers f_args crgt bs keep t) \<subseteq> set (stale_registers f_args crgt bs keep (hCall gr ts))"
+      unfolding stale_registers_def call_registers_def using t by auto
+  qed
+
+  from check_compile_fresh[where bs' = "[]" and keep' = xs] check_t xs show ?thesis by simp
 qed
 
-lemma compiler_invar_tail:
+lemma check_compile_tail:
   fixes f_args crgt bs keep gr ts
-  assumes compiler_invar: "compiler_invar crgt f_args bs keep (hTAIL ts)"
+  assumes check_compile: "check_compile crgt f_args bs keep (hTAIL ts)"
   defines "xs \<equiv> make_n_fresh (stale_registers f_args crgt bs keep (hTAIL ts)) ''TAIL.x.'' (length ts)"
   assumes t: "t \<in> set ts"
-  shows "compiler_invar crgt f_args bs (xs @ keep) t"
+  shows "check_compile crgt f_args bs (xs @ keep) t"
 proof -
-  have "HOL_TCN_Timing.invar t" "tails_have_n_args (length f_args) t"
-    using compiler_invarE(1,10)[OF compiler_invar] t by (auto simp add: list.pred_set)
-  with t compiler_invar compiler_invar_subset[where t = t and t' = "hTAIL ts"]
-  have inv: "compiler_invar crgt f_args bs keep t" by fastforce
+  have t_calls: "g \<in> calls_names_set t \<Longrightarrow> g \<in> calls_names_set (hTAIL ts)" for g using t by auto
+  have check_t: "check_compile crgt f_args bs keep t"
+    apply (rule check_compileI)
+    using check_compileD[OF check_compile] check_compile t t_calls by auto
 
-  show "compiler_invar crgt f_args bs (xs @ keep) t"
-  proof
-    have "set (call_registers crgt t) \<subseteq> set (call_registers crgt (hTAIL ts))"
-      using t calls_names_set unfolding call_registers_def by auto
-    then have "set xs \<inter>\<^sub>\<emptyset> set f_args" "set xs \<inter>\<^sub>\<emptyset> set (call_registers crgt t)"
-      unfolding xs_def stale_registers_def using make_n_fresh_not_in_stale by fastforce+
-    then show "set (xs @ keep) \<inter>\<^sub>\<emptyset> set f_args" "set (xs @ keep) \<inter>\<^sub>\<emptyset> set (call_registers crgt t)"
-      using inv unfolding compiler_invar_def by fastforce+
-  qed (simp_all add: compiler_invarE[OF inv])
+  have xs: "set xs \<inter>\<^sub>\<emptyset> set (stale_registers f_args crgt bs keep t)"
+  proof (rule disjoint_subset2)
+    show "set xs \<inter>\<^sub>\<emptyset> set (stale_registers f_args crgt bs keep (hTAIL ts))"
+      unfolding xs_def using make_n_fresh_not_in_stale by blast
+    show "set (stale_registers f_args crgt bs keep t) \<subseteq> set (stale_registers f_args crgt bs keep (hTAIL ts))"
+      unfolding stale_registers_def call_registers_def using t by auto
+  qed
+
+  from check_compile_fresh[where bs' = "[]" and keep' = xs] check_t xs show ?thesis by simp
 qed
 
 
@@ -268,10 +270,7 @@ definition rel_trace_calls :: "com_registry \<Rightarrow> HOL_TCN_Timing.call_tr
   "rel_trace_calls crgt hT cT \<longleftrightarrow>
     length hT = length cT \<and>
     list_all (\<lambda>((gr,gargs),(gcom,gs)). rel_trace_call crgt gr gargs gcom gs) (zip hT cT)"
-(* "rel_trace_calls crgt hT cT \<longleftrightarrow>
-    length hT = length cT \<and>
-    (\<forall>i < length hT. let (gr, gargs) = hT ! i; (gcom, gs) = cT ! i in
-                     rel_trace_call crgt gr gargs gcom gs)" *)
+
 fun rel_leaf_state :: "com_registry \<Rightarrow> vname list \<Rightarrow> vname \<Rightarrow> leaf_state \<Rightarrow> state \<Rightarrow> bool \<Rightarrow> bool" where
   "rel_leaf_state crgt _      r (Value v) s l \<longleftrightarrow> \<not> l \<and> s       r        = v " |
   "rel_leaf_state crgt f_args _ (Tail vs) s l \<longleftrightarrow>   l \<and> lookups f_args s = vs"
@@ -333,6 +332,10 @@ proof -
   qed (simp_all add: nil snoc)
   then show "P xs ys" by simp
 qed
+
+
+(* argument lists are defined in terms of regular lists, but proofs are far easier on nat \<rightarrow> 'a functions,
+    so we work with those instead; conceptually the pair (x, n) represents the variables x_0,...,x_n-1 *)
 
 (* x_0,..x_n-1 are disjoint from y_0..y_m-1 *)
 abbreviation "disjoint_v x n y m \<equiv> (\<And>i j. \<lbrakk>i < n; j < m\<rbrakk> \<Longrightarrow> x i \<noteq> y j)"
@@ -407,8 +410,6 @@ proof (rule eq_onI)
   with assms show "f x = g x" by blast
 qed
 
-method truth_nuke = blast
-
 (* executing a list of terms (as in the call and tail-call cases) *)
 lemma compiled_arguments_trace:
   assumes args:
@@ -448,7 +449,7 @@ next
       "rel_trace_calls crgt (concat_map hT [0..<?n]) cT1"
       "\<forall>i < ?n. s2 (x i) = v i"
       "\<forall>y\<in>set f_args \<union> set bs \<union> set keep. (\<forall>i<?n. y \<noteq> x i) \<longrightarrow> s2 y = s y"
-    by simp truth_nuke
+    by simp blast
 
   from rel_state trace1(4) ge2.prems(3,4) have rel_state': "relate_exec_state f_args bs vs_arg vs_b s2"
     unfolding relate_exec_state_def by fastforce
@@ -467,7 +468,7 @@ next
   proof (repeat \<open>rule exI conjI allI impI\<close>)
     show "(mk_seqs (?cs ?n'), s) \<Rightarrow>\<^bsup>(k1 + k2, cT1 @ cT2)\<^esup>  (s3, False)"
     proof (rule same_linearize_trace_leaf[THEN iffD1])
-      from trace1 trace2 show "(mk_seqs (?cs ?n);; ?c', s) \<Rightarrow>\<^bsup>(k1 + k2, cT1 @ cT2)\<^esup>  (s3, False)" by truth_nuke
+      from trace1 trace2 show "(mk_seqs (?cs ?n);; ?c', s) \<Rightarrow>\<^bsup>(k1 + k2, cT1 @ cT2)\<^esup>  (s3, False)" by blast
       show "linearize (mk_seqs (?cs ?n);; ?c') = linearize (mk_seqs (?cs ?n'))" unfolding generate_def by simp
     qed
   next
@@ -619,17 +620,16 @@ lemma eq_on_drop_fresh:
 
 abbreviation "if_is_value l x \<equiv> (case l of Value _ \<Rightarrow> x | _ \<Rightarrow> {})"
 
-lemma compiler_rel_trace_to_leaf:
-  assumes "invar t" (* todo: remove, subsumed by compiler_invar *)
+theorem compiler_rel_trace_to_leaf:
   assumes "frgt \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup> hT :: HOL_TCN_Timing.call_trace \<^esup> hl"
-  assumes "compiler_invar crgt f_args bs keep t"
+  assumes "check_compile crgt f_args bs keep t"
   assumes "relate_rgt_correctness frgt crgt (calls_names_set t)"
   assumes "relate_exec_state f_args bs vs_arg vs_b s"
   shows "\<exists>k cT s' cl.
     (to_imp_tc f_args crgt bs r keep t,s)\<Rightarrow>\<^bsup>(k, cT)\<^esup> (s', cl)
     \<and> rel_trace_to_leaf crgt f_args r hT hl cT s' cl
     \<and> s' = s on if_is_value hl (set f_args) \<union> set bs \<union> set keep - {r}"
-using assms(2) assms(1,3-) proof (induction arbitrary: bs keep s r crgt rule: htrace_to_leaf_induct)
+using assms proof (induction arbitrary: bs keep s r crgt rule: htrace_to_leaf_induct)
   case (hLet frgt t1 vs_b vs_arg T1 v1 t2 T2 l2 T)
 
   let ?r1 = "fresh' (stale_registers f_args crgt bs keep LET t1 IN t2) ''Let.x''"
@@ -638,23 +638,19 @@ using assms(2) assms(1,3-) proof (induction arbitrary: bs keep s r crgt rule: ht
 
   (* solve assumptions, and obtain IH for t1 *)
 
-  from hLet.prems have
-      no_tails1: "\<not> HOL_TCN_Timing.tails t1"
-      and invar: "HOL_TCN_Timing.invar t1" "HOL_TCN_Timing.invar t2"
-    by simp_all
+  from hLet.prems(1) have check_compile1: "check_compile crgt f_args bs keep t1"
+    using check_compileE check_compileI by auto
+  from check_compile_let[OF hLet.prems(1)] have check_compile2:
+    "check_compile crgt f_args (?r1 # bs) (?r1 # keep) t2" by blast
 
-  from hLet.prems compiler_invar_let have comp_invar:
-      "compiler_invar crgt f_args bs keep t1"
-      "compiler_invar crgt f_args (?r1 # bs) (?r1 # keep) t2" by auto
-
-  from hLet.prems have rel_rgt:
+  from hLet.prems(2) have rel_rgt:
       "relate_rgt_correctness frgt crgt (calls_names_set t1)"
       "relate_rgt_correctness frgt crgt (calls_names_set t2)"
-    unfolding relate_rgt_correctness_def using calls_names_set by simp_all
+    unfolding relate_rgt_correctness_def by simp_all
 
-  from hLet.prems have rel_state1: "relate_exec_state f_args bs vs_arg vs_b s" by blast
+  from hLet.prems(3) have rel_state1: "relate_exec_state f_args bs vs_arg vs_b s" by blast
 
-  from hLet.IH(1)[OF invar(1) comp_invar(1) rel_rgt(1) rel_state1, where r = ?r1] rel_trace_to_leaf_cl(1)
+  from hLet.IH(1)[OF check_compile1 rel_rgt(1) rel_state1, where r = ?r1] rel_trace_to_leaf_cl(1)
   obtain k1 cT1 s2 where ih1:
         "(to_imp_tc f_args crgt bs ?r1 keep t1, s) \<Rightarrow>\<^bsup>(k1, cT1)\<^esup> (s2, False)"
         "rel_trace_to_leaf crgt f_args ?r1 T1 (Value v1) cT1 s2 False"
@@ -666,9 +662,9 @@ using assms(2) assms(1,3-) proof (induction arbitrary: bs keep s r crgt rule: ht
   have s2_like_s: "s2 = s on set f_args \<union> set bs \<union> set keep"
     using eq_on_drop_fresh ih1(4) by blast
   then have rel_state2: "relate_exec_state f_args (?r1 # bs) vs_arg (v1 # vs_b) s2"
-    using hLet.prems(4) unfolding relate_exec_state_def using ih1(3) by fastforce
+    using hLet.prems(3) unfolding relate_exec_state_def using ih1(3) by fastforce
 
-  from hLet.IH(2)[OF invar(2) comp_invar(2) rel_rgt(2) rel_state2, of r]
+  from hLet.IH(2)[OF check_compile2 rel_rgt(2) rel_state2, of r]
   obtain k2 cT2 s3 cl2 where ih2:
       "(?c2,s2)\<Rightarrow>\<^bsup>(k2,cT2)\<^esup> (s3,cl2)"
       "rel_trace_to_leaf crgt f_args r T2 l2 cT2 s3 cl2"
@@ -731,24 +727,21 @@ next
   let ?c2 = "to_imp_tc f_args crgt bs r keep t2"
   let ?c3 = "to_imp_tc f_args crgt bs r keep t3"
 
-  from hIfTrue.prems
-  have no_tails: "\<not> HOL_TCN_Timing.tails t1"
-      and invar: "HOL_TCN_Timing.invar t1" "HOL_TCN_Timing.invar t2" by simp_all
-
-  from compiler_invar_if[OF hIfTrue.prems(2)] have comp_invar:
-      "compiler_invar crgt f_args bs keep t1"
-      "compiler_invar crgt f_args bs keep t2" by auto
+  from hIfTrue.prems(1) have check_compile:
+      "check_compile crgt f_args bs keep t1"
+      "check_compile crgt f_args bs keep t2"
+    unfolding check_compile_def by auto
 
   from hIfTrue.prems have rel_rgt:
       "relate_rgt_correctness frgt crgt (calls_names_set t1)"
       "relate_rgt_correctness frgt crgt (calls_names_set t2)"
-    unfolding relate_rgt_correctness_def using calls_names_set by simp_all
+    unfolding relate_rgt_correctness_def by simp_all
 
   from hIfTrue.prems have rel_state1: "relate_exec_state f_args bs vs_arg vs_b s" by blast
 
   (* t1 *)
 
-  from hIfTrue.IH(1)[OF invar(1) comp_invar(1) rel_rgt(1) rel_state1, where r = ?r1] rel_trace_to_leaf_cl(1)
+  from hIfTrue.IH(1)[OF check_compile(1) rel_rgt(1) rel_state1, where r = ?r1] rel_trace_to_leaf_cl(1)
   obtain k1 cT1 s2 where ih1:
       "(to_imp_tc f_args crgt bs ?r1 keep t1, s) \<Rightarrow>\<^bsup>(k1, cT1)\<^esup>  (s2, False)"
       "rel_trace_to_leaf crgt f_args ?r1 T1 (Value v1) cT1 s2 False"
@@ -761,7 +754,7 @@ next
   then have rel_state2: "relate_exec_state f_args bs vs_arg vs_b s2"
     using hIfTrue.prems unfolding relate_exec_state_def by fastforce
 
-  from hIfTrue.IH(2)[OF invar(2) comp_invar(2) rel_rgt(2) rel_state2]
+  from hIfTrue.IH(2)[OF check_compile(2) rel_rgt(2) rel_state2]
   obtain k2 cT2 s3 cl2 where ih2:
       "(?c2,s2)\<Rightarrow>\<^bsup>(k2,cT2)\<^esup> (s3,cl2)"
       "rel_trace_to_leaf crgt f_args r T2 l2 cT2 s3 cl2"
@@ -798,24 +791,21 @@ next
   let ?c2 = "to_imp_tc f_args crgt bs r keep t2"
   let ?c3 = "to_imp_tc f_args crgt bs r keep t3"
 
-  from hIfFalse.prems
-    have no_tails: "\<not> HOL_TCN_Timing.tails t1"
-      and invar: "HOL_TCN_Timing.invar t1" "HOL_TCN_Timing.invar t3" by simp_all
-
-  from compiler_invar_if[OF hIfFalse.prems(2)] have comp_invar:
-      "compiler_invar crgt f_args bs keep t1"
-      "compiler_invar crgt f_args bs keep t3" by auto
+  from hIfFalse.prems(1) have check_compile:
+      "check_compile crgt f_args bs keep t1"
+      "check_compile crgt f_args bs keep t3"
+    unfolding check_compile_def by auto
 
   from hIfFalse.prems have rel_rgt:
       "relate_rgt_correctness frgt crgt (calls_names_set t1)"
       "relate_rgt_correctness frgt crgt (calls_names_set t3)"
-    unfolding relate_rgt_correctness_def using calls_names_set by simp_all
+    unfolding relate_rgt_correctness_def by simp_all
 
   from hIfFalse.prems have rel_state1: "relate_exec_state f_args bs vs_arg vs_b s" by blast
 
   (* t1 *)
 
-  from hIfFalse.IH(1)[OF invar(1) comp_invar(1) rel_rgt(1) rel_state1, where r = ?r1] rel_trace_to_leaf_cl(1)
+  from hIfFalse.IH(1)[OF check_compile(1) rel_rgt(1) rel_state1, where r = ?r1] rel_trace_to_leaf_cl(1)
   obtain k1 cT1 s2 where ih1:
       "(to_imp_tc f_args crgt bs ?r1 keep t1, s) \<Rightarrow>\<^bsup>(k1, cT1)\<^esup>  (s2, False)"
       "rel_trace_to_leaf crgt f_args ?r1 T1 (Value v1) cT1 s2 False"
@@ -828,7 +818,7 @@ next
   then have rel_state2: "relate_exec_state f_args bs vs_arg vs_b s2"
     using hIfFalse.prems unfolding relate_exec_state_def by fastforce
 
-  from hIfFalse.IH(2)[OF invar(2) comp_invar(2) rel_rgt(2) rel_state2]
+  from hIfFalse.IH(2)[OF check_compile(2) rel_rgt(2) rel_state2]
   obtain k3 cT3 s3 cl3 where ih2:
       "(?c3,s2)\<Rightarrow>\<^bsup>(k3,cT3)\<^esup> (s3,cl3)"
       "rel_trace_to_leaf crgt f_args r T3 l3 cT3 s3 cl3"
@@ -868,17 +858,12 @@ next
 
   (* part 1: computing the arguments *)
 
-  from hCall.prems
-    have no_tails: "\<not> HOL_TCN_Timing.tails (ts ! i)" and invar: "HOL_TCN_Timing.invar (ts ! i)"
-    if "i < length ts" for i
-    using that by simp_all
-
-  from compiler_invar_call[OF hCall.prems(2)] have comp_invar:
-      "compiler_invar crgt f_args bs (?xs @ keep) (ts ! i)" if "i < length ts" for i
+  from check_compile_call[OF hCall.prems(1)] have check_compile:
+      "check_compile crgt f_args bs (?xs @ keep) (ts ! i)" if "i < length ts" for i
     using that by simp
 
   have "calls_names_set (ts ! i) \<subseteq> calls_names_set (hCall gr ts)" if "i < length ts" for i
-    using that calls_names by fastforce
+    using that by fastforce
   with hCall.prems have rel_rgt:
       "relate_rgt_correctness frgt crgt (calls_names_set (ts ! i))" if "i < length ts" for i
     using that unfolding relate_rgt_correctness_def by blast
@@ -886,7 +871,7 @@ next
   from hCall.IH have htrace: "frgt \<turnstile> (ts ! i, vs_b, vs_arg) \<Rightarrow>\<^bsup>hTs ! i\<^esup>  Value (vs ! i)"
     if "i < length ts" for i using that by blast
 
-  from invar comp_invar rel_rgt hCall.IH[simplified] have ih:
+  from check_compile rel_rgt hCall.IH[simplified] have ih:
     "\<exists>k cT s'.
       (?c_arg i, s) \<Rightarrow>\<^bsup>(k, cT)\<^esup>  (s', False) \<and>
       rel_trace_to_leaf crgt f_args (?xs ! i) (hTs ! i) (Value (vs ! i)) cT s' False \<and>
@@ -901,7 +886,7 @@ next
   have ***: "set ?xs \<inter>\<^sub>\<emptyset> set f_args" "set ?xs \<inter>\<^sub>\<emptyset> set bs"
     unfolding stale_registers_def using make_n_fresh_not_in_stale by fastforce+
 
-  from compiled_arguments_trace'[OF lengths * ** *** htrace hCall.prems(4) ih]
+  from compiled_arguments_trace'[OF lengths * ** *** htrace hCall.prems(3) ih]
   obtain k1 cTs s2 where trace1:
       "(?c1,s) \<Rightarrow>\<^bsup>(k1, cTs)\<^esup> (s2, False)" "rel_trace_calls crgt (concat hTs) cTs"
       "lookups ?xs s2 = vs" "s2 = s on set f_args \<union> set bs \<union> set (?xs @ keep) - set ?xs"
@@ -913,19 +898,17 @@ next
   let ?k2 = "(2 * length ts)\<^sub>+"
 
   have "set (args_from_crgt crgt gr) \<subseteq> set (stale_registers f_args crgt bs keep (hCall gr ts))"
-    unfolding stale_registers_def call_registers_def using calls_names_set by auto
-  then have 1: "set ?xs \<inter>\<^sub>\<emptyset> set (args_from_crgt crgt gr)"
-    using make_n_fresh_not_in_stale by blast
-  have 2: "distinct (args_from_crgt crgt gr)"
-    using hCall.prems unfolding compiler_invar_def calls_names_set by simp
-  have 3: "length ?xs = length ts"
-    unfolding make_n_fresh_def generate_def by simp
-  have 4: "length (args_from_crgt crgt gr) = length ts"
-    using hCall.prems unfolding compiler_invar_def calls_n_set by simp
+    unfolding stale_registers_def call_registers_def by auto
+  then have "set ?xs \<inter>\<^sub>\<emptyset> set (args_from_crgt crgt gr)" using make_n_fresh_not_in_stale by blast
+  moreover have "distinct (args_from_crgt crgt gr)" using hCall.prems(1) by auto
+  moreover have "length ?xs = length ts" by simp
+  moreover have "length (args_from_crgt crgt gr) = length ts" using hCall.prems(1) by auto
 
-  obtain s3 where trace2: "(?c2, s2) \<Rightarrow>\<^bsup>(?k2, [])\<^esup> (s3,False)"
-       "lookup_args crgt gr s3 = lookups ?xs s2" "s3 = s2 on - set (args_from_crgt crgt gr)"
-    using 3 copy_list_trace'[OF 3 4 2 1] by auto (* ? *)
+  ultimately obtain s3 where trace2:
+      "(?c2, s2) \<Rightarrow>\<^bsup>(?k2, [])\<^esup> (s3, False)"
+      "lookup_args crgt gr s3 = lookups ?xs s2"
+      "s3 = s2 on - set (args_from_crgt crgt gr)"
+    using copy_list_trace' by blast
 
   (* part 3: calling g *)
 
@@ -934,7 +917,7 @@ next
   let ?k3 = "0 :: nat"
   let ?s4 = "s3(?gret := ?gv)"
 
-  have "terminates_with_res_IMP ?gcom s3 ?gret ?gv" using hCall.prems calls_names_set unfolding relate_rgt_correctness_def by simp
+  have "terminates_with_res_IMP ?gcom s3 ?gret ?gv" using hCall.prems unfolding relate_rgt_correctness_def by simp
   then obtain z3 s4' where "(?gcom, s3) \<Rightarrow>\<^bsup>z3\<^esup> s4'" "s4' ?gret = ?gv"
     unfolding terminates_with_res_IMP_def terminates_with_res_pred_time_IMP_def terminates_with_pred_time_IMP_def by blast
   then have trace3: "(?c3, s3) \<Rightarrow>\<^bsup>(?k3, [(?gcom, s3)])\<^esup> (?s4, False)" using ttrace_to_leaf.tCall by metis
@@ -978,12 +961,12 @@ next
       using trace1 by blast
 
     have "set f_args \<union> set bs \<union> set keep \<inter>\<^sub>\<emptyset> set (args_from_crgt crgt gr)"
-      using hCall.prems(2) unfolding compiler_invar_def call_registers_def using calls_names_set by auto
+      using hCall.prems(1) unfolding check_compile_def using call_registers_def by auto
     then have **: "s3 = s2 on set f_args \<union> set bs \<union> set keep - {r}"
-      using hCall.prems(3) trace2 unfolding compiler_invar_def by auto
+      using trace2 by auto
 
     have "ret_from_crgt crgt gr \<notin> set f_args \<union> set bs \<union> set keep"
-      using hCall.prems(2) unfolding compiler_invar_def call_registers_def using calls_names_set by auto
+      using hCall.prems(1) unfolding check_compile_def using call_registers_def by auto
     then have ***: "?s5 = s3 on set f_args \<union> set bs \<union> set keep - {r}" by auto
 
     show "?s5 = s on if_is_value (Value v) (set f_args) \<union> set bs \<union> set keep - {r}"
@@ -998,17 +981,12 @@ next
 
   (* part 1: computing the arguments *)
 
-  from hTail.prems
-    have no_tails: "\<not> HOL_TCN_Timing.tails (ts ! i)" and invar: "HOL_TCN_Timing.invar (ts ! i)"
-    if "i < length ts" for i
-    using that by simp_all
-
-  from compiler_invar_tail[OF hTail.prems(2)] have comp_invar:
-      "compiler_invar crgt f_args bs (?xs @ keep) (ts ! i)" if "i < length ts" for i
+  from check_compile_tail[OF hTail.prems(1)] have check_compile:
+      "check_compile crgt f_args bs (?xs @ keep) (ts ! i)" if "i < length ts" for i
     using that by simp
 
   have "calls_names_set (ts ! i) \<subseteq> calls_names_set (hTAIL ts)" if "i < length ts" for i
-    using that calls_names by fastforce
+    using that by fastforce
   with hTail.prems have rel_rgt:
       "relate_rgt_correctness frgt crgt (calls_names_set (ts ! i))" if "i < length ts" for i
     using that unfolding relate_rgt_correctness_def by blast
@@ -1016,7 +994,7 @@ next
   from hTail.IH have htrace: "frgt \<turnstile> (ts ! i, vs_b, vs_arg) \<Rightarrow>\<^bsup>hTs ! i\<^esup>  Value (vs ! i)"
     if "i < length ts" for i using that by blast
 
-  from invar comp_invar rel_rgt hTail.IH[simplified] have ih:
+  from check_compile rel_rgt hTail.IH[simplified] have ih:
     "\<exists>k cT s'.
       (?c_arg i, s) \<Rightarrow>\<^bsup>(k, cT)\<^esup>  (s', False) \<and>
       rel_trace_to_leaf crgt f_args (?xs ! i) (hTs ! i) (Value (vs ! i)) cT s' False \<and>
@@ -1031,7 +1009,7 @@ next
   have ***: "set ?xs \<inter>\<^sub>\<emptyset> set f_args" "set ?xs \<inter>\<^sub>\<emptyset> set bs"
     unfolding stale_registers_def using make_n_fresh_not_in_stale by fastforce+
 
-  from compiled_arguments_trace'[OF lengths * ** *** htrace hTail.prems(4) ih]
+  from compiled_arguments_trace'[OF lengths * ** *** htrace hTail.prems(3) ih]
   obtain k1 cTs s2 where trace1:
       "(?c1,s) \<Rightarrow>\<^bsup>(k1, cTs)\<^esup> (s2, False)" "rel_trace_calls crgt (concat hTs) cTs"
       "lookups ?xs s2 = vs" "s2 = s on set f_args \<union> set bs \<union> set (?xs @ keep) - set ?xs"
@@ -1043,19 +1021,17 @@ next
   let ?k2 = "(2 * length ts)\<^sub>+"
 
   have "set f_args \<subseteq> set (stale_registers f_args crgt bs keep (hTAIL ts))"
-    unfolding stale_registers_def call_registers_def using calls_names_set by auto
-  then have 1: "set ?xs \<inter>\<^sub>\<emptyset> set f_args"
-    using make_n_fresh_not_in_stale by blast
-  have 2: "distinct f_args"
-    using hTail.prems unfolding compiler_invar_def calls_names_set by simp
-  have 3: "length ?xs = length ts"
-    unfolding make_n_fresh_def generate_def by simp
-  have 4: "length f_args = length ts"
-    using hTail.prems unfolding compiler_invar_def calls_n_set by simp
+    unfolding stale_registers_def call_registers_def by auto
+  then have "set ?xs \<inter>\<^sub>\<emptyset> set f_args" using make_n_fresh_not_in_stale by blast
+  moreover have "distinct f_args" using hTail.prems(1) by auto
+  moreover have "length ?xs = length ts" by simp
+  moreover have "length f_args = length ts" using hTail.prems(1) by auto
 
-  obtain s3 where trace2: "(?c2, s2) \<Rightarrow>\<^bsup>(?k2, [])\<^esup> (s3,False)"
-       "lookups f_args s3 = lookups ?xs s2" "s3 = s2 on - set f_args"
-    using 3 copy_list_trace'[OF 3 4 2 1] by auto (* ? *)
+  ultimately obtain s3 where trace2:
+      "(?c2, s2) \<Rightarrow>\<^bsup>(?k2, [])\<^esup> (s3,False)"
+      "lookups f_args s3 = lookups ?xs s2"
+      "s3 = s2 on - set f_args"
+    using copy_list_trace' by blast
 
   (* putting it together *)
 
@@ -1079,9 +1055,9 @@ next
       using trace1 by blast
 
     have "set bs \<union> set keep \<inter>\<^sub>\<emptyset> set f_args"
-      using hTail.prems(2) unfolding compiler_invar_def call_registers_def using calls_names_set by auto
+      using hTail.prems(1) unfolding check_compile_def using call_registers_def by auto
     then have **: "s3 = s2 on set bs \<union> set keep - {r}"
-      using hTail.prems(3) trace2 unfolding compiler_invar_def by auto
+      using hTail.prems(3) trace2 by auto
 
     show "s3 = s on if_is_value (Tail vs) (set f_args) \<union> set bs \<union> set keep - {r}"
       using * ** by simp blast
@@ -1090,9 +1066,8 @@ qed
 
 (* same as above, but remove the "technical" conclusion about state preservation *)
 corollary compiler_rel_trace_to_leaf':
-  assumes "invar t" (* todo: remove, subsumed by compiler_invar *)
   assumes "frgt \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup> hT :: HOL_TCN_Timing.call_trace \<^esup> hl"
-  assumes "compiler_invar crgt f_args bs keep t"
+  assumes "check_compile crgt f_args bs keep t"
   assumes "relate_rgt_correctness frgt crgt (calls_names_set t)"
   assumes "relate_exec_state f_args bs vs_arg vs_b s"
   obtains k cT s' cl where
@@ -1235,8 +1210,7 @@ lemma htrace_to_end_calls_in:
 using assms proof (induction rule: htrace_to_end_induct)
   case (hCall vs ts Ts f frgt bs xs T gr v)
 
-  have 1: "gr \<in> calls_names_set f \<union> calls_names_set (hCall gr ts)"
-    using calls_names_set by simp
+  have 1: "gr \<in> calls_names_set f \<union> calls_names_set (hCall gr ts)" by simp
 
   have *: "\<forall>i < length Ts. set (map fst (Ts ! i)) \<subseteq> calls_names_set f \<union> calls_names_set (ts ! i)"
     using hCall by auto
@@ -1246,7 +1220,7 @@ using assms proof (induction rule: htrace_to_end_induct)
     using Union_mono2 \<open>length Ts = length ts\<close> * by meson
   also have "... \<subseteq> calls_names_set f \<union> (\<Union>t\<in>set ts. calls_names_set t)" by blast
   also have "... = calls_names_set f \<union> set (concat_map calls_names ts)" by simp
-  also have "... \<subseteq> calls_names_set f \<union> calls_names_set (hCall gr ts)" using calls_names by auto
+  also have "... \<subseteq> calls_names_set f \<union> calls_names_set (hCall gr ts)" by auto
   finally show "set (map fst T) \<subseteq> calls_names_set f \<union> calls_names_set (hCall gr ts)"
     using 1 \<open>T = _\<close> by simp
 next
@@ -1261,10 +1235,10 @@ next
   also have "... \<subseteq> (\<Union>t\<in>set ts. calls_names_set f \<union> calls_names_set t)"
     using Union_mono2 \<open>length Ts = length ts\<close> * by meson
   also have "... \<subseteq> calls_names_set f \<union> (\<Union>t\<in>set ts. calls_names_set t)" by blast
-  also have "... = calls_names_set f \<union> calls_names_set (hTAIL ts)" using calls_names by auto
+  also have "... = calls_names_set f \<union> calls_names_set (hTAIL ts)" by auto
   finally show "set (map fst T) \<subseteq> calls_names_set f \<union> calls_names_set (hTAIL ts)"
     using tail \<open>T = _\<close> by simp
-qed (auto simp add: calls_names)
+qed auto
 
 corollary htrace_to_end_calls_in':
   assumes "(f,frgt) \<turnstile> (f,bs,xs) \<Rightarrow>\<^bsup> (k, T) :: HOL_TCN_Timing.trace \<^esup> v"
@@ -1273,18 +1247,18 @@ corollary htrace_to_end_calls_in':
 
 
 theorem compiler_rel_trace_end:
-  assumes "invar t" "invar f"
+  (* assumes "invar t" "invar f" *)
   assumes "HOL_TCN_Timing.num_commands t \<le> HOL_TCN_Timing.num_commands f"
   assumes "(f,frgt) \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup> (hk, hT) :: HOL_TCN_Timing.trace \<^esup> hv"
-  assumes "compiler_invar crgt f_args bs keep t"
-  assumes "compiler_invar crgt f_args [] [] f"
+  assumes "check_compile crgt f_args bs keep t"
+  assumes "check_compile crgt f_args [] [] f"
   assumes "relate_rgt_correctness frgt crgt (calls_names_set t)"
   assumes "relate_rgt_correctness frgt crgt (calls_names_set f)"
   assumes "relate_exec_state f_args bs vs_arg vs_b s"
   shows "\<exists>k cT s'.
     to_imp_tc f_args crgt [] r [] f \<turnstile> (to_imp_tc f_args crgt bs r keep t,s)\<Rightarrow>\<^bsup>(k, cT)\<^esup> s'
     \<and> rel_trace_to_end crgt r hT hv cT s' \<and> rel_trace_time f hk k"
-using assms(1-3,5-) proof (induction arbitrary: s bs keep rule: ind_tail[OF assms(1,2,4)])
+using assms(1-2,4-) proof (induction arbitrary: s bs keep rule: ind_tail[OF assms(1,3)])
   (* base case: t executes to a value without a tail call *)
   case (1 f frgt t vs_b vs_arg T v)
 

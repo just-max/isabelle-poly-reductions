@@ -34,6 +34,9 @@ lemma distinct_make_n_fresh[simp]: "distinct (make_n_fresh stale name n)"
 lemma make_n_fresh_not_in_stale: "set (make_n_fresh stale name n) \<inter> set stale = {}"
   unfolding make_n_fresh_def make_nth_fresh_def generate_def using fresh_not_in_stale by auto
 
+lemma make_n_fresh_length[simp]: "length (make_n_fresh stale name n) = n"
+  unfolding make_n_fresh_def by simp
+
 value "make_n_fresh [''f.args.2.0'', ''f.args.2.1'', ''f.args.3.0''] ''f.args.'' 5"
 
 (*
@@ -245,13 +248,6 @@ lemma non_tails_mk_seqs[simp]:
 
 definition "call_registers crgt t =
   concat_map (\<lambda>g. args_from_crgt crgt g @ [ret_from_crgt crgt g]) (calls_names t)"
-
-
-
-(* lemma call_registers_set:
-    "set (call_registers crgt t) =
-      (\<Union>g\<in>set (calls_names t). set (args_from_crgt crgt g) \<union> {ret_from_crgt crgt g})"
-  apply (induction t) unfolding call_registers_def by auto *)
 
 definition "stale_registers f_args crgt bs keep t = f_args @ bs @ keep @ call_registers crgt t"
 

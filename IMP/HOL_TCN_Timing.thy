@@ -26,67 +26,39 @@ notation hLet ("LET _ IN _") and
          hIf ("(IF _/\<noteq>0 THEN _/ ELSE _)"  [0, 0, 61] 61)
 end
 
-fun calls where
-  "calls (LET t1 IN t2) = calls t1 @ calls t2" |
-  "calls (hLetBound _) = []" |
-  "calls (hArg _) = []" |
-  "calls (hNumber _) = []" |
-  "calls (IF t1\<noteq>0 THEN t2 ELSE t3) = calls t1 @ calls t2 @ calls t3" |
-  "calls (hCall f ts) = (f, ts) # concat (map calls ts)" |
-  "calls (hTAIL ts) = concat (map calls ts)"
 
-lemma calls_subset_let[simp]:
-  shows "set (calls t1) \<subseteq> set (calls (LET t1 IN t2))"
-    and "set (calls t2) \<subseteq> set (calls (LET t1 IN t2))"
+fun calls_names where
+  "calls_names (LET t1 IN t2) = calls_names t1 @ calls_names t2" |
+  "calls_names (hLetBound _) = []" |
+  "calls_names (hArg _) = []" |
+  "calls_names (hNumber _) = []" |
+  "calls_names (IF t1\<noteq>0 THEN t2 ELSE t3) = calls_names t1 @ calls_names t2 @ calls_names t3" |
+  "calls_names (hCall f ts) = f # concat (map calls_names ts)" |
+  "calls_names (hTAIL ts) = concat (map calls_names ts)"
+
+lemma calls_names_subset_let[simp]:
+  shows "set (calls_names t1) \<subseteq> set (calls_names (LET t1 IN t2))"
+    and "set (calls_names t2) \<subseteq> set (calls_names (LET t1 IN t2))"
   by simp_all
 
-lemma calls_subset_if[simp]:
-  shows "set (calls t1) \<subseteq> set (calls (IF t1\<noteq>0 THEN t2 ELSE t3))" 
-    "set (calls t2) \<subseteq> set (calls (IF t1\<noteq>0 THEN t2 ELSE t3))"
-    "set (calls t3) \<subseteq> set (calls (IF t1\<noteq>0 THEN t2 ELSE t3))"
+lemma calls_names_subset_if[simp]:
+  shows "set (calls_names t1) \<subseteq> set (calls_names (IF t1\<noteq>0 THEN t2 ELSE t3))"
+    "set (calls_names t2) \<subseteq> set (calls_names (IF t1\<noteq>0 THEN t2 ELSE t3))"
+    "set (calls_names t3) \<subseteq> set (calls_names (IF t1\<noteq>0 THEN t2 ELSE t3))"
   by auto
 
-lemma calls_subset_call[simp]:
-  shows "(f, ts) \<in> set (calls (hCall f ts))" 
-    and "\<And>t. t \<in> set ts \<Longrightarrow> set (calls t) \<subseteq> set (calls (hCall f ts))"
+lemma calls_names_subset_call[simp]:
+  shows "f \<in> set (calls_names (hCall f ts))" 
+    and "\<And>t. t \<in> set ts \<Longrightarrow> set (calls_names t) \<subseteq> set (calls_names (hCall f ts))"
   by auto
 
-lemma calls_subset_tail[simp]:
-    "\<And>t. t \<in> set ts \<Longrightarrow> set (calls t) \<subseteq> set (calls (hTAIL ts))"
+lemma calls_names_subset_tail[simp]:
+    "\<And>t. t \<in> set ts \<Longrightarrow> set (calls_names t) \<subseteq> set (calls_names (hTAIL ts))"
   by auto
 
 
-definition "calls_names \<equiv> map fst o calls"
 abbreviation "calls_names_set t \<equiv> set (calls_names t)"
 
-lemma calls_names: "calls_names t = map fst (calls t)"
-  unfolding calls_names_def by simp
-
-lemma calls_names_set: "calls_names_set t = fst ` set (calls t)" unfolding calls_names_def by simp
-(* lemma calls_names_subset:
-  assumes "set (calls t) \<subseteq> set (calls t')"
-  shows "set (calls_names t) \<subseteq> set (calls_names t')"
-  using calls_names_set assms by blast *)
-
-(* lemma in_calls_in_calls_names: "(g,ts) \<in> set (calls t) \<Longrightarrow> g \<in> set (calls_names t)" using calls_names_set by force *)
-
-definition "calls_n = map (\<lambda>(gr, ts). (gr, length ts)) o calls"
-lemma calls_n_set: "set (calls_n t) = (\<lambda>(gr, ts). (gr, length ts)) ` set (calls t)" unfolding calls_n_def by simp
-(*lemma in_calls_in_calls_n: "(g,ts) \<in> set (calls t) \<Longrightarrow> (g,length ts) \<in> set (calls_n t)" using calls_n_set by force *)
-
-
-(* 
-lemma calls_calls: "calls t = map fst (calls t)" (* lemma? change def. of calls?.... *)
-proof-
-  have "map calls ts = map (map fst) (map calls ts)"
-    if "\<And>x. x \<in> set ts \<Longrightarrow> calls x = map fst (calls x)" for ts
-    using that by simp
-  then have "concat (map calls ts) = map fst (concat (map calls ts))"
-    if "\<And>x. x \<in> set ts \<Longrightarrow> calls x = map fst (calls x)" for ts
-    using map_concat that by metis
-  then show "calls t = map fst (calls t)"
-    by (induction t rule: calls.induct) auto
-qed *)
 
 type_synonym fun_registry_entry = "(nat list \<Rightarrow> nat) \<times> (nat list \<Rightarrow> nat)"
 
@@ -127,7 +99,6 @@ hTail: "\<lbrakk>length zs = length ts; length vs = length ts;
 declare hbig_step_t.intros[intro]
 lemmas hbig_step_t_induct = hbig_step_t.induct[split_format(complete)]
 
-(* names? tE, case, stepE, ... *)
 inductive_cases hLet_case [elim!]: "env \<turnstile> (hLet t1 t2,bs,xs) \<Rightarrow>\<^bsup>z\<^esup> v"
 inductive_cases hLetBound_case [elim!]: "env \<turnstile> (hLetBound n,bs,xs) \<Rightarrow>\<^bsup>z\<^esup> v"
 inductive_cases hArg_case [elim!]: "env \<turnstile> (hArg n,bs,xs) \<Rightarrow>\<^bsup>z\<^esup> v"
@@ -135,34 +106,14 @@ inductive_cases hNumber_case [elim!]: "env \<turnstile> (hNumber n,bs,xs) \<Righ
 inductive_cases hIf_case [elim!]: "env \<turnstile> (hIf t1 t2 t3,bs,xs) \<Rightarrow>\<^bsup>z\<^esup> v"
 inductive_cases hCall_case [elim!]: "(f,frgt) \<turnstile> (hCall g ts,bs,xs) \<Rightarrow>\<^bsup>z\<^esup> v"
 inductive_cases hTAIL_case [elim!]: "(f,frgt) \<turnstile> (hTAIL ts,bs,xs) \<Rightarrow>\<^bsup>z\<^esup> v"
+(* TODO: could use better names *)
 
-(* measure *)
-fun num_commands1 :: "thol \<Rightarrow> nat" where
-  "num_commands1 (LET t1 IN t2) = num_commands1 t1 + num_commands1 t2 + 1" |
-  "num_commands1 (hLetBound _) = 0" |
-  "num_commands1 (hArg n) = 0" |
-  "num_commands1 (hNumber n) = 0" |
-  "num_commands1 (IF t1\<noteq>0 THEN t2 ELSE t3) = num_commands1 t1 + num_commands1 t2 + num_commands1 t3 + 1" |
-  "num_commands1 (hCall g ts) = sum_map num_commands1 ts + length ts + 1" |
-  "num_commands1 (hTAIL ts) = sum_map num_commands1 ts + length ts + 1"
-
-fun num_commands2 :: "thol \<Rightarrow> nat" where
-  "num_commands2 (LET t1 IN t2) = num_commands2 t1 + num_commands2 t2" |
-  "num_commands2 (hLetBound _) = 1" |
-  "num_commands2 (hArg n) = 1" |
-  "num_commands2 (hNumber n) = 1" |
-  "num_commands2 (IF t1\<noteq>0 THEN t2 ELSE t3) = num_commands2 t1 + num_commands2 t2 + num_commands2 t3" |
-  "num_commands2 (hCall g ts) = sum_map num_commands2 ts" |
-  "num_commands2 (hTAIL ts) = sum_map num_commands2 ts"
-
-lemma num_commands_size1: "num_commands1 t = size t"
-  apply (induction t) apply auto using size_list_conv_sum_list map_eq_conv by metis+
-
-lemma num_commands_size2: "num_commands2 t \<le> 2 * size t + 1"
-proof (induction t)
-  case (hCall g ts) then show ?case apply (induction ts) by fastforce+
-  case (hTAIL ts) then show ?case apply (induction ts) by fastforce+
-qed simp_all
+lemma determ:
+  fixes t :: thol
+  assumes "ctxt \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup>z1\<^esup> v1"
+  assumes "ctxt \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup>z2\<^esup> v2"
+  shows "z1 = z2" "v1 = v2"
+  oops (* TODO *)
 
 fun num_commands :: "thol \<Rightarrow> nat" where
   "num_commands (LET t1 IN t2) = num_commands t1 + num_commands t2 + 1" |
@@ -173,50 +124,11 @@ fun num_commands :: "thol \<Rightarrow> nat" where
   "num_commands (hCall g ts) = sum_map num_commands ts + length ts + 1" |
   "num_commands (hTAIL ts) = sum_map num_commands ts + length ts + 1"
 
-lemma num_commands_size12: "num_commands t = num_commands1 t + num_commands2 t"
+lemma num_commands_size: "num_commands t \<le> 3 * size t + 1"
 proof (induction t)
   case (hCall g ts) then show ?case apply (induction ts) by fastforce+
   case (hTAIL ts) then show ?case apply (induction ts) by fastforce+
 qed simp_all
-
-lemma num_commands_size: "num_commands t \<le> 3 * size t + 1"
-  using num_commands_size1 num_commands_size2 num_commands_size12 by simp
-(* 
-proof (induction t)
-  case (hCall gr ts)
-  then show ?case by (induction ts) fastforce+
-next
-  case (hTAIL ts)
-  then show ?case by (induction ts) fastforce+
-qed simp_all *)
-
-
-lemma determ:
-  fixes t :: thol
-  assumes "ctxt \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup>z1\<^esup> v1"
-  assumes "ctxt \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup>z2\<^esup> v2"
-  shows "z1 = z2" "v1 = v2"
-  oops (* TODO *)
-(* using assms proof (induction arbitrary: z2 v2 rule: hbig_step_t.induct)
-  case (hCall g T_g frgt gr zs ts vs f bs xs v' z')
-  {
-    case 1
-    then show ?case sorry (* TODO *)
-  next
-    case 2
-    then show ?case sorry
-  }
-next
-  case (hTAIL zs ts vs f frgt bs xs z' v' z'')
-  {
-    case 1
-    then show ?case sorry
-  next
-    case 2
-    then show ?case sorry
-  }
-qed blast+ *)
-
 
 fun tails where
   "tails (hTAIL _) \<longleftrightarrow> True" |
@@ -234,29 +146,22 @@ fun invar where
 
 lemma no_tails_invar[simp]: "\<not> tails t \<Longrightarrow> invar t" by (induction t) auto
 
-(* elim! ? what does it all mean... *)
-lemma invar_let[elim]:
+lemma invar_letD[dest]:
   assumes "invar LET t1 IN t2"
   shows "invar t1" "invar t2"
   using assms by simp_all
 
-(* lemma invar_if[elim]:
-  assumes "invar (IF t1\<noteq>0 THEN t2 ELSE t3)"
-  shows "invar t1" "invar t2" "invar t3"
-  using assms by simp_all *)
-
-lemma invar_call[elim]:
+lemma invar_callD[dest]:
   assumes "invar (hCall gr ts)"
   assumes "i < length ts"
   shows "invar (ts ! i)"
   using assms by simp_all
 
-lemma invar_tail[elim]:
+lemma invar_tailD[dest]:
   assumes "invar (hTAIL ts)"
   assumes "i < length ts"
   shows "invar (ts ! i)"
   using assms by simp_all
-
 
 (* traces *)
 
@@ -290,7 +195,6 @@ lemma interp_trace_singleton[simp]: "interp_trace frgt n [(g, vs_arg_g)] = n + T
 lemmas interp_trace_singleton' = interp_trace_singleton[where n = 0, simplified add_0_left]
 
 datatype leaf_state = Value nat | Tail "nat list"
-print_theorems
 
 inductive
   htrace_to_leaf :: "fun_registry \<Rightarrow> thol \<times> nat list \<times> nat list \<Rightarrow> call_trace \<Rightarrow> leaf_state \<Rightarrow> bool"  ("_ \<turnstile> _ \<Rightarrow>\<^bsup>_\<^esup>  _" 55)
