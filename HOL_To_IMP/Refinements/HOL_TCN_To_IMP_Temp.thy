@@ -6,7 +6,6 @@ theory HOL_TCN_To_IMP_Temp
   (* only for stuff that should be in IMP_Terminates_With, TODO: fix here once that's done *)
 begin
 
-method repeat methods m = (m; repeat \<open>m\<close>)?
 
 type_synonym state = IMP_Base.state (* TODO *)
 
@@ -1115,6 +1114,44 @@ next
   with Suc tail invar(2) show ?case by simp
 qed
 
+(* don't need this, but mention it in the thesis *)
+lemma ind_tail_imp_tc:
+  fixes P :: "tcom \<Rightarrow> tcom \<Rightarrow> state \<Rightarrow> nat \<Rightarrow> IMP_Tailcall_Traces.call_trace \<Rightarrow> state \<Rightarrow> bool"
+  assumes invar: "IMP_Tailcall.invar c" "IMP_Tailcall.invar f"
+  assumes trace: "f \<turnstile> (c, s) \<Rightarrow>\<^bsup> (k, T) :: IMP_Tailcall_Traces.trace \<^esup> s'"
+  assumes val:
+    "\<And>f c s k T s'.
+      (c, s) \<Rightarrow>\<^bsup> (k, T) :: IMP_Tailcall_Traces.trace \<^esup> (s', False) \<Longrightarrow>
+      P f c s k T s'"
+  assumes tail:
+    "\<And>f c s k1 k2 T1 T2 s' s''.
+      (c, s) \<Rightarrow>\<^bsup> (k1, T1) :: IMP_Tailcall_Traces.trace \<^esup> (s', True) \<Longrightarrow>
+      f \<turnstile> (f, s') \<Rightarrow>\<^bsup> (k2, T2) :: IMP_Tailcall_Traces.trace \<^esup> s'' \<Longrightarrow>
+      k1 \<ge> 5 \<Longrightarrow>
+      P f f s' k2 T2 s'' \<Longrightarrow>
+      P f c s (k1 + k2) (T1 @ T2) s''"
+  shows "P f c s k T s'"
+using assms(3,1) proof (induction k arbitrary: c s T s' rule: less_induct)
+  case (less k)
+  from less.prems IMP_Tailcall_Traces.trace_end_trace_leaf obtain k1 T1 s2 l k2 T2
+    where 1: "(c, s) \<Rightarrow>\<^bsup> (k1, T1) \<^esup> (s2, l)"
+      and *: "if l then f \<turnstile>(f, s2) \<Rightarrow>\<^bsup>(k2, T2)\<^esup> s' \<and> k = k1 + k2 \<and> k1 \<ge> 5 \<and> T = T1 @ T2
+              else k1 = k \<and> T1 = T \<and> s2 = s'" by metis
+  then consider
+    (base) "(c, s) \<Rightarrow>\<^bsup> (k, T) \<^esup> (s', False)" |
+    (step) "(c, s) \<Rightarrow>\<^bsup> (k1, T1) \<^esup> (s2, True)" "f \<turnstile>(f, s2) \<Rightarrow>\<^bsup>(k2, T2)\<^esup> s'" "k1 \<ge> 5" "T = T1 @ T2" "k = k1 + k2"
+    by (metis (full_types))
+  then show ?case proof cases
+    case base
+    then show ?thesis using val by blast
+  next
+    case step
+    from \<open>k = k1 + k2\<close> \<open>k1 \<ge> 5\<close> have "k2 < k" by linarith
+    note ih = less.IH[OF \<open>k2 < k\<close> step(2) invar(2)]
+    show "P f c s k T s'"
+      by (subst \<open>T = T1 @ T2\<close>, subst \<open>k = k1 + k2\<close>, rule tail[OF step(1,2,3) ih])
+  qed
+qed
 
 (* due to `c_struct` (5 * ..) and lemma `to_imp_num_commands` (7 * ..) *)
 definition "rel_trace_time t hk k \<equiv> k \<le> 35 * HOL_TCN_Timing.num_commands t * (hk + 1)"
@@ -1160,7 +1197,29 @@ using assms(2) proof (induction xs ys rule: snoc_list_induct2)
 qed (simp_all add: assms(1))
 
 (* todo: move *)
-lemma htrace_to_end_length_bound:
+lemma htrace_to_leaf_length_bound:
+  assumes "frgt \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup> T :: HOL_TCN_Timing.call_trace \<^esup> l"
+  shows "length T \<le> HOL_TCN_Timing.num_commands t"
+using assms proof (induction rule: htrace_to_leaf_induct)
+  case (hCall vs ts Ts frgt bs xs T gr v)
+  have "\<forall>i < length ts. HOL_TCN_Timing.num_commands (ts ! i) \<le> sum_map HOL_TCN_Timing.num_commands ts" by (simp add: member_le_sum_list)
+  then have "\<forall>i < length Ts. length (Ts ! i) \<le> HOL_TCN_Timing.num_commands (ts ! i)" using hCall.IH hCall.hyps by auto
+  with hCall.hyps have "sum_map length Ts \<le> sum_map HOL_TCN_Timing.num_commands ts" using sum_map_mono2 by blast
+  then have "length (concat Ts) \<le> sum_map HOL_TCN_Timing.num_commands ts" by (simp add: length_concat)
+  with hCall.hyps show ?case by simp
+next
+  case (hTail vs ts Ts frgt bs xs T)
+  have "\<forall>i < length ts. HOL_TCN_Timing.num_commands (ts ! i) \<le> sum_map HOL_TCN_Timing.num_commands ts" by (simp add: member_le_sum_list)
+  then have "\<forall>i < length Ts. length (Ts ! i) \<le> HOL_TCN_Timing.num_commands (ts ! i)" using hTail.IH hTail.hyps by auto
+  with hTail.hyps have "sum_map length Ts \<le> sum_map HOL_TCN_Timing.num_commands ts"
+    using sum_map_mono2 by blast
+  then have *: "length (concat Ts) \<le> sum_map HOL_TCN_Timing.num_commands ts" by (simp add: length_concat)
+  with hTail.hyps show ?case by simp
+qed simp_all
+
+
+(* mostly duplicate of htrace_to_leaf_length_bound, which we use in the full trace proof to prove the same thing *)
+lemma htrace_to_end_length_bound_:
   assumes "(f,frgt) \<turnstile> (t,bs,xs) \<Rightarrow>\<^bsup> (k, T) :: HOL_TCN_Timing.trace \<^esup> v"
   shows "length T \<le> HOL_TCN_Timing.num_commands f * k + HOL_TCN_Timing.num_commands t"
 using assms proof (induction rule: htrace_to_end_induct)
@@ -1182,10 +1241,11 @@ next
 qed auto
 
 (* this lemma says that there are at most |f| calls per "chunk" *)
-corollary htrace_to_end_length_bound':
+corollary htrace_to_end_length_bound'_:
   assumes "(f,frgt) \<turnstile> (f,bs,xs) \<Rightarrow>\<^bsup> (k, T) :: HOL_TCN_Timing.trace \<^esup> v"
   shows "length T \<le> HOL_TCN_Timing.num_commands f * (k + 1)"
-  using htrace_to_end_length_bound assms by fastforce
+  using htrace_to_end_length_bound_ assms by fastforce
+
 
 
 
@@ -1249,47 +1309,61 @@ corollary htrace_to_end_calls_in':
 theorem compiler_rel_trace_end:
   assumes "invar t" "invar f"
   assumes "HOL_TCN_Timing.num_commands t \<le> HOL_TCN_Timing.num_commands f"
+  assumes "calls_names_set t \<subseteq> calls_names_set f"
   assumes "(f,frgt) \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup> (hk, hT) :: HOL_TCN_Timing.trace \<^esup> hv"
   assumes "check_compile crgt f_args bs keep t"
   assumes "check_compile crgt f_args [] [] f"
-  assumes "relate_rgt_correctness frgt crgt (calls_names_set t)"
+  (* assumes "relate_rgt_correctness frgt crgt (calls_names_set t)" *)
   assumes "relate_rgt_correctness frgt crgt (calls_names_set f)"
   assumes "relate_exec_state f_args bs vs_arg vs_b s"
   shows "\<exists>k cT s'.
-    to_imp_tc f_args crgt [] r [] f \<turnstile> (to_imp_tc f_args crgt bs r keep t,s)\<Rightarrow>\<^bsup>(k, cT)\<^esup> s'
-    \<and> rel_trace_to_end crgt r hT hv cT s' \<and> rel_trace_time f hk k"
-using assms(1-3,5-) proof (induction arbitrary: s bs keep rule: ind_tail[OF assms(1,2,4)])
+    (to_imp_tc f_args crgt [] r [] f \<turnstile> (to_imp_tc f_args crgt bs r keep t,s)\<Rightarrow>\<^bsup>(k, cT)\<^esup> s')
+    \<and> rel_trace_to_end crgt r hT hv cT s'
+    \<and> rel_trace_time f hk k
+    \<and> length hT \<le> HOL_TCN_Timing.num_commands f * (hk + 1)"
+using assms(1-4,6-) proof (induction arbitrary: s bs keep rule: ind_tail[OF assms(1,2,5)])
   (* base case: t executes to a value without a tail call *)
-  case (1 f frgt t vs_b vs_arg T v)
+  case (1 f frgt t vs_b vs_arg hT v)
 
   (* using the partial trace relatedness theorem, obtain a related trace *)
-  with compiler_rel_trace_to_leaf' obtain k cT s'
+  from "1.prems"(4,7) have *: "relate_rgt_correctness frgt crgt (calls_names_set t)"
+    unfolding relate_rgt_correctness_def by (simp add: in_mono)
+  from compiler_rel_trace_to_leaf'[OF "1.hyps"(1) "1.prems"(5) * "1.prems"(8)] obtain k cT s'
     where imp: "(to_imp_tc f_args crgt bs r keep t, s) \<Rightarrow>\<^bsup>(k, cT)\<^esup>  (s', False)"
-      and rel: "rel_trace_to_leaf crgt f_args r T (Value v) cT s' False"
+      and rel: "rel_trace_to_leaf crgt f_args r hT (Value v) cT s' False"
     using rel_trace_to_leaf_cl by (metis (full_types))
 
   (* turn the information about partial traces (ending in a value) to full traces *)
-  from rel have "rel_trace_to_end crgt r T v cT s'"
+  from rel have "rel_trace_to_end crgt r hT v cT s'"
     using rel_trace_to_leaf_value_rel_trace_to_end by simp
-  moreover from imp have ****: "f \<turnstile> (to_imp_tc f_args crgt bs r keep t, s) \<Rightarrow>\<^bsup>(k, cT)\<^esup>  s'" for f
+  moreover from imp have "f \<turnstile> (to_imp_tc f_args crgt bs r keep t, s) \<Rightarrow>\<^bsup>(k, cT)\<^esup>  s'" for f
     using IMP_Tailcall_Traces.trace_leaf_no_tail_trace_end by blast
 
   (* the running time until the tail call is bounded *)
   moreover from imp have "rel_trace_time f 0 k"
     using compiler_rel_trace_time_to_leaf "1.prems" rel_trace_time_num_commands_mono by blast
 
-  ultimately show ?case by blast
+  (* the length of the trace is bounded *)
+  moreover have "length hT \<le> HOL_TCN_Timing.num_commands f"
+    using htrace_to_leaf_length_bound "1.hyps" "1.prems"(3) le_trans by blast
+
+  ultimately show ?case by auto
 next
   (* inductive step: t executes to a tail call *)
   case (2 f frgt t vs_b vs_arg hk hT1 hT2 vs v)
 
   (* again using the partial trace relatedness theorem, obtain a related trace up to the tail call *)
-  with compiler_rel_trace_to_leaf' obtain ck1 cT1 s2
+  from "2.prems"(4,7) have *: "relate_rgt_correctness frgt crgt (calls_names_set t)"
+    unfolding relate_rgt_correctness_def by (simp add: in_mono)
+  from compiler_rel_trace_to_leaf'[OF "2.hyps"(1) "2.prems"(5) * "2.prems"(8)] obtain ck1 cT1 s2
     where imp1: "(to_imp_tc f_args crgt bs r keep t, s) \<Rightarrow>\<^bsup>(ck1, cT1)\<^esup>  (s2, True)"
       and rel1: "rel_trace_to_leaf crgt f_args r hT1 (Tail vs) cT1 s2 True"
     using rel_trace_to_leaf_cl by (metis (full_types))
   then have rel_time1: "rel_trace_time f 0 ck1"
     using compiler_rel_trace_time_to_leaf "2.prems" rel_trace_time_num_commands_mono by blast
+
+  from 2 htrace_to_leaf_length_bound have trace_len1:
+    "length hT1 \<le> HOL_TCN_Timing.num_commands f" by fastforce
 
   (* show that the intermediate state s2 encodes the initial context for the remaining trace *)
   from rel1 have "lookups f_args s2 = vs" unfolding rel_trace_to_leaf_def by simp
@@ -1297,11 +1371,12 @@ next
     unfolding relate_exec_state_def by simp
 
   (* from there, apply the IH to get the remaining trace *)
-  with "2.IH" "2.prems" obtain ck2 cT2 s3
+  with "2.IH"[where bs = "[]" and keep = "[]"] "2.prems" obtain ck2 cT2 s3
     where imp2: "to_imp_tc f_args crgt [] r [] f \<turnstile>(to_imp_tc f_args crgt [] r [] f, s2) \<Rightarrow>\<^bsup>(ck2, cT2)\<^esup>  s3"
       and rel2: "rel_trace_to_end crgt r hT2 v cT2 s3"
       and rel_time2: "rel_trace_time f hk ck2"
-    by blast (* TODO: too slow! *)
+      and trace_len2: "length hT2 \<le> HOL_TCN_Timing.num_commands f * (hk + 1)"
+    by blast
 
   (* combine the first and second parts of the execution *)
   moreover from imp1 imp2 have
@@ -1311,6 +1386,8 @@ next
     using rel_trace_to_end_append unfolding rel_trace_to_leaf_def by metis
   moreover from rel_time1 rel_time2 have "rel_trace_time f (hk + 1) (ck1 + ck2)"
     using rel_trace_time_join by fastforce
+  moreover from trace_len1 trace_len2 have "length (hT1 @ hT2) \<le> HOL_TCN_Timing.num_commands f * (hk + 1 + 1)"
+    by simp
 
   ultimately show ?case by blast
 qed
@@ -1607,7 +1684,7 @@ lemma rel_trace_time:
              z \<le> some_constant_fs frgt crgt (map fst hT) * (length hT + HOL_TCN_Timing.interp_trace frgt 0 hT)"
 (* note: `length hT` is bounded by the number of recursive calls, so this is still "linear" *)
 proof-
-  from assms(1) have "length hT = length cT" unfolding rel_trace_calls_def by simp
+  from assms(1) have "length hT = length cT" unfolding rel_trace_calls_def by blast
   then show ?thesis
   using assms proof (induction rule: list_induct2)
     case Nil
@@ -1724,7 +1801,8 @@ lemma relate_rgt_combine_correctness_time:
   using terminates_with_res_time_order_combine by auto
 
 
-definition "the_hol_to_imp_c frgt crgt f = 2 * (35 + some_constant_t frgt crgt f) * HOL_TCN_Timing.num_commands f"
+definition "the_hol_to_imp_c' frgt crgt f = (35 + some_constant_t frgt crgt f)"
+(* definition "the_hol_to_imp_c frgt crgt f = 2 * (35 + some_constant_t frgt crgt f) * HOL_TCN_Timing.num_commands f" *)
 
 lemma compiler_rel_time_end:
   assumes invar: "invar t" "invar f"
@@ -1738,7 +1816,8 @@ lemma compiler_rel_time_end:
   assumes state: "relate_exec_state f_args bs vs_arg vs_b s"
   shows
     "HOL_Nat_To_IMP.terminates_with_res_time_IMP_Tailcall
-      (to_imp_tc f_args crgt [] r [] f) (to_imp_tc f_args crgt bs r keep t) s r hv (the_hol_to_imp_c frgt crgt f * hz\<^sub>+)"
+      (to_imp_tc f_args crgt [] r [] f) (to_imp_tc f_args crgt bs r keep t) s r hv
+      (the_hol_to_imp_c' frgt crgt f * HOL_TCN_Timing.num_commands f * (hz + 1))"
 proof-
   from rgt relate_rgt_combine_correctness_time
     have rgt_correctness: "relate_rgt_correctness frgt crgt (calls_names_set f)"
@@ -1751,10 +1830,12 @@ proof-
   from calls_bound rgt_correctness have
       "relate_rgt_correctness frgt crgt (calls_names_set t)"
     unfolding relate_rgt_correctness_def by blast
-  with compiler_rel_trace_end[OF invar size_bound htrace prereq _ rgt_correctness state] obtain k cT s'
+  with compiler_rel_trace_end[OF invar size_bound calls_bound htrace prereq rgt_correctness state] obtain k cT s'
     where ctrace: "to_imp_tc f_args crgt [] r [] f \<turnstile>(to_imp_tc f_args crgt bs r keep t, s) \<Rightarrow>\<^bsup>(k, cT)\<^esup> s'"
     and rel_tr: "rel_trace_to_end crgt r hT hv cT s'"
-    and rel_tr_time: "rel_trace_time f hk k" by blast
+    and rel_tr_time: "rel_trace_time f hk k"
+    and 4: "length hT \<le> HOL_TCN_Timing.num_commands f * (hk + 1)"
+    by blast
 
   from ctrace IMP_Tailcall_Traces.trace_end_bigstep obtain z
     where "IMP_Tailcall_Traces.interp_trace k cT z"
@@ -1763,7 +1844,6 @@ proof-
     where 1: "z = k + cTz"
       and cTz: "IMP_Tailcall_Traces.interp_trace 0 cT cTz"
     by (metis IMP_Tailcall_Traces.interp_trace_def add.commute add_0)
-
 
   show ?thesis
   proof (rule HOL_Nat_To_IMP.terminates_with_res_time_IMP_TailcallI[OF cexec])
@@ -1786,41 +1866,45 @@ proof-
     then have 3: "cTz \<le> some_constant_t frgt crgt f * (length hT + HOL_TCN_Timing.interp_trace frgt 0 hT)"
       using some_const mult_le_mono1 le_trans by blast
 
-    from size_bound htrace htrace_to_end_length_bound have 4:
-        "length hT \<le> HOL_TCN_Timing.num_commands f * (hk + 1)"
-      by fastforce
-
     from 1 have "z = k + cTz" .
-    also from 2 3 have
-      "... \<le> 35 * HOL_TCN_Timing.num_commands f * (hk + 1) +
-             some_constant_t frgt crgt f * (length hT + HOL_TCN_Timing.interp_trace frgt 0 hT)" by linarith
-    also from 4 have
-      "... \<le> 35 * HOL_TCN_Timing.num_commands f * (hk + 1) +
-             some_constant_t frgt crgt f *
-              (HOL_TCN_Timing.num_commands f * (hk + 1) + HOL_TCN_Timing.interp_trace frgt 0 hT)" by simp
     also have
-      "... = ((35 + some_constant_t frgt crgt f) * HOL_TCN_Timing.num_commands f) * hk +
-             some_constant_t frgt crgt f * HOL_TCN_Timing.interp_trace frgt 0 hT +
-             ((35 + some_constant_t frgt crgt f) * HOL_TCN_Timing.num_commands f)" by algebra
+      "... \<le> 35 * HOL_TCN_Timing.num_commands f * (hk + 1)
+             + some_constant_t frgt crgt f
+               * (HOL_TCN_Timing.num_commands f * (hk + 1) + HOL_TCN_Timing.interp_trace frgt 0 hT)"
+      using add_le_mono[OF 2 le_trans[OF 3 _]] 4 by simp
     also have
-      "... \<le> ((35 + some_constant_t frgt crgt f) * HOL_TCN_Timing.num_commands f) * hk +
-             ((35 + some_constant_t frgt crgt f) * HOL_TCN_Timing.num_commands f) * HOL_TCN_Timing.interp_trace frgt 0 hT +
-             ((35 + some_constant_t frgt crgt f) * HOL_TCN_Timing.num_commands f)"
-    proof-
-      have "some_constant_t frgt crgt f \<le> 35 + some_constant_t frgt crgt f" by linarith
-      also with num_commands_nonzero have "... \<le> (35 + some_constant_t frgt crgt f) * HOL_TCN_Timing.num_commands f" by simp
-      finally show ?thesis by simp
-    qed
+      "... = the_hol_to_imp_c' frgt crgt f * HOL_TCN_Timing.num_commands f * (hk + 1)
+             + some_constant_t frgt crgt f * HOL_TCN_Timing.interp_trace frgt 0 hT"
+      unfolding the_hol_to_imp_c'_def by algebra
     also have
-      "... = ((35 + some_constant_t frgt crgt f) * HOL_TCN_Timing.num_commands f) * (hk + HOL_TCN_Timing.interp_trace frgt 0 hT) +
-             ((35 + some_constant_t frgt crgt f) * HOL_TCN_Timing.num_commands f)" by algebra
+      "... \<le> the_hol_to_imp_c' frgt crgt f * HOL_TCN_Timing.num_commands f * (hk + 1)
+             + the_hol_to_imp_c' frgt crgt f * HOL_TCN_Timing.num_commands f * HOL_TCN_Timing.interp_trace frgt 0 hT"
+      unfolding the_hol_to_imp_c'_def
+      using mult_le_mono[OF _ HOL_TCN_To_IMP_Temp.num_commands_nonzero] by simp
     also have
-      "... \<le> (2 * (35 + some_constant_t frgt crgt f) * HOL_TCN_Timing.num_commands f) * (hk + HOL_TCN_Timing.interp_trace frgt 0 hT)\<^sub>+"
-      using max1_abc by (metis mult.assoc mult_2)
-    also from 5 have "... = the_hol_to_imp_c frgt crgt f * hz\<^sub>+" unfolding the_hol_to_imp_c_def by (metis add.commute interp_trace_n)
-    finally show "z \<le> the_hol_to_imp_c frgt crgt f * hz\<^sub>+" .
+      "... = the_hol_to_imp_c' frgt crgt f * HOL_TCN_Timing.num_commands f * (hz + 1)"
+      using 5[symmetric] interp_trace_n[where n = hk] by (simp add: algebra_simps)
+    finally show "z \<le> the_hol_to_imp_c' frgt crgt f * HOL_TCN_Timing.num_commands f * (hz + 1)" .
   qed
 qed
+
+
+(* unneeded, TODO: move *)
+lemma ignores_free:
+  assumes "(f,frgt) \<turnstile> (t,vs_b,vs_arg) \<Rightarrow>\<^bsup> z :: nat \<^esup> v"
+  shows "(f,frgt) \<turnstile> (t,vs_b @ supp,vs_arg) \<Rightarrow>\<^bsup> z :: nat \<^esup> v"
+using assms proof (induction rule: hbig_step_t_induct)
+  case (hLetBound n bs f t xs)
+  show ?case
+  proof (rule hbig_step_t_hLetBound')
+    show "bs ! n = (bs @ supp) ! n" "n < length (bs @ supp)"
+      using \<open>n < length bs\<close> by (simp_all add: nth_append_left)
+  qed simp
+qed auto
+corollary ignores_free':
+  assumes "(f,frgt) \<turnstile> (t,[],vs_arg) \<Rightarrow>\<^bsup> z :: nat \<^esup> v"
+  shows "(f,frgt) \<turnstile> (t,supp,vs_arg) \<Rightarrow>\<^bsup> z :: nat \<^esup> v"
+  using ignores_free[OF assms] by simp
 
 
 theorem compiler_correct:
@@ -1833,10 +1917,15 @@ theorem compiler_correct:
       (to_imp_tc f_args crgt [] r [] t) (to_imp_tc f_args crgt [] r [] t) r
       (f o lookups f_args) (T_f o lookups f_args)"
 proof-
-  let ?T = "\<lambda>s. the_hol_to_imp_c frgt crgt t * (T_f (lookups f_args s))\<^sub>+"
+  let ?T = "\<lambda>s. the_hol_to_imp_c' frgt crgt t * HOL_TCN_Timing.num_commands t * (T_f (lookups f_args s) + 1)"
 
   show ?thesis
-  proof
+  proof (rule terminates_with_res_time_order_IMP_TailcallI)
+    show "?T \<le>\<^sub>c T_f o lookups f_args"
+      unfolding comp_def
+      unfolding order_of_ab distrib_left by blast
+      (* by (rule order_of_const_mult[OF order_of_plus[OF order_of_refl order_of_const]]) *) (* also works *)
+  next
     fix s
     let ?vs_arg = "lookups f_args s"
     have bound:
@@ -1849,13 +1938,17 @@ proof-
     show "HOL_Nat_To_IMP.terminates_with_res_time_IMP_Tailcall
            (to_imp_tc f_args crgt [] r [] t) (to_imp_tc f_args crgt [] r [] t) s r
            ((f o lookups f_args) s) (?T s)" by simp
-    next
-      show "?T \<le>\<^sub>c T_f o lookups f_args" by fastforce
   qed
 qed
 
+(* todo: move *)
+lemma bigstep_can_terminate:
+  assumes "(f,frgt) \<turnstile> (t,bs,vs_arg) \<Rightarrow>\<^bsup> z :: nat \<^esup> v"
+  shows "can_terminate f \<or> can_terminate t"
+  using assms by (induction rule: hbig_step_t_induct) auto
+
 corollary compiler_correct':
-  assumes invar: "invar t" and can_term: "can_terminate t"
+  assumes invar: "invar t"
   assumes bigstep: "\<And>vs_arg. length vs_arg = length f_args \<Longrightarrow> (t,frgt) \<turnstile> (t,[],vs_arg) \<Rightarrow>\<^bsup> T_f vs_arg :: nat \<^esup> f vs_arg"
   assumes rgt: "relate_rgt frgt crgt (calls_names_set t)"
   assumes prereq: "check_compile crgt f_args [] [] t"
@@ -1863,11 +1956,19 @@ corollary compiler_correct':
     "terminates_with_res_time_order_IMP
       (tailcall_to_IMP (to_imp_tc f_args crgt [] r [] t)) r
       (f o lookups f_args) (T_f o lookups f_args)"
-  using
+proof (cases "can_terminate t")
+  case can_term: True
+  from
     to_imp_invar[OF invar] to_imp_r_in_vars[OF can_term]
     compiler_correct[OF invar bigstep rgt prereq]
     terminates_with_res_time_order_IMP_Tailcall_to_IMP
-  by blast
+  show ?thesis by blast
+next
+  let ?vs_arg = "replicate (length f_args) 0"
+  case False
+  then have False using bigstep_can_terminate bigstep[of ?vs_arg] by fastforce
+  then show ?thesis by blast
+qed
 
 
 section \<open>Examples\<close>
@@ -1897,7 +1998,7 @@ definition [simp]: "plus_name \<equiv> ''+''"
 definition [simp]: "(plus_f :: nat list \<Rightarrow> nat) \<equiv> (\<lambda>xs. xs ! 0 + xs ! 1)"
 definition [simp]: "(plus_T_f :: nat list \<Rightarrow> nat) \<equiv> (\<lambda>xs. 0)"
 definition [simp]: "plus_args \<equiv> [''+.args.x'', ''+.args.y'']"
-definition [simp]: "plus_com \<equiv> Assign ''+.ret'' (V ''+.args.x'' \<oplus>  V ''+.args.y'')"
+definition "plus_com \<equiv> Assign ''+.ret'' (V ''+.args.x'' \<oplus>  V ''+.args.y'')"
 definition [simp]: "plus_r \<equiv> ''+.ret''"
 
 lemma plus_correctness:
@@ -1921,11 +2022,12 @@ definition [simp]: "minus_name \<equiv> ''-''"
 definition [simp]: "(minus_f :: nat list \<Rightarrow> nat) \<equiv> (\<lambda>xs. xs ! 0 - xs ! 1)"
 definition [simp]: "(minus_T_f :: nat list \<Rightarrow> nat) \<equiv> (\<lambda>xs. 0)"
 definition [simp]: "minus_args \<equiv> [''-.args.x'', ''-.args.y'']"
-definition [simp]: "minus_com \<equiv> Assign ''-.ret'' (V ''-.args.x'' \<ominus>  V ''-.args.y'')"
+definition "minus_com \<equiv> Assign ''-.ret'' (V ''-.args.x'' \<ominus>  V ''-.args.y'')"
 definition [simp]: "minus_r \<equiv> ''-.ret''"
 
 lemma minus_correctness:
   "terminates_with_res_time_order_IMP minus_com minus_r (minus_f o lookups minus_args) (minus_T_f o lookups minus_args)"
+  unfolding minus_com_def
   by (rule terminates_with_res_const) fastforce+
 
 definition [simp]: "minus_frgt_upd upd = upd(minus_name := mk_frgt1 minus_f minus_T_f)"
@@ -1959,11 +2061,10 @@ lemma bigstep_start:
   using assms by simp
 
 lemma bigstep_apply_ih:
-  assumes "t \<equiv> t_def"
-  assumes "T_f xs - 1 = T_f xs'"
+  assumes "T_f xs = T_f xs' + k"
   assumes "f xs = f xs'"
-  assumes "(t, frgt) \<turnstile> (t_def, [], xs')\<Rightarrow>\<^bsup> T_f xs' :: nat \<^esup> f xs'"
-  shows "(t, frgt) \<turnstile> (t, [], xs')\<Rightarrow>\<^bsup> T_f xs - 1 \<^esup> f xs"
+  assumes "(t, frgt) \<turnstile> (t, [], xs')\<Rightarrow>\<^bsup> T_f xs' :: nat \<^esup> f xs'"
+  shows "(t, frgt) \<turnstile> (t, [], xs')\<Rightarrow>\<^bsup> T_f xs - k \<^esup> f xs"
   using assms by simp
 
 lemma forall_i_length_Cons:
@@ -1984,48 +2085,167 @@ lemma relate_rgt_unfold:
   shows "relate_rgt frgt crgt f_aux"
   using assms unfolding relate_rgt_def by blast
 
-(* todo: move close to hol-tcn semantics *)
-lemma hbig_step_t_hArg':
-  assumes "z = 0"
-  assumes "v = (xs ! n)"
-  assumes "n < length xs"
-  shows "(f, frgt) \<turnstile> (hArg n, bs, xs) \<Rightarrow>\<^bsup>z :: nat\<^esup> v"
-  using assms by blast
+lemma terminates_with_res_time_order_IMP_mono':
+  assumes "f = f'"
+  assumes "T_f \<le>\<^sub>c T_f'"
+  assumes "terminates_with_res_time_order_IMP p r f T_f"
+  shows "terminates_with_res_time_order_IMP p r f' T_f'"
+  using assms terminates_with_res_time_order_IMP_mono by blast
 
-lemma hbig_step_t_hLetBound':
-  assumes "z = 0"
-  assumes "v = (bs ! n)"
-  assumes "n < length bs"
-  shows "(f, frgt) \<turnstile> (hLetBound n, bs, xs) \<Rightarrow>\<^bsup>z :: nat\<^esup> v"
-  using assms by blast
+lemma args_nil:
+  shows "\<forall>i<length ([] :: thol list). (t, frgt) \<turnstile> ([] ! i, bs, xs) \<Rightarrow>\<^bsup> [] ! i :: nat\<^esup> [] ! i"
+  by simp
 
-lemma hbig_step_t_hNumber':
-  assumes "z = 0"
-  assumes "v = n"
-  shows "(f, frgt) \<turnstile> (hNumber n, bs, xs) \<Rightarrow>\<^bsup>z :: nat\<^esup> v"
-  using assms by blast
-
-lemma hbig_step_t_hIf':
-  assumes "(f, frgt) \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup>x :: nat\<^esup> v1"
-  assumes "v1 \<noteq> 0 \<Longrightarrow> (f, frgt) \<turnstile>(t2, bs, xs) \<Rightarrow>\<^bsup>y :: nat\<^esup> v"
-  assumes "v1 = 0 \<Longrightarrow> (f, frgt) \<turnstile>(t3, bs, xs) \<Rightarrow>\<^bsup>y :: nat\<^esup> v"
-  assumes "z = x + y"
-  shows "(f, frgt) \<turnstile> (IF t1\<noteq>0 THEN t2 ELSE t3, bs, xs) \<Rightarrow>\<^bsup>z :: nat\<^esup> v"
-proof (cases "v1 = 0")
-  case False
-  show ?thesis
-  proof (rule hbig_step_t.hIfTrue)
-    show "(f, frgt) \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup>x\<^esup> v1" using assms(1) .
-    show "(f, frgt) \<turnstile> (t2, bs, xs) \<Rightarrow>\<^bsup>y\<^esup>  v" using False assms(2) by blast
-  qed (simp_all add: False assms(4))
-next
-  case True
-  show ?thesis
-  proof (rule hbig_step_t.hIfFalse)
-    show "(f, frgt) \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup>x\<^esup> v1" using assms(1) .
-    show "(f, frgt) \<turnstile> (t3, bs, xs) \<Rightarrow>\<^bsup>y\<^esup>  v" using True assms(3) by blast
-  qed (simp_all add: True assms(4))
+lemma args_cons:
+  assumes "(t, frgt) \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup> z1 :: nat\<^esup> v1"
+  assumes "\<forall>i<length ts. (t, frgt) \<turnstile> (ts ! i, bs, xs) \<Rightarrow>\<^bsup> zs ! i :: nat\<^esup> vs ! i"
+  shows "\<forall>i<length (t1 # ts). (t, frgt) \<turnstile> ((t1 # ts) ! i, bs, xs) \<Rightarrow>\<^bsup> (z1 # zs) ! i :: nat\<^esup> (v1 # vs) ! i"
+proof (rule, rule)
+  fix i assume *: "i < length (t1 # ts)"
+  consider (0) "i = 0" | (cons) "i > 0" by linarith
+  then show "(t, frgt) \<turnstile> ((t1 # ts) ! i, bs, xs) \<Rightarrow>\<^bsup>(z1 # zs) ! i\<^esup>  (v1 # vs) ! i"
+  proof cases
+    case 0 with assms(1) show ?thesis by simp
+  next
+    case cons
+    with * assms(2) have "(t, frgt) \<turnstile> (ts ! (i - 1), bs, xs) \<Rightarrow>\<^bsup>zs ! (i - 1)\<^esup>  vs ! (i - 1)" by simp
+    with cons show ?thesis by simp
+  qed
 qed
+
+method exec_inference =
+    (* u *)rule
+      hbig_step_t.hLet hbig_step_t_hIf'
+      hbig_step_t_hLetBound' hbig_step_t_hArg' hbig_step_t_hNumber'
+      hbig_step_t.hCall hbig_step_t.hTail
+
+method exec_arglist = (* u *)rule args_cons args_nil
+
+method exec1 = rule refl | repeat \<open>exec_arglist\<close> | exec_inference
+method exec_bigstep = repeat \<open>exec1\<close>
+
+
+(*todo: move*)
+lemma swap_registry:
+  assumes "frgt = frgt' on calls_names_set t"
+  assumes "frgt = frgt' on calls_names_set f"
+  assumes "(f, frgt) \<turnstile> (t, bs, xs)\<Rightarrow>\<^bsup> z :: nat \<^esup> v"
+  shows "(f, frgt') \<turnstile> (t, bs, xs)\<Rightarrow>\<^bsup> z :: nat \<^esup> v"
+  using assms(3,1,2) proof (induction arbitrary: frgt' rule: hbig_step_t_induct)
+  case hLet
+  then show ?case apply simp using eq_on_subset apply blast done
+next
+  case hIfTrue
+  then show ?case apply simp using eq_on_subset apply blast done
+next
+  case hIfFalse
+  then show ?case apply simp using eq_on_subset apply blast done
+next
+  case [rule_format]: (hCall zs ts vs f frgt bs xs v' gr z')
+  have *: "frgt' gr = frgt gr" using hCall.prems(1) by fastforce
+  show ?case proof (rule hbig_step_t.hCall[OF _ _ allI[OF impI]])
+    show "(f, frgt') \<turnstile> (ts ! i, bs, xs) \<Rightarrow>\<^bsup>zs ! i\<^esup>  vs ! i" if "i < length ts" for i
+      using hCall.IH[rule_format, of i, THEN conjunct2, OF that, rule_format, OF eq_on_subset hCall.prems(2), OF hCall.prems(1), OF calls_names_subset_call(2)]
+      using that by simp
+  qed (simp_all add: * hCall.hyps)
+next
+  case (hTail zs ts vs f frgt bs xs z' v' z'')
+  show ?case proof (rule hbig_step_t.hTail[OF _ _ allI[OF impI]])
+    show "(f, frgt') \<turnstile> (ts ! i, bs, xs) \<Rightarrow>\<^bsup>zs ! i\<^esup>  vs ! i" if "i < length ts" for i
+      using hTail.IH(1)[rule_format, of i, THEN conjunct2, OF that, rule_format, OF eq_on_subset hTail.prems(2), OF hTail.prems(1), OF calls_names_subset_tail]
+      using that by simp
+  next
+    show "(f, frgt') \<turnstile> (f, [], vs) \<Rightarrow>\<^bsup>z'\<^esup>  v'"
+      using hTail.IH(2)[OF hTail.prems(2,2)] .
+  qed (simp_all add: hTail.hyps)
+qed blast+
+
+definition "embed_BOUND v1 d = v1"
+
+lemma embed_start:
+  assumes "(f', frgt) \<turnstile> (t', bs, xs)\<Rightarrow>\<^bsup> z' bs xs :: nat \<^esup> v"
+  assumes "PROP SIMPS_TO f' f"
+  assumes "PROP SIMPS_TO t' t"
+  (* assumes "PROP SIMPS_TO z' z" *)
+  (* assumes "PROP SIMPS_TO v v'" *)
+
+  assumes "PROP SIMPS_TO (z' bs xs) (z bs xs)"
+(*   assumes "PROP SIMPS_TO (v bs xs) (v' bs xs)" *)
+  shows "(f, frgt) \<turnstile> (t, bs, xs)\<Rightarrow>\<^bsup> z bs xs :: nat \<^esup> v"
+  using assms unfolding SIMPS_TO_def by simp
+
+lemma embed_let:
+  assumes "(f, frgt) \<turnstile> (t1, bs, xs)\<Rightarrow>\<^bsup> z1 :: nat \<^esup> v1"
+  assumes "(f, frgt) \<turnstile> (t2, v1 # bs, xs)\<Rightarrow>\<^bsup> z2 :: nat \<^esup> v2 (embed_BOUND v1 (length bs))"
+  shows "(f, frgt) \<turnstile> (LET t1 IN t2, bs, xs)\<Rightarrow>\<^bsup> z1 + z2 \<^esup> (let x = v1 in v2 x)"
+  using hbig_step_t.hLet assms unfolding Let_def embed_BOUND_def by blast
+
+lemma embed_if:
+  assumes "(f, frgt) \<turnstile> (t1, bs, xs)\<Rightarrow>\<^bsup> z1 :: nat \<^esup> v1"
+  assumes "v1 \<noteq> 0 \<Longrightarrow> (f, frgt) \<turnstile> (t2, bs, xs)\<Rightarrow>\<^bsup> z2 :: nat \<^esup> v2"
+  assumes "v1 = 0 \<Longrightarrow> (f, frgt) \<turnstile> (t3, bs, xs)\<Rightarrow>\<^bsup> z3 :: nat \<^esup> v3"
+  shows "(f, frgt) \<turnstile> (IF t1 \<noteq>0 THEN t2 ELSE t3, bs, xs)\<Rightarrow>\<^bsup> z1 + (if v1 \<noteq> 0 then z2 else z3) :: nat \<^esup> (if v1 \<noteq> 0 then v2 else v3)"
+  apply (rule hbig_step_t_hIf'[OF assms(1)])
+  using assms(2,3) by simp_all
+
+lemma embed_arg:
+  assumes "n < length xs"
+  shows "(f, frgt) \<turnstile> (hArg n, bs, xs)\<Rightarrow>\<^bsup> 0 \<^esup> (xs ! n)"
+  apply (rule hbig_step_t_hArg')
+  using assms by simp_all
+
+lemma embed_bound:
+  assumes "bs \<noteq> []"
+  assumes "bs ! (length bs - Suc d) = v"
+  shows "(f, frgt) \<turnstile> (hLetBound (length bs - Suc d), bs, xs)\<Rightarrow>\<^bsup> 0 \<^esup> (embed_BOUND v d)"
+  apply (rule hbig_step_t_hLetBound')
+  unfolding embed_BOUND_def using assms by simp_all
+
+lemma embed_num:
+  shows "(f, frgt) \<turnstile> (hNumber n, bs, xs)\<Rightarrow>\<^bsup> 0 \<^esup> n"
+  by (rule hbig_step_t.hNumber)
+
+lemma embed_call1:
+  assumes "(f, frgt) \<turnstile> (t1, bs, xs)\<Rightarrow>\<^bsup> z1 :: nat \<^esup> v1"
+  assumes "f_from_frgt frgt gr [v1] = g v1"
+  shows "(f, frgt) \<turnstile> (hCall gr [t1], bs, xs)\<Rightarrow>\<^bsup> sum_list [z1] + T_f_from_frgt frgt gr [v1] :: nat \<^esup> g v1"
+proof (rule hbig_step_t.hCall)
+  show "\<forall>i<length [t1]. (f, frgt) \<turnstile> ([t1] ! i, bs, xs) \<Rightarrow>\<^bsup>[z1] ! i\<^esup>  [v1] ! i"
+    by (rule args_cons args_nil assms)+
+qed (simp_all add: assms)
+
+lemma embed_call2:
+  assumes "(f, frgt) \<turnstile> (t1, bs, xs)\<Rightarrow>\<^bsup> z1 :: nat \<^esup> v1"
+  assumes "(f, frgt) \<turnstile> (t2, bs, xs)\<Rightarrow>\<^bsup> z2 :: nat \<^esup> v2"
+  assumes "f_from_frgt frgt gr [v1, v2] = g v1 v2"
+  shows "(f, frgt) \<turnstile> (hCall gr [t1, t2], bs, xs)\<Rightarrow>\<^bsup> sum_list [z1, z2] + T_f_from_frgt frgt gr [v1, v2] :: nat \<^esup> g v1 v2"
+proof (rule hbig_step_t.hCall)
+  show "\<forall>i<length [t1, t2]. (f, frgt) \<turnstile> ([t1, t2] ! i, bs, xs) \<Rightarrow>\<^bsup>[z1, z2] ! i\<^esup>  [v1, v2] ! i"
+    by (rule args_cons args_nil assms)+
+qed (simp_all add: assms)
+
+lemma embed_call3:
+  assumes "(f, frgt) \<turnstile> (t1, bs, xs)\<Rightarrow>\<^bsup> z1 :: nat \<^esup> v1"
+  assumes "(f, frgt) \<turnstile> (t2, bs, xs)\<Rightarrow>\<^bsup> z2 :: nat \<^esup> v2"
+  assumes "(f, frgt) \<turnstile> (t3, bs, xs)\<Rightarrow>\<^bsup> z3 :: nat \<^esup> v3"
+  assumes "f_from_frgt frgt gr [v1, v2, v3] = g v1 v2 v3"
+  shows "(f, frgt) \<turnstile> (hCall gr [t1, t2, t3], bs, xs)\<Rightarrow>\<^bsup> sum_list [z1, z2, z3] + T_f_from_frgt frgt gr [v1, v2, v3] :: nat \<^esup> g v1 v2 v3"
+proof (rule hbig_step_t.hCall)
+  show "\<forall>i<length [t1, t2, t3]. (f, frgt) \<turnstile> ([t1, t2, t3] ! i, bs, xs) \<Rightarrow>\<^bsup>[z1, z2, z3] ! i\<^esup>  [v1, v2, v3] ! i"
+    by (rule args_cons args_nil assms)+
+qed (simp_all add: assms)
+
+lemmas embed_base = embed_let embed_if embed_arg embed_bound embed_num
+
+
+lemma Ball_cons: assumes "P x" "\<forall>y \<in> set xs. P y" shows "\<forall>y \<in> set (x # xs). P y"
+  using assms by simp
+method check_arg_count = (repeat \<open>rule Ball_cons check_arg_count.intros\<close>; simp)
+
+declare [[goals_limit=1000]]
+
+(* lemmas if_bool_simps[simp] = if_P[where x = "1 :: nat" and y = 0] if_not_P[where x = "1 :: nat" and y = 0] *)
+
 
 method to_imp_tc_unfold uses def =
   rule SIMPS_TOD,
@@ -2038,7 +2258,7 @@ method to_imp_tc_unfold uses def =
 
 subsubsection \<open>Equality\<close>
 
-(* the following comments refer to hypothetical future work to embed HOL functions to HOL-TCNat
+(* the following comments refer to preliminary work to embed HOL functions to HOL-TCNat
     and prove their relatedness lemmas automatically *)
 
 (* a function and its timing function are provided by the user *)
@@ -2046,142 +2266,64 @@ fun eq :: "nat \<Rightarrow> nat \<Rightarrow> nat" where
   "eq x y = (let a = x - y in let b = y - x in if a + b \<noteq> 0 then 0 else 1)"
 time_fun eq
 
-(* the corresponding list-based functions are generated *)
-definition [simp]: "(eq_f :: nat list \<Rightarrow> nat) \<equiv> (\<lambda>xs. eq (xs ! 0) (xs ! 1))"
-definition [simp]: "(eq_T_f :: nat list \<Rightarrow> nat) \<equiv> (\<lambda>xs. T_eq (xs ! 0) (xs ! 1))"
 
-(* the function is embedded into an HOL-TCNat term *)
+(* the function and timing function is lifted to lists *)
+definition [simp]: "eq_arg_count \<equiv> (2 :: nat)"
+definition [simp]: "(eq_f :: nat list \<Rightarrow> nat) \<equiv> (\<lambda>xs. eq (xs ! 0) (xs ! 1))"
+
+(* an frgt is built for all auxiliary functions *)
+definition [simp]: "eq_frgt \<equiv> null |> plus_frgt_upd |> minus_frgt_upd"
+
+(* then the function is embedded and functional and time correctness is proven *)
+(* lemmas for function calls must be instantiated manually *)
+lemmas eq_embed_lemmas =
+  embed_call2[where g = "(-)" and gr = "''-''"]
+  embed_call2[where g = "(+)" and gr = "''+''"]
+(* then we embed and verify. although we refer specifically to eq_frgt here,
+   one can use the frgt_swap lemma to exchange (e.g. extend) it *)
+schematic_goal eq_hol_tcn_correctness_embed:
+  assumes *: "length xs = eq_arg_count"
+  shows "(?f, eq_frgt) \<turnstile> (?t, bs, xs)\<Rightarrow>\<^bsup> ?eq_T_f xs :: nat \<^esup> eq_f xs"
+  apply (unfold eq_f_def eq.simps)
+  apply (urule embed_start)
+  apply (repeat \<open>rule eq_embed_lemmas embed_base\<close>)
+  using * apply simp_all
+  apply (unfold One_nat_def[symmetric]) (* just for presentation... *)
+  by (rule SIMPS_TOI)+
+
+(* the embedded term and the timing function are extracted from the theorem
+    (currently that means copy-pasting, but the principle should be clear!) *)
 definition [simp]: "eq_hol_tcn \<equiv>
   LET hCall ''-'' [hArg 0, hArg 1] IN
   LET hCall ''-'' [hArg 1, hArg 0] IN
-  IF hCall ''+'' [hLetBound 1, hLetBound 0] \<noteq>0 THEN hNumber 0 ELSE hNumber 1"
+  IF hCall ''+'' [hLetBound 1, hLetBound 0] \<noteq>0
+  THEN hNumber 0 ELSE hNumber 1"
 
-(* the following auxiliary data is generated *)
+definition [simp]: "eq_T_f \<equiv> ((\<lambda>s. 0) :: nat list \<Rightarrow> nat)"
 
-(* set of called functions *)
-definition [simp]: "eq_aux \<equiv> calls_names_set eq_hol_tcn"
-(* note: *) lemma "eq_aux = {''+'', ''-''}" by auto
+(* get a lemma which refers to the definitions *)
+lemmas eq_hol_tcn_correctness = eq_hol_tcn_correctness_embed[
+    unfolded eq_hol_tcn_def[symmetric] eq_T_f_def[symmetric]]
 
-(* f/crgt for called functions *)
-definition [simp]: "eq_frgt \<equiv> null |> plus_frgt_upd |> minus_frgt_upd"
-definition [simp]: "eq_crgt \<equiv> null |> plus_crgt_upd |> minus_crgt_upd"
+(* the user needs to prove that the HOL timing function bounds ours
+  (which in the usual case should just be an induction/auto);
+  in principle, this could be weakened to a linear overhead *)
+lemma eq_HOL_to_TCN_bound: "eq_T_f [x, y] \<le> T_eq x y" by simp
 
-(* name/arguments/return register *)
-definition [simp]: "eq_name \<equiv> ''=''"
+
+(* finally, the HOL-TCNat term is compiled to IMPtc and IMP *)
+(* arguments/auxiliary functions/return register *)
 definition [simp]: "eq_args \<equiv> [''=.args.x'', ''=.args.y'']"
 definition [simp]: "eq_r \<equiv> ''=.ret''"
-
-(* finally, the HOL-TCNat term is compiled *)
+definition [simp]: "eq_crgt \<equiv> null |> plus_crgt_upd |> minus_crgt_upd"
+(* compile to IMPtc then to IMP *)
 definition "eq_tcom \<equiv> to_imp_tc eq_args eq_crgt [] eq_r [] eq_hol_tcn"
 definition "eq_com \<equiv> tailcall_to_IMP eq_tcom"
 
-(* used by any callers of eq *)
-definition [simp]: "eq_frgt_upd upd = upd(eq_name := mk_frgt1 eq_f eq_T_f)"
-definition [simp]: "eq_crgt_upd upd = upd(eq_name := mk_crgt1 eq_args eq_com eq_r)"
-
 (* just for show ;) *)
-(* schematic_goal "eq_tcom \<equiv> ?t"
-  by (to_imp_tc_unfold def: eq_tcom_def) (* slow :( *) *)
-value eq_tcom
-
-(* this proof gets generated; instantiating frgt with eq_frgt provides a "concrete" registry,
-    but morally the generalization tells us we only depend on functions we actually call *)
-(* note that here we "guess" the correct values for schematic goals, because Isar forces us to,
-   a generated proof would need to leave them schematic and then fill them in at the end *)
-lemma eq_hol_tcn_correctness:
-  assumes rgt: "frgt = eq_frgt on eq_aux"
-  assumes *: "length xs = length eq_args"
-  shows "(eq_hol_tcn, frgt) \<turnstile> (eq_hol_tcn, [], xs)\<Rightarrow>\<^bsup> eq_T_f xs :: nat \<^esup> eq_f xs"
-proof-
-  have frgt:
-      "frgt ''+'' = mk_frgt1 plus_f plus_T_f"
-      "frgt ''-'' = mk_frgt1 minus_f minus_T_f"
-    using eq_on_lookup[of frgt eq_frgt, OF rgt] by auto
-
-  show "(eq_hol_tcn, frgt) \<turnstile> (eq_hol_tcn, [], xs)\<Rightarrow>\<^bsup> eq_T_f xs :: nat \<^esup> eq_f xs"
-  proof (rule bigstep_start[OF eq_hol_tcn_def])
-    show
-      "(eq_hol_tcn, frgt)
-       \<turnstile> (LET hCall ''-'' [hArg 0, hArg 1] IN LET hCall ''-'' [hArg 1, hArg 0] IN
-          IF hCall ''+'' [hLetBound 1, hLetBound 0]\<noteq>0 THEN hNumber 0 ELSE hNumber 1,
-          [], xs)
-       \<Rightarrow>\<^bsup>eq_T_f xs\<^esup>  eq_f xs"
-    proof (rule hbig_step_t.hLet)
-      show "(eq_hol_tcn, frgt) \<turnstile> (hCall ''-'' [hArg 0, hArg 1], [], xs) \<Rightarrow>\<^bsup>0\<^esup> xs ! 0 - xs ! 1"
-      proof (rule hbig_step_t.hCall)
-        show "\<forall>i<length [hArg 0, hArg 1]. (eq_hol_tcn, frgt) \<turnstile> ([hArg 0, hArg 1] ! i, [], xs) \<Rightarrow>\<^bsup> [0, 0] ! i\<^esup>  [xs ! 0, xs ! 1] ! i"
-        proof (repeat \<open>rule forall_i_length_Cons\<close>)
-          show "(eq_hol_tcn, frgt) \<turnstile> (hArg 0, [], xs) \<Rightarrow>\<^bsup>[0, 0] ! 0\<^esup>  [xs ! 0, xs ! 1] ! 0"
-          proof (rule hbig_step_t_hArg') qed (auto simp add: *)
-          show "(eq_hol_tcn, frgt) \<turnstile> (hArg 1, [], xs) \<Rightarrow>\<^bsup>[0, 0] ! Suc 0\<^esup>  [xs ! 0, xs ! 1] ! Suc 0"
-          proof (rule hbig_step_t_hArg') qed (auto simp add: *)
-        qed simp
-      qed (simp_all add: frgt)
-      show
-        "(eq_hol_tcn, frgt)
-         \<turnstile> (LET hCall ''-'' [hArg 1, hArg 0] IN
-            IF hCall ''+'' [hLetBound 1, hLetBound 0]\<noteq>0 THEN hNumber 0 ELSE hNumber 1,
-            [xs ! 0 - xs ! 1], xs)
-         \<Rightarrow>\<^bsup>0\<^esup>  eq_f xs"
-      proof (rule hbig_step_t.hLet)
-        show "(eq_hol_tcn, frgt) \<turnstile> (hCall ''-'' [hArg 1, hArg 0], [xs ! 0 - xs ! 1], xs) \<Rightarrow>\<^bsup>0\<^esup> xs ! 1 - xs ! 0"
-        proof (rule hbig_step_t.hCall)
-          show "\<forall>i<length [hArg 1, hArg 0]. (eq_hol_tcn, frgt) \<turnstile> ([hArg 1, hArg 0] ! i, [xs ! 0 - xs ! 1], xs) \<Rightarrow>\<^bsup> [0, 0] ! i\<^esup>  [xs ! 1, xs ! 0] ! i"
-          proof (repeat \<open>rule forall_i_length_Cons\<close>)
-            show "(eq_hol_tcn, frgt) \<turnstile> (hArg 1, [xs ! 0 - xs ! 1], xs) \<Rightarrow>\<^bsup>[0, 0] ! 0\<^esup>  [xs ! 1, xs ! 0] ! 0"
-            proof (rule hbig_step_t_hArg') qed (auto simp add: *)
-            show "(eq_hol_tcn, frgt) \<turnstile> (hArg 0, [xs ! 0 - xs ! 1], xs) \<Rightarrow>\<^bsup>[0, 0] ! Suc 0\<^esup>  [xs ! 1, xs ! 0] ! Suc 0"
-            proof (rule hbig_step_t_hArg') qed (auto simp add: *)
-          qed simp
-        qed (simp_all add: frgt)
-        show
-          "(eq_hol_tcn, frgt)
-           \<turnstile> (IF hCall ''+'' [hLetBound 1, hLetBound 0]\<noteq>0 THEN hNumber 0 ELSE hNumber 1,
-              [xs ! 1 - xs ! 0, xs ! 0 - xs ! 1], xs)
-           \<Rightarrow>\<^bsup>0\<^esup>  eq_f xs"
-        proof (rule hbig_step_t_hIf')
-          show
-            "(eq_hol_tcn, frgt)
-             \<turnstile> (hCall ''+'' [hLetBound 1, hLetBound 0],
-                [xs ! 1 - xs ! 0, xs ! 0 - xs ! 1], xs)
-             \<Rightarrow>\<^bsup>0\<^esup> (xs ! 0 - xs ! 1) + (xs ! 1 - xs ! 0)"
-          proof (rule hbig_step_t.hCall)
-            show "\<forall>i<length [hLetBound 1, hLetBound 0].
-                    (eq_hol_tcn, frgt) \<turnstile> ([hLetBound 1, hLetBound 0] ! i,
-                      [xs ! 1 - xs ! 0, xs ! 0 - xs ! 1], xs)
-                    \<Rightarrow>\<^bsup>[0, 0] ! i\<^esup> [xs ! 0 - xs ! 1, xs ! 1 - xs ! 0] ! i"
-            proof (repeat \<open>rule forall_i_length_Cons\<close>)
-              show "(eq_hol_tcn, frgt) \<turnstile> (hLetBound 1,
-                      [xs ! 1 - xs ! 0, xs ! 0 - xs ! 1], xs)
-                    \<Rightarrow>\<^bsup>[0, 0] ! 0\<^esup>  [xs ! 0 - xs ! 1, xs ! 1 - xs ! 0] ! 0"
-              proof (rule hbig_step_t_hLetBound') qed (auto simp add: *)
-              show "(eq_hol_tcn, frgt) \<turnstile> (hLetBound 0,
-                      [xs ! 1 - xs ! 0, xs ! 0 - xs ! 1], xs)
-                    \<Rightarrow>\<^bsup>[0, 0] ! Suc 0\<^esup>  [xs ! 0 - xs ! 1, xs ! 1 - xs ! 0] ! Suc 0"
-              proof (rule hbig_step_t_hLetBound') qed (auto simp add: *)
-            qed simp
-          qed (simp_all add: frgt)
-        next
-          assume **: "xs ! 0 - xs ! 1 + (xs ! 1 - xs ! 0) \<noteq> 0"
-          show "(eq_hol_tcn, frgt) \<turnstile> (hNumber 0, [xs ! 1 - xs ! 0, xs ! 0 - xs ! 1], xs) \<Rightarrow>\<^bsup>0\<^esup> eq_f xs"
-          proof (rule hbig_step_t_hNumber')
-            show "eq_f xs = 0" using ** by auto
-          qed simp
-        next
-          assume **: "xs ! 0 - xs ! 1 + (xs ! 1 - xs ! 0) = 0"
-          show "(eq_hol_tcn, frgt) \<turnstile> (hNumber 1, [xs ! 1 - xs ! 0, xs ! 0 - xs ! 1], xs) \<Rightarrow>\<^bsup>0\<^esup> eq_f xs"
-          proof (rule hbig_step_t_hNumber')
-            show "eq_f xs = 1" using ** by auto
-          qed simp
-        qed simp
-      qed simp
-    qed simp
-  qed
-qed
-
-lemma Ball_cons: assumes "P x" "\<forall>y \<in> set xs. P y" shows "\<forall>y \<in> set (x # xs). P y"
-  using assms by simp
-method check_arg_count = (repeat \<open>rule Ball_cons check_arg_count.intros\<close>; simp)
+schematic_goal "eq_tcom \<equiv> ?t"
+  oops
+  (* by (to_imp_tc_unfold def: eq_tcom_def) (* works, but slow :( *) *)
 
 (* now the compiler correctness lemma shall be used! *)
 lemma eq_correctness:
@@ -2192,7 +2334,7 @@ proof (rule compiler_correct')
   fix vs_arg :: "nat list"
   assume "length vs_arg = length eq_args"
   then show "(eq_hol_tcn, eq_frgt) \<turnstile> (eq_hol_tcn, [], vs_arg) \<Rightarrow>\<^bsup>eq_T_f vs_arg\<^esup>  eq_f vs_arg"
-    using eq_hol_tcn_correctness by blast
+    using eq_hol_tcn_correctness by simp
 next
   (* here we use correctness lemmas for each called function *)
   show "relate_rgt eq_frgt eq_crgt (calls_names_set eq_hol_tcn)"
@@ -2205,10 +2347,18 @@ next
     show "(length eq_args, eq_crgt) \<turnstile> eq_hol_tcn"
       unfolding eq_hol_tcn_def by check_arg_count
   qed auto
-  show "HOL_TCN_Timing.invar eq_hol_tcn" "can_terminate eq_hol_tcn" by simp_all
+  show "HOL_TCN_Timing.invar eq_hol_tcn" by simp
 qed
 
-(* used by callers *)
+(* set of called functions *)
+(* definition [simp]: "eq_aux \<equiv> calls_names_set eq_hol_tcn"
+(* note: *) lemma "eq_aux = {''+'', ''-''}" by auto *)
+
+(* used by any callers of eq *)
+definition [simp]: "eq_name \<equiv> ''=''"
+definition [simp]: "eq_frgt_upd upd = upd(eq_name := mk_frgt1 eq_f eq_T_f)"
+definition [simp]: "eq_crgt_upd upd = upd(eq_name := mk_crgt1 eq_args eq_com eq_r)"
+
 lemma eq_correctness_rgt:
   assumes "frgt eq_name = eq_frgt_upd null eq_name"
   assumes "crgt eq_name = eq_crgt_upd null eq_name"
@@ -2225,31 +2375,51 @@ qed
 
 
 subsubsection \<open>Multiplication (with accumulator)\<close>
-(* multiplication, see above for general comments *)
+(* Multiplication, see above for general comments. Here we provide some ideas for handling
+  functions and timing functions that aren't defined the same in HOL as in HOL-TCN *)
 
-fun mul_acc :: "nat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> nat" where
-  "mul_acc 0 _ z = z" |
-  "mul_acc (Suc x) y z = mul_acc x y (y + z)"
-time_fun mul_acc
+(* this is the function that the user wants to model *)
+definition mul_acc :: "nat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> nat" where [simp]: "mul_acc x y z = x * y + z"
 
-(* the semantics of HOL-TCNat are a lower bound for the generated running time, so we proceed as follows:
-    - define T_mul_acc', which matches the semantics, and show that it is a lower bound for T_mul_acc
-    - prove the correctness and timing relatedness for T_mul_acc'
-    - weaken the result by replacing T_mul_acc' with T_mul_acc *)
+(* this is the timing function that the user wants the modelled function to have *)
+definition T_mul_acc :: "nat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> nat" where [simp]: "T_mul_acc x y z = x"
+
+(* the user also needs to provide a tail-recursive function equal to the modelled function *)
+fun mul_acc' :: "nat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> nat" where
+  "mul_acc' 0 _ z = z" |
+  "mul_acc' (Suc x) y z = mul_acc' x y (y + z)"
+
+(* the tail-rec. function is used to generate a HOL-TCN term *)
+case_of_simps mul_acc'_eq[unfolded case_nat_eq_if] : mul_acc'.simps
+definition [simp]: "mul_acc_hol_tcn \<equiv>
+  IF hCall ''='' [hArg 0, hNumber 0] \<noteq>0 THEN hArg 2
+  ELSE
+    LET hCall ''-'' [hArg 0, hNumber 1] IN
+    hTAIL [hLetBound 0, hArg 1, hCall ''+'' [hArg 1, hArg 2]]"
+
+(* the function is also used to generate a timing function which matches the HOL-TCN semantics *)
 fun T_mul_acc' where
   "T_mul_acc' 0 _ _ = 0" |
   "T_mul_acc' (Suc x) y z = T_mul_acc' x y (y + z) + 1"
-lemma T_mul_acc'_bound: "T_mul_acc' x y z \<le> T_mul_acc x y z"
-  by (induction x y z rule: T_mul_acc.induct) auto
+
+(* the user would then be presented with these two proof obligations *)
+lemma mul_acc': "mul_acc' x y z = mul_acc x y z" by (induction x y z rule: mul_acc'.induct) auto
+lemma T_mul_acc': "T_mul_acc' x y z \<le> T_mul_acc x y z" by (induction x y z rule: mul_acc'.induct) auto
+
+(* The user was asked to prove that our timing function, which matches the semantics of HOL-TCNat,
+   are a lower bound for their chosen running time. That means if we can show that the compiled
+   function is in the complexity class of our timing function, we can weaken the result by replacing
+   it with the user's timing function. Now we can proceed as follows:
+    - prove the correctness and timing relatedness for mul_acc' and T_mul_acc'
+    - weaken the result by replacing T_mul_acc' with T_mul_acc
+    - replace mul_acc' with mul_acc in the result
+    - enter ''*'' into the function registry with mul_acc and T_mul_acc *)
 
 definition [simp]: "(mul_acc_f :: nat list \<Rightarrow> nat) \<equiv> (\<lambda>xs. mul_acc (xs ! 0) (xs ! 1) (xs ! 2))"
+definition [simp]: "(mul_acc_f' :: nat list \<Rightarrow> nat) \<equiv> (\<lambda>xs. mul_acc' (xs ! 0) (xs ! 1) (xs ! 2))"
 definition [simp]: "(mul_acc_T_f :: nat list \<Rightarrow> nat) \<equiv> (\<lambda>xs. T_mul_acc (xs ! 0) (xs ! 1) (xs ! 2))"
 definition [simp]: "(mul_acc_T_f' :: nat list \<Rightarrow> nat) \<equiv> (\<lambda>xs. T_mul_acc' (xs ! 0) (xs ! 1) (xs ! 2))"
 
-(* note: something needs to take care of turning equations into if/else *)
-definition [simp]: "mul_acc_hol_tcn \<equiv>
-  IF hCall ''='' [hArg 0, hNumber 0] \<noteq>0 THEN hArg 2
-  ELSE hTAIL [hCall ''-'' [hArg 0, hNumber 1], hArg 1, hCall ''+'' [hArg 1, hArg 2]]"
 
 definition [simp]: "mul_acc_aux \<equiv> calls_names_set mul_acc_hol_tcn"
 (* note: *) lemma "mul_acc_aux = {''+'', ''-'', ''=''}" by auto
@@ -2264,10 +2434,20 @@ definition [simp]: "mul_acc_r \<equiv> ''mul_acc.ret''"
 definition "mul_acc_tcom \<equiv> to_imp_tc mul_acc_args mul_acc_crgt [] mul_acc_r [] mul_acc_hol_tcn"
 definition "mul_acc_com \<equiv> tailcall_to_IMP mul_acc_tcom"
 
-(* schematic_goal "mul_acc_tcom \<equiv> ?t"
-  by (to_imp_tc_unfold def: mul_acc_tcom_def) *)
+schematic_goal "mul_acc_tcom \<equiv> ?t"
+  apply (rule SIMPS_TOD)
+  apply (simp add:
+    mul_acc_tcom_def generate_def
+    make_n_fresh_def make_nth_fresh_def stale_registers_def call_registers_def)
+  apply (simp only: Fresh.fresh_def)
+  apply (simp add: char_of_def bit_simps)
+  apply (simp add: Let_def split_beta)
+  apply (rule SIMPS_TOI)
+  done
 
-(* note: in the exported registry entry, we place the original timing function again *)
+  (* rule SIMPS_TOI *)
+
+(* note: in the exported registry entry, we place the original functions again *)
 definition [simp]: "mul_acc_frgt_upd upd = upd(mul_acc_name := mk_frgt1 mul_acc_f mul_acc_T_f)"
 definition [simp]: "mul_acc_crgt_upd upd = upd(mul_acc_name := mk_crgt1 mul_acc_args mul_acc_com mul_acc_r)"
 
@@ -2275,7 +2455,7 @@ definition [simp]: "mul_acc_crgt_upd upd = upd(mul_acc_name := mk_crgt1 mul_acc_
 lemma mul_acc_hol_tcn_correctness:
   assumes rgt: "frgt = mul_acc_frgt on mul_acc_aux"
   assumes *: "length xs = length mul_acc_args"
-  shows "(mul_acc_hol_tcn, frgt) \<turnstile> (mul_acc_hol_tcn, [], xs)\<Rightarrow>\<^bsup> mul_acc_T_f' xs \<^esup> mul_acc_f xs"
+  shows "(mul_acc_hol_tcn, frgt) \<turnstile> (mul_acc_hol_tcn, [], xs)\<Rightarrow>\<^bsup> mul_acc_T_f' xs \<^esup> mul_acc_f' xs"
 proof-
   have frgt:
       "frgt ''+'' = mk_frgt1 plus_f plus_T_f"
@@ -2283,121 +2463,33 @@ proof-
       "frgt ''='' = mk_frgt1 eq_f eq_T_f"
     using eq_on_lookup[of frgt mul_acc_frgt, OF rgt] by auto
 
-  show "(mul_acc_hol_tcn, frgt) \<turnstile> (mul_acc_hol_tcn, [], xs) \<Rightarrow>\<^bsup> mul_acc_T_f' xs \<^esup> mul_acc_f xs"
-    apply (rule bigstep_start[OF mul_acc_hol_tcn_def])
-    using * proof (induction "xs ! 0" "xs ! 1" "xs ! 2" arbitrary: xs rule: mul_acc.induct)
+  show ?thesis
+    using * proof (induction "xs ! 0" "xs ! 1" "xs ! 2" arbitrary: xs rule: mul_acc'.induct)
     case 1
     note len = \<open>length xs = _\<close> and ind_case = \<open>0 = xs ! 0\<close>[symmetric]
-    show "(mul_acc_hol_tcn, frgt)
-          \<turnstile> (IF hCall ''='' [hArg 0, hNumber 0]\<noteq>0 THEN hArg 2
-             ELSE hTAIL [hCall ''-'' [hArg 0, hNumber 1], hArg 1, hCall ''+'' [hArg 1, hArg 2]],
-             [], xs)
-          \<Rightarrow>\<^bsup>mul_acc_T_f' xs\<^esup> mul_acc_f xs"
-    proof (rule hbig_step_t_hIf')
-      show "(mul_acc_hol_tcn, frgt) \<turnstile> (hCall ''='' [hArg 0, hNumber 0], [], xs) \<Rightarrow>\<^bsup>0\<^esup> eq_f [xs ! 0, 0]"
-      proof (rule hbig_step_t.hCall)
-        show "\<forall>i<length [hArg 0, hNumber 0]. (mul_acc_hol_tcn, frgt) \<turnstile> ([hArg 0, hNumber 0] ! i, [], xs) \<Rightarrow>\<^bsup>[0, 0] ! i\<^esup> [xs ! 0, 0] ! i"
-        proof (repeat \<open>rule forall_i_length_Cons\<close>)
-          show "(mul_acc_hol_tcn, frgt) \<turnstile> (hArg 0, [], xs) \<Rightarrow>\<^bsup>[0, 0] ! 0\<^esup>  [xs ! 0, 0] ! 0"
-          proof (rule hbig_step_t_hArg') qed (auto simp add: len)
-          show "(mul_acc_hol_tcn, frgt) \<turnstile> (hNumber 0, [], xs) \<Rightarrow>\<^bsup>[0, 0] ! Suc 0\<^esup>  [xs ! 0, 0] ! Suc 0"
-          proof (rule hbig_step_t_hNumber') qed auto
-        qed simp
-      qed (simp_all add: frgt)
-    next
-      assume "eq_f [xs ! 0, 0] \<noteq> 0"
-      show "(mul_acc_hol_tcn, frgt) \<turnstile> (hArg 2, [], xs) \<Rightarrow>\<^bsup>0\<^esup>  mul_acc_f xs"
-      proof (rule hbig_step_t_hArg') qed (simp_all add: len ind_case)
-    qed (auto simp add: ind_case)
+    show ?case
+      apply (rule bigstep_start[OF mul_acc_hol_tcn_def])
+      apply exec_bigstep
+      by (auto simp add: frgt len ind_case)
   next
     case (2 x)
     note len = \<open>length xs = _\<close> and ind_case = \<open>Suc x = xs ! 0\<close>[symmetric]
-    show "(mul_acc_hol_tcn, frgt)
-          \<turnstile> (IF hCall ''='' [hArg 0, hNumber 0]\<noteq>0 THEN hArg 2
-             ELSE hTAIL [hCall ''-'' [hArg 0, hNumber 1], hArg 1, hCall ''+'' [hArg 1, hArg 2]],
-             [], xs)
-          \<Rightarrow>\<^bsup>mul_acc_T_f' xs\<^esup>  mul_acc_f xs"
-    proof (rule hbig_step_t_hIf')
-      show "(mul_acc_hol_tcn, frgt) \<turnstile> (hCall ''='' [hArg 0, hNumber 0], [], xs) \<Rightarrow>\<^bsup>0\<^esup> eq_f [xs ! 0, 0]"
-      proof (rule hbig_step_t.hCall)
-        show "\<forall>i<length [hArg 0, hNumber 0]. (mul_acc_hol_tcn, frgt) \<turnstile> ([hArg 0, hNumber 0] ! i, [], xs) \<Rightarrow>\<^bsup>[0, 0] ! i\<^esup> [xs ! 0, 0] ! i"
-        proof (repeat \<open>rule forall_i_length_Cons\<close>)
-          show "(mul_acc_hol_tcn, frgt) \<turnstile> (hArg 0, [], xs) \<Rightarrow>\<^bsup>[0, 0] ! 0\<^esup>  [xs ! 0, 0] ! 0"
-          proof (rule hbig_step_t_hArg') qed (auto simp add: len)
-          show "(mul_acc_hol_tcn, frgt) \<turnstile> (hNumber 0, [], xs) \<Rightarrow>\<^bsup>[0, 0] ! Suc 0\<^esup>  [xs ! 0, 0] ! Suc 0"
-          proof (rule hbig_step_t_hNumber') qed auto
-        qed simp
-      qed (simp_all add: frgt)
-    next
-      assume "eq_f [xs ! 0, 0] = 0"
-      show "(mul_acc_hol_tcn, frgt)
-            \<turnstile> (hTAIL [hCall ''-'' [hArg 0, hNumber 1], hArg 1, hCall ''+'' [hArg 1, hArg 2]], [], xs)
-            \<Rightarrow>\<^bsup>sum_list [0, 0, 0] + mul_acc_T_f' xs\<^esup>  mul_acc_f xs"
-      proof (rule hbig_step_t.hTail)
-        show
-          "\<forall>i<length [hCall ''-'' [hArg 0, hNumber 1], hArg 1, hCall ''+'' [hArg 1, hArg 2]].
-            (mul_acc_hol_tcn, frgt)
-            \<turnstile> ([hCall ''-'' [hArg 0, hNumber 1], hArg 1, hCall ''+'' [hArg 1, hArg 2]] ! i, [], xs)
-            \<Rightarrow>\<^bsup>[0, 0, 0] ! i\<^esup> [minus_f [xs ! 0, 1], xs ! 1, plus_f [(xs ! 1), (xs ! 2)]] ! i"
-        proof (repeat \<open>rule forall_i_length_Cons\<close>)
-          show "(mul_acc_hol_tcn, frgt) \<turnstile> (hCall ''-'' [hArg 0, hNumber 1], [], xs)
-                \<Rightarrow>\<^bsup>[0, 0, 0] ! 0\<^esup>  [minus_f [xs ! 0, 1], xs ! 1, plus_f [xs ! 1, xs ! 2]] ! 0"
-          proof (rule hbig_step_t.hCall)
-            show "\<forall>i<length [hArg 0, hNumber 1].
-                    (mul_acc_hol_tcn, frgt) \<turnstile> ([hArg 0, hNumber 1] ! i, [], xs) \<Rightarrow>\<^bsup>[0, 0] ! i\<^esup> [xs ! 0, 1] ! i"
-            proof (repeat \<open>rule forall_i_length_Cons\<close>)
-              show "(mul_acc_hol_tcn, frgt) \<turnstile> (hArg 0, [], xs) \<Rightarrow>\<^bsup>[0, 0] ! 0\<^esup>  [xs ! 0, 1] ! 0"
-              proof (rule hbig_step_t_hArg') qed (auto simp add: len)
-              show "(mul_acc_hol_tcn, frgt) \<turnstile> (hNumber 1, [], xs) \<Rightarrow>\<^bsup>[0, 0] ! Suc 0\<^esup>  [xs ! 0, 1] ! Suc 0"
-              proof (rule hbig_step_t_hNumber') qed auto
-            qed simp
-          qed (auto simp add: ind_case frgt)
-          show "(mul_acc_hol_tcn, frgt) \<turnstile> (hArg 1, [], xs)
-                \<Rightarrow>\<^bsup>[0, 0, 0] ! Suc 0\<^esup>  [minus_f [xs ! 0, 1], xs ! 1, plus_f [xs ! 1, xs ! 2]] ! Suc 0"
-            proof (rule hbig_step_t_hArg') qed (auto simp add: len)
-          show "(mul_acc_hol_tcn, frgt) \<turnstile> (hCall ''+'' [hArg 1, hArg 2], [], xs)
-                \<Rightarrow>\<^bsup>[0, 0, 0] ! Suc (Suc 0)\<^esup>  [minus_f [xs ! 0, 1], xs ! 1, plus_f [xs ! 1, xs ! 2]] ! Suc (Suc 0)"
-          proof (rule hbig_step_t.hCall)
-            show "\<forall>i<length [hArg 1, hArg 2].
-                    (mul_acc_hol_tcn, frgt) \<turnstile> ([hArg 1, hArg 2] ! i, [], xs) \<Rightarrow>\<^bsup>[0, 0] ! i\<^esup> [xs ! 1, xs ! 2] ! i"
-            proof (repeat \<open>rule forall_i_length_Cons\<close>)
-              show "(mul_acc_hol_tcn, frgt) \<turnstile> (hArg 1, [], xs) \<Rightarrow>\<^bsup>[0, 0] ! 0\<^esup>  [xs ! 1, xs ! 2] ! 0"
-              proof (rule hbig_step_t_hArg') qed (auto simp add: len)
-              show "(mul_acc_hol_tcn, frgt) \<turnstile> (hArg 2, [], xs) \<Rightarrow>\<^bsup>[0, 0] ! Suc 0\<^esup>  [xs ! 1, xs ! 2] ! Suc 0"
-              proof (rule hbig_step_t_hArg') qed (auto simp add: len)
-            qed simp
-          qed (auto simp add: ind_case frgt)
-        qed simp
-      next
-        thm 2
-        thm "2.hyps"(1)
-        let ?rec_args = "[minus_f [xs ! 0, 1], xs ! 1, plus_f [xs ! 1, xs ! 2]]"
-        show "(mul_acc_hol_tcn, frgt) \<turnstile> (mul_acc_hol_tcn, [], ?rec_args) \<Rightarrow>\<^bsup>mul_acc_T_f' xs - 1\<^esup>  mul_acc_f xs"
-        proof (rule bigstep_apply_ih[OF mul_acc_hol_tcn_def])
-          (* run the value function *)
-          show "mul_acc_f xs = mul_acc_f ?rec_args" using ind_case by simp
-          (* run the timing function *)
-          show "mul_acc_T_f' xs - 1 = mul_acc_T_f' ?rec_args" using ind_case by simp
-          (* apply the IH *)
-          show "(mul_acc_hol_tcn, frgt)
-                \<turnstile> (IF hCall ''='' [hArg 0, hNumber 0]\<noteq>0 THEN hArg 2
-                   ELSE hTAIL [hCall ''-'' [hArg 0, hNumber 1], hArg 1, hCall ''+'' [hArg 1, hArg 2]],
-                   [], ?rec_args)
-                \<Rightarrow>\<^bsup>mul_acc_T_f' ?rec_args\<^esup> mul_acc_f ?rec_args"
-          proof (rule "2.hyps"(1)) qed (auto simp add: ind_case)
-        qed
-      qed (simp_all add: ind_case)
-    qed (simp_all add: ind_case)
+    note ih = "2.hyps"(1)
+    show ?case
+      apply (rule bigstep_start[OF mul_acc_hol_tcn_def])
+      apply exec_bigstep
+      prefer 17 apply (rule bigstep_apply_ih[OF _ _ ih])
+      by (auto simp add: frgt len ind_case)
   qed
 qed
 
 lemma mul_acc_correctness':
-  "terminates_with_res_time_order_IMP mul_acc_com mul_acc_r (mul_acc_f o lookups mul_acc_args) (mul_acc_T_f' o lookups mul_acc_args)"
+  "terminates_with_res_time_order_IMP mul_acc_com mul_acc_r (mul_acc_f' o lookups mul_acc_args) (mul_acc_T_f' o lookups mul_acc_args)"
   unfolding mul_acc_com_def mul_acc_tcom_def
 proof (rule compiler_correct')
   fix vs_arg :: "nat list"
   assume "length vs_arg = length mul_acc_args"
-  then show "(mul_acc_hol_tcn, mul_acc_frgt) \<turnstile> (mul_acc_hol_tcn, [], vs_arg) \<Rightarrow>\<^bsup>mul_acc_T_f' vs_arg\<^esup>  mul_acc_f vs_arg"
+  then show "(mul_acc_hol_tcn, mul_acc_frgt) \<turnstile> (mul_acc_hol_tcn, [], vs_arg) \<Rightarrow>\<^bsup>mul_acc_T_f' vs_arg\<^esup>  mul_acc_f' vs_arg"
     using mul_acc_hol_tcn_correctness by blast
 next
   show "relate_rgt mul_acc_frgt mul_acc_crgt (calls_names_set mul_acc_hol_tcn)"
@@ -2409,15 +2501,19 @@ next
     show "(length mul_acc_args, mul_acc_crgt) \<turnstile> mul_acc_hol_tcn"
       unfolding mul_acc_hol_tcn_def by check_arg_count
   qed auto
-  show "HOL_TCN_Timing.invar mul_acc_hol_tcn" "can_terminate mul_acc_hol_tcn" by simp_all
+  show "HOL_TCN_Timing.invar mul_acc_hol_tcn" by simp
 qed
 
+(* now we replace the generated value and timing functions with the user's again *)
 corollary mul_acc_correctness:
   "terminates_with_res_time_order_IMP mul_acc_com mul_acc_r (mul_acc_f o lookups mul_acc_args) (mul_acc_T_f o lookups mul_acc_args)"
-proof (rule terminates_with_res_time_order_IMP_mono[OF _ mul_acc_correctness'])
+proof (rule terminates_with_res_time_order_IMP_mono'[OF _ _ mul_acc_correctness'])
+  show "mul_acc_f' o lookups mul_acc_args = mul_acc_f o lookups mul_acc_args"
+    using mul_acc' by simp
+next
   show "mul_acc_T_f' o lookups mul_acc_args \<le>\<^sub>c mul_acc_T_f o lookups mul_acc_args"
     apply (rule order_of_le)
-    using T_mul_acc'_bound by simp
+    using T_mul_acc' by simp
 qed
 
 lemma mul_acc_correctness_rgt:
@@ -2435,7 +2531,7 @@ qed
 subsubsection \<open>Multiplication\<close>
 (* now without an accumulator *)
 
-definition "mul x y = mul_acc x y 0"
+definition [simp]: "mul x y = mul_acc x y 0"
 time_fun mul
 
 definition [simp]: "(mul_f :: nat list \<Rightarrow> nat) \<equiv> (\<lambda>xs. mul (xs ! 0) (xs ! 1))"
@@ -2444,7 +2540,7 @@ definition [simp]: "(mul_T_f :: nat list \<Rightarrow> nat) \<equiv> (\<lambda>x
 definition [simp]: "mul_hol_tcn \<equiv> hCall ''mul_acc'' [hArg 0, hArg 1, hNumber 0]"
 
 definition [simp]: "mul_aux \<equiv> calls_names_set mul_hol_tcn"
-(* note: *) lemma "mul_aux = {''mul_acc''}" using calls_names_set by auto
+(* note: *) lemma "mul_aux = {''mul_acc''}" by auto
 
 definition [simp]: "mul_frgt \<equiv> null |> mul_acc_frgt_upd"
 definition [simp]: "mul_crgt \<equiv> null |> mul_acc_crgt_upd"
@@ -2468,13 +2564,10 @@ proof-
   have frgt: "frgt ''mul_acc'' = mk_frgt1 mul_acc_f mul_acc_T_f"
     using eq_on_lookup[of frgt mul_frgt, OF rgt] by auto
 
-  show "(mul_hol_tcn, frgt) \<turnstile> (mul_hol_tcn, [], xs)\<Rightarrow>\<^bsup> mul_T_f xs \<^esup> mul_f xs"
+  show ?thesis
     apply (rule bigstep_start[OF mul_hol_tcn_def])
-  proof (rule hbig_step_t.hCall)
-    show "\<forall>i<length [hArg 0, hArg 1, hNumber 0].
-            (mul_hol_tcn, frgt) \<turnstile> ([hArg 0, hArg 1, hNumber 0] ! i, [], xs) \<Rightarrow>\<^bsup>[0, 0, 0] ! i\<^esup> [xs ! 0, xs ! 1, 0] ! i"
-      apply (repeat \<open>rule forall_i_length_Cons\<close>) using * by auto
-  qed (simp_all add: frgt mul_def)
+    apply exec_bigstep
+    by (auto simp add: * frgt)
 qed
 
 lemma mul_correctness:
@@ -2495,7 +2588,7 @@ next
     show "(length mul_args, mul_crgt) \<turnstile> mul_hol_tcn"
       unfolding mul_hol_tcn_def by check_arg_count
   qed auto
-  show "HOL_TCN_Timing.invar mul_hol_tcn" "can_terminate mul_hol_tcn" by simp_all
+  show "HOL_TCN_Timing.invar mul_hol_tcn" by simp
 qed
 
 lemma mul_correctness_rgt:
@@ -2511,5 +2604,504 @@ qed
 
 schematic_goal "mul_tcom \<equiv> ?t"
   by (to_imp_tc_unfold def: mul_tcom_def)
+
+
+subsubsection \<open>Square\<close>
+
+definition [simp]: "square x = mul x x"
+time_fun square
+
+definition [simp]: "(square_f :: nat list \<Rightarrow> nat) \<equiv> (\<lambda>xs. square (xs ! 0))"
+definition [simp]: "(square_T_f :: nat list \<Rightarrow> nat) \<equiv> (\<lambda>xs. T_square (xs ! 0))"
+
+definition [simp]: "square_hol_tcn \<equiv> hCall ''*'' [hArg 0, hArg 0]"
+
+definition [simp]: "square_aux \<equiv> calls_names_set square_hol_tcn"
+(* note: *) lemma "square_aux = {''*''}" by simp
+
+definition [simp]: "square_frgt \<equiv> null |> mul_frgt_upd"
+definition [simp]: "square_crgt \<equiv> null |> mul_crgt_upd"
+
+definition [simp]: "square_name \<equiv> ''^2''"
+definition [simp]: "square_args \<equiv> [''^2.args.x'']"
+definition [simp]: "square_r \<equiv> ''^2.ret''"
+
+definition "square_tcom \<equiv> to_imp_tc square_args square_crgt [] square_r [] square_hol_tcn"
+definition "square_com \<equiv> tailcall_to_IMP square_tcom"
+
+definition [simp]: "square_frgt_upd upd = upd(square_name := mk_frgt1 square_f square_T_f)"
+definition [simp]: "square_crgt_upd upd = upd(square_name := mk_crgt1 square_args square_com square_r)"
+
+
+lemma square_hol_tcn_correctness:
+  assumes rgt: "frgt = square_frgt on square_aux"
+  assumes *: "length xs = length square_args"
+  shows "(square_hol_tcn, frgt) \<turnstile> (square_hol_tcn, [], xs)\<Rightarrow>\<^bsup> square_T_f xs \<^esup> square_f xs"
+proof-
+  have frgt: "frgt ''*'' = mk_frgt1 mul_f mul_T_f"
+    using eq_on_lookup[of frgt square_frgt, OF rgt] by auto
+
+  show "(square_hol_tcn, frgt) \<turnstile> (square_hol_tcn, [], xs)\<Rightarrow>\<^bsup> square_T_f xs \<^esup> square_f xs"
+    apply (rule bigstep_start[OF square_hol_tcn_def])
+    apply exec_bigstep
+    by (auto simp add: * frgt)
+qed
+
+lemma square_correctness:
+  "terminates_with_res_time_order_IMP square_com square_r (square_f o lookups square_args) (square_T_f o lookups square_args)"
+  unfolding square_com_def square_tcom_def
+proof (rule compiler_correct')
+  fix vs_arg :: "nat list"
+  assume "length vs_arg = length square_args"
+  then show "(square_hol_tcn, square_frgt) \<turnstile> (square_hol_tcn, [], vs_arg) \<Rightarrow>\<^bsup>square_T_f vs_arg\<^esup>  square_f vs_arg"
+    using square_hol_tcn_correctness by blast
+next
+  show "relate_rgt square_frgt square_crgt (calls_names_set square_hol_tcn)"
+    apply (rule relate_rgt_unfold) apply simp
+    apply (repeat \<open>rule forall_i_insert\<close>)
+    using mul_correctness_rgt by simp_all
+  show "check_compile square_crgt square_args [] [] square_hol_tcn"
+  proof (rule check_compileI)
+    show "(length square_args, square_crgt) \<turnstile> square_hol_tcn"
+      unfolding square_hol_tcn_def by check_arg_count
+  qed auto
+  show "HOL_TCN_Timing.invar square_hol_tcn" by simp
+qed
+
+lemma square_correctness_rgt:
+  assumes "frgt square_name = square_frgt_upd null square_name"
+  assumes "crgt square_name = square_crgt_upd null square_name"
+  shows "relate_rgt_f frgt crgt square_name"
+proof-
+  from assms have
+    "frgt square_name = mk_frgt1 square_f square_T_f"
+    "crgt square_name = mk_crgt1 square_args square_com square_r" by simp_all
+  then show ?thesis unfolding relate_rgt_f_def using square_correctness by (metis split_pairs2)
+qed
+
+schematic_goal "square_tcom \<equiv> ?t"
+  by (to_imp_tc_unfold def: square_tcom_def)
+
+
+subsubsection \<open>Less-than-equal\<close>
+
+fun of_bool :: "bool \<Rightarrow> nat" where "of_bool True = 1" | "of_bool False = 0"
+(* declare bool.simps[simp del] *)
+time_fun of_bool
+lemma T_bool[simp]: "T_of_bool b = 0" by (cases b) simp_all
+
+lemma bool_neg_iff[iff]: "of_bool b = 0 \<longleftrightarrow> \<not> b" by (cases b; simp)
+
+definition le :: "nat \<Rightarrow> nat \<Rightarrow> nat" where [simp]: "le x y = of_bool (x \<le> y)"
+time_fun le
+
+definition [simp]: "(le_f :: nat list \<Rightarrow> nat) \<equiv> (\<lambda>xs. le (xs ! 0) (xs ! 1))"
+definition [simp]: "(le_T_f :: nat list \<Rightarrow> nat) \<equiv> (\<lambda>xs. T_le (xs ! 0) (xs ! 1))"
+
+definition [simp]: "le_hol_tcn \<equiv> hCall ''='' [hCall ''-'' [hArg 0, hArg 1], hNumber 0]"
+
+definition [simp]: "le_aux \<equiv> calls_names_set le_hol_tcn"
+(* note: *) lemma "le_aux = {''='', ''-''}" by simp
+
+definition [simp]: "le_frgt \<equiv> null |> eq_frgt_upd |> minus_frgt_upd"
+definition [simp]: "le_crgt \<equiv> null |> eq_crgt_upd |> minus_crgt_upd"
+
+definition [simp]: "le_name \<equiv> ''<=''"
+definition [simp]: "le_args \<equiv> [''<=.args.x'', ''<=.args.y'']"
+definition [simp]: "le_r \<equiv> ''<=.ret''"
+
+definition "le_tcom \<equiv> to_imp_tc le_args le_crgt [] le_r [] le_hol_tcn"
+definition "le_com \<equiv> tailcall_to_IMP le_tcom"
+
+definition [simp]: "le_frgt_upd upd = upd(le_name := mk_frgt1 le_f le_T_f)"
+definition [simp]: "le_crgt_upd upd = upd(le_name := mk_crgt1 le_args le_com le_r)"
+
+lemma le_hol_tcn_correctness:
+  assumes rgt: "frgt = le_frgt on le_aux"
+  assumes *: "length xs = length le_args"
+  shows "(le_hol_tcn, frgt) \<turnstile> (le_hol_tcn, [], xs)\<Rightarrow>\<^bsup> le_T_f xs \<^esup> le_f xs"
+proof-
+  have frgt:
+      "frgt ''='' = mk_frgt1 eq_f eq_T_f"
+      "frgt ''-'' = mk_frgt1 minus_f minus_T_f"
+    using eq_on_lookup[of frgt le_frgt, OF rgt] by auto
+
+  show ?thesis
+    apply (rule bigstep_start[OF le_hol_tcn_def])
+    apply exec_bigstep
+    by (auto simp add: * frgt)
+qed
+
+lemma le_correctness:
+  "terminates_with_res_time_order_IMP le_com le_r (le_f o lookups le_args) (le_T_f o lookups le_args)"
+  unfolding le_com_def le_tcom_def
+proof (rule compiler_correct')
+  fix vs_arg :: "nat list"
+  assume "length vs_arg = length le_args"
+  then show "(le_hol_tcn, le_frgt) \<turnstile> (le_hol_tcn, [], vs_arg) \<Rightarrow>\<^bsup>le_T_f vs_arg\<^esup>  le_f vs_arg"
+    using le_hol_tcn_correctness by blast
+next
+  show "relate_rgt le_frgt le_crgt (calls_names_set le_hol_tcn)"
+    apply (rule relate_rgt_unfold) apply simp
+    apply (repeat \<open>rule forall_i_insert\<close>)
+    using eq_correctness_rgt minus_correctness_rgt by simp_all
+  show "check_compile le_crgt le_args [] [] le_hol_tcn"
+  proof (rule check_compileI)
+    show "(length le_args, le_crgt) \<turnstile> le_hol_tcn"
+      unfolding le_hol_tcn_def by check_arg_count
+  qed auto
+  show "HOL_TCN_Timing.invar le_hol_tcn" by simp
+qed
+
+lemma le_correctness_rgt:
+  assumes "frgt le_name = le_frgt_upd null le_name"
+  assumes "crgt le_name = le_crgt_upd null le_name"
+  shows "relate_rgt_f frgt crgt le_name"
+proof-
+  from assms have
+    "frgt le_name = mk_frgt1 le_f le_T_f"
+    "crgt le_name = mk_crgt1 le_args le_com le_r" by simp_all
+  then show ?thesis unfolding relate_rgt_f_def using le_correctness by (metis split_pairs2)
+qed
+
+(* schematic_goal "le_tcom \<equiv> ?t"
+  by (to_imp_tc_unfold def: le_tcom_def) *)
+
+
+subsubsection \<open>Square-root (with auxiliary parameter)\<close>
+
+declare not_le_imp_less[termination_simp]
+lemma sq_lt0[simp]: "x\<^sup>2 > y \<Longrightarrow> x > 0" for x y :: nat by (cases x; simp)
+lemma sq_Suc[simp]: "(Suc x)\<^sup>2 > x\<^sup>2" by (simp add: power2_eq_square)
+
+lemma sqrt_aux_term_simp[termination_simp]: fixes z :: nat assumes "\<not> z\<^sup>2 \<le> n" shows "z - Suc 0 < z"
+proof -
+  from assms have "z > 0" using not_le_imp_less sq_lt0 by blast
+  then show "z - Suc 0 < z" by linarith
+qed
+
+fun sqrt_aux :: "nat \<Rightarrow> nat \<Rightarrow> nat" where
+  "sqrt_aux z n = (if z\<^sup>2 \<le> n then z else sqrt_aux (z - 1) n)"
+declare sqrt_aux.simps[simp del]
+
+fun T_sqrt_aux :: "nat \<Rightarrow> nat \<Rightarrow> nat" where
+  "T_sqrt_aux z n = T_square z + (if z\<^sup>2 \<le> n then 0 else T_sqrt_aux (z - 1) n + 1)"
+declare T_sqrt_aux.simps[simp del]
+
+value "sqrt_aux 16 16"
+value "sqrt_aux 4 16"
+value "sqrt_aux 3 5"
+
+lemma sqrt_aux_simps[simp]:
+    "z\<^sup>2 \<le> n \<Longrightarrow> sqrt_aux z n = z"
+    "z\<^sup>2 > n \<Longrightarrow> sqrt_aux z n = sqrt_aux (z - 1) n"
+  using sqrt_aux.simps by simp_all
+lemma T_sqrt_aux_simps[simp]:
+    "z\<^sup>2 \<le> n \<Longrightarrow> T_sqrt_aux z n = T_square z"
+    "z\<^sup>2 > n \<Longrightarrow> T_sqrt_aux z n = T_square z + T_sqrt_aux (z - 1) n + 1"
+  apply (cases "z\<^sup>2 \<le> n") using T_sqrt_aux.simps apply auto done
+
+lemma sqrt_aux_cases:
+  fixes z n :: nat
+  assumes "z\<^sup>2 \<le> n \<Longrightarrow> P"
+  assumes "z\<^sup>2 > n \<Longrightarrow> P"
+  shows "P"
+  by (cases "z\<^sup>2 \<le> n"; simp add: assms)
+
+lemma sqrt_aux_induct[case_names small base step]:
+  fixes n k :: nat
+  assumes "\<And>z n. z\<^sup>2 \<le> n \<Longrightarrow> P z n"
+  assumes "\<And>z n. z\<^sup>2 > n \<Longrightarrow> (z - 1)\<^sup>2 \<le> n \<Longrightarrow> P z n"
+  assumes "\<And>z n. z\<^sup>2 > n \<Longrightarrow> (z - 1)\<^sup>2 > n \<Longrightarrow> P (z - 1) n \<Longrightarrow> P z n"
+  shows "P z n"
+proof (induction rule: sqrt_aux.induct[unfolded not_le])
+  case ih: (1 z n)
+  then show ?case
+  proof (cases rule: sqrt_aux_cases[of z n])
+    assume "z\<^sup>2 \<le> n"
+    with assms(1) show "P z n" by blast
+  next
+    assume *: "z\<^sup>2 > n"
+    show "P z n"
+    proof (cases rule: sqrt_aux_cases[of "z - 1" n])
+      assume "(z - 1)\<^sup>2 \<le> n"
+      with * show "P z n" using assms(2) by blast
+    next
+      assume "(z - 1)\<^sup>2 > n"
+      with ih * show "P z n" using assms(3) by blast
+    qed
+  qed
+qed
+
+lemma sqrt_aux_upper: "(sqrt_aux z n)\<^sup>2 \<le> n"
+  by (induction z n rule: sqrt_aux_induct) simp_all
+
+lemma sqrt_aux_lower: assumes "z\<^sup>2 \<ge> n" shows "n < (sqrt_aux z n + 1)\<^sup>2"
+  using assms by (induction z n rule: sqrt_aux_induct; auto)
+
+lemma sqrt_aux_sq: "sqrt_aux (x\<^sup>2) (x\<^sup>2) = x"
+proof (rule antisym)
+  from sqrt_aux_upper have "(sqrt_aux (x\<^sup>2) (x\<^sup>2))\<^sup>2 \<le> x\<^sup>2" by blast
+  then show "sqrt_aux (x\<^sup>2) (x\<^sup>2) \<le> x" by simp
+next
+  from sqrt_aux_lower have "x\<^sup>2 < (sqrt_aux (x\<^sup>2) (x\<^sup>2) + 1)\<^sup>2"
+    using power2_nat_le_imp_le by simp
+  then have "x < (sqrt_aux (x\<^sup>2) (x\<^sup>2) + 1)"
+    using power_less_imp_less_base by blast
+  then show "x \<le> sqrt_aux (x\<^sup>2) (x\<^sup>2)" by linarith
+qed
+
+definition [simp]: "(sqrt_aux_f :: nat list \<Rightarrow> nat) \<equiv> (\<lambda>xs. sqrt_aux (xs ! 0) (xs ! 1))"
+definition [simp]: "(sqrt_aux_T_f :: nat list \<Rightarrow> nat) \<equiv> (\<lambda>xs. T_sqrt_aux (xs ! 0) (xs ! 1))"
+
+definition [simp]: "sqrt_aux_hol_tcn \<equiv>
+  IF hCall ''<='' [hCall ''^2'' [hArg 0], hArg 1] \<noteq>0 THEN hArg 0
+  ELSE hTAIL [hCall ''-'' [hArg 0, hNumber 1], hArg 1]"
+
+definition [simp]: "sqrt_aux_aux \<equiv> calls_names_set sqrt_aux_hol_tcn"
+(* note: *) lemma "sqrt_aux_aux = {''<='', ''^2'', ''-''}" by simp
+
+definition [simp]: "sqrt_aux_frgt \<equiv> null |> le_frgt_upd |> square_frgt_upd |> minus_frgt_upd"
+definition [simp]: "sqrt_aux_crgt \<equiv> null |> le_crgt_upd |> square_crgt_upd |> minus_crgt_upd"
+
+definition [simp]: "sqrt_aux_name \<equiv> ''sqrt''"
+definition [simp]: "sqrt_aux_args \<equiv> [''sqrt.args.z'', ''sqrt.args.n'']"
+definition [simp]: "sqrt_aux_r \<equiv> ''sqrt.ret''"
+
+definition "sqrt_aux_tcom \<equiv> to_imp_tc sqrt_aux_args sqrt_aux_crgt [] sqrt_aux_r [] sqrt_aux_hol_tcn"
+definition "sqrt_aux_com \<equiv> tailcall_to_IMP sqrt_aux_tcom"
+
+definition [simp]: "sqrt_aux_frgt_upd upd = upd(sqrt_aux_name := mk_frgt1 sqrt_aux_f sqrt_aux_T_f)"
+definition [simp]: "sqrt_aux_crgt_upd upd = upd(sqrt_aux_name := mk_crgt1 sqrt_aux_args sqrt_aux_com sqrt_aux_r)"
+
+lemma sqrt_aux_hol_tcn_correctness:
+  assumes rgt: "frgt = sqrt_aux_frgt on sqrt_aux_aux"
+  assumes *: "length xs = length sqrt_aux_args"
+  shows "(sqrt_aux_hol_tcn, frgt) \<turnstile> (sqrt_aux_hol_tcn, [], xs)\<Rightarrow>\<^bsup> sqrt_aux_T_f xs \<^esup> sqrt_aux_f xs"
+proof-
+  have frgt:
+      "frgt ''<='' = mk_frgt1 le_f le_T_f"
+      "frgt ''^2'' = mk_frgt1 square_f square_T_f"
+      "frgt ''-'' = mk_frgt1 minus_f minus_T_f"
+    using eq_on_lookup[of frgt sqrt_aux_frgt, OF rgt] by auto
+
+  show ?thesis
+    using * proof (induction "xs ! 0" "xs ! 1" arbitrary: xs rule: sqrt_aux.induct)
+    case ind_case: 1
+    note len = \<open>length xs = _\<close> and ih = ind_case.hyps(1)
+    show ?case
+      apply (rule bigstep_start[OF sqrt_aux_hol_tcn_def])
+      apply exec_bigstep
+      (* apply the induction hypothesis *)
+      prefer 15 apply (rule bigstep_apply_ih[OF _ _ ih])
+      apply (auto simp add: frgt len power2_eq_square)
+      done
+  qed
+qed
+
+lemma sqrt_aux_correctness:
+  "terminates_with_res_time_order_IMP sqrt_aux_com sqrt_aux_r (sqrt_aux_f o lookups sqrt_aux_args) (sqrt_aux_T_f o lookups sqrt_aux_args)"
+  unfolding sqrt_aux_com_def sqrt_aux_tcom_def
+proof (rule compiler_correct')
+  fix vs_arg :: "nat list"
+  assume "length vs_arg = length sqrt_aux_args"
+  then show "(sqrt_aux_hol_tcn, sqrt_aux_frgt) \<turnstile> (sqrt_aux_hol_tcn, [], vs_arg) \<Rightarrow>\<^bsup>sqrt_aux_T_f vs_arg\<^esup>  sqrt_aux_f vs_arg"
+    using sqrt_aux_hol_tcn_correctness by blast
+next
+  show "relate_rgt sqrt_aux_frgt sqrt_aux_crgt (calls_names_set sqrt_aux_hol_tcn)"
+    apply (rule relate_rgt_unfold) apply simp
+    apply (repeat \<open>rule forall_i_insert\<close>)
+    using le_correctness_rgt square_correctness_rgt minus_correctness_rgt by simp_all
+  show "check_compile sqrt_aux_crgt sqrt_aux_args [] [] sqrt_aux_hol_tcn"
+  proof (rule check_compileI)
+    show "(length sqrt_aux_args, sqrt_aux_crgt) \<turnstile> sqrt_aux_hol_tcn"
+      unfolding sqrt_aux_hol_tcn_def by check_arg_count
+  qed auto
+  show "HOL_TCN_Timing.invar sqrt_aux_hol_tcn" by simp
+qed
+
+lemma sqrt_aux_correctness_rgt:
+  assumes "frgt sqrt_aux_name = sqrt_aux_frgt_upd null sqrt_aux_name"
+  assumes "crgt sqrt_aux_name = sqrt_aux_crgt_upd null sqrt_aux_name"
+  shows "relate_rgt_f frgt crgt sqrt_aux_name"
+proof-
+  from assms have
+    "frgt sqrt_aux_name = mk_frgt1 sqrt_aux_f sqrt_aux_T_f"
+    "crgt sqrt_aux_name = mk_crgt1 sqrt_aux_args sqrt_aux_com sqrt_aux_r" by simp_all
+  then show ?thesis unfolding relate_rgt_f_def using sqrt_aux_correctness by (metis split_pairs2)
+qed
+
+schematic_goal "sqrt_aux_tcom \<equiv> ?t"
+  by (to_imp_tc_unfold def: sqrt_aux_tcom_def)
+
+
+
+
+(* 
+  sqrt_aux_tcom \<equiv> ''Call.x.0.1'' ::= A (V ''sqrt.args.z'');; ''^2.args.x'' ::= A (V ''Call.x.0.1'');;
+  CALL square_com RETURN ''^2.ret'';; ''Call.x.0.0'' ::= A (V ''^2.ret'');; ''Call.x.1.0'' ::= A (V ''sqrt.args.n'');;
+  (''<=.args.x'' ::= A (V ''Call.x.0.0'');; ''<=.args.y'' ::= A (V ''Call.x.1.0''));; CALL le_com RETURN ''<=.ret'';;
+  ''If.x.0'' ::= A (V ''<=.ret'');;
+  IF ''If.x.0''\<noteq>0 THEN ''sqrt.ret'' ::= A (V ''sqrt.args.z'')
+  ELSE (''Call.x.0.0'' ::= A (V ''sqrt.args.z'');; ''Call.x.1.0'' ::= A (N (Suc 0));;
+        (''-.args.x'' ::= A (V ''Call.x.0.0'');; ''-.args.y'' ::= A (V ''Call.x.1.0''));;
+        CALL minus_com RETURN ''-.ret'';; ''TAIL.x.0.0'' ::= A (V ''-.ret'');; ''TAIL.x.1.0'' ::= A (V ''sqrt.args.n'');;
+        (''sqrt.args.z'' ::= A (V ''TAIL.x.0.0'');; ''sqrt.args.n'' ::= A (V ''TAIL.x.1.0''));; tTAIL) 
+ *)
+
+
+(* 
+cx01 = sqrt.z;; sq.x = cx01;; CALL sq RET sq.r;;
+cx00 = sq.r;; cx10 = sqrt.n;; le.x = cx00;; le.y = cx10;; CALL le RET le.r;;
+ifx = le.r;; IF ifx THEN sqrt.r = sqrt.z;;
+ELSE
+  cx00 = sqrt.z;; cx10 = 1;; sub.x = cx00;; sub.y = cx10;; CALL sub RET sub.r;;
+  tx00 = sub.r;; tx10 = sqrt.n;; sqrt.z = tx00;; sqrt.n = tx10;; TAIL
+
+
+sq.x = z;; CALL sq RET sq.ret;;
+le.x = sq.ret;; le.y = n;; CALL le RET le.ret;;
+IF le.ret THEN ret = z;;
+ELSE
+  sub.x = z;; sub.y = 1;; CALL sub RET sub.ret;;
+  z = sub.r;; n = n;; TAIL
+
+
+ *)
+
+
+(* todo: move close to hol-tcn trace semantics *)
+lemma htrace_to_end_hArg':
+  assumes "k = 0"
+  assumes "T = []"
+  assumes "v = (xs ! n)"
+  assumes "n < length xs"
+  shows "(f, frgt) \<turnstile> (hArg n, bs, xs) \<Rightarrow>\<^bsup>(k, T) :: HOL_TCN_Timing.trace\<^esup> v"
+  using assms by blast
+
+lemma htrace_to_end_hNumber':
+  assumes "k = 0"
+  assumes "T = []"
+  assumes "v = n"
+  shows "(f, frgt) \<turnstile> (hNumber n, bs, xs) \<Rightarrow>\<^bsup>(k, T) :: HOL_TCN_Timing.trace\<^esup> v"
+  using assms by blast
+
+lemma htrace_to_end_hIf':
+  assumes "k1 = 0"
+  assumes "k = (if v1 \<noteq> 0 then k2 else k3)"
+  assumes "T = T1 @ (if v1 \<noteq> 0 then T2 else T3)"
+  assumes "v = (if v1 \<noteq> 0 then v2 else v3)"
+  assumes "(f, frgt) \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup>(k1, T1) :: HOL_TCN_Timing.trace\<^esup> v1"
+  assumes "v1 \<noteq> 0 \<Longrightarrow> (f, frgt) \<turnstile>(t2, bs, xs) \<Rightarrow>\<^bsup>(k2, T2) :: HOL_TCN_Timing.trace\<^esup> v2"
+  assumes "v1 = 0 \<Longrightarrow> (f, frgt) \<turnstile>(t3, bs, xs) \<Rightarrow>\<^bsup>(k3, T3) :: HOL_TCN_Timing.trace\<^esup> v3"
+  shows "(f, frgt) \<turnstile> (IF t1\<noteq>0 THEN t2 ELSE t3, bs, xs) \<Rightarrow>\<^bsup>(k, T) :: HOL_TCN_Timing.trace\<^esup> v"
+proof (cases "v1 = 0")
+  case False
+  show ?thesis
+  proof (rule htrace_to_end.hIfTrue)
+    show "(f, frgt) \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup>(0, T1) :: HOL_TCN_Timing.trace\<^esup> v1" using assms(1,5) by blast
+    show "(f, frgt) \<turnstile> (t2, bs, xs) \<Rightarrow>\<^bsup>(k, T2) :: HOL_TCN_Timing.trace\<^esup> v" using False assms(2,4,6) by presburger
+  qed (simp_all add: False assms(1,3))
+next
+  case True
+  show ?thesis
+  proof (rule htrace_to_end.hIfFalse)
+    show "(f, frgt) \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup>(0, T1) :: HOL_TCN_Timing.trace\<^esup> v1" using assms(1,5) by blast
+    show "(f, frgt) \<turnstile> (t3, bs, xs) \<Rightarrow>\<^bsup>(k, T3) :: HOL_TCN_Timing.trace\<^esup> v" using True assms(2,4,7) by presburger
+  qed (simp_all add: True assms(3,6))
+qed
+
+lemma htrace_to_end_hLetBound':
+  assumes "k = 0"
+  assumes "T = []"
+  assumes "v = (bs ! n)"
+  assumes "n < length bs"
+  shows "(f, frgt) \<turnstile> (hLetBound n, bs, xs) \<Rightarrow>\<^bsup>(k, T) :: HOL_TCN_Timing.trace\<^esup> v"
+  using assms by blast
+
+lemma hte_bigstep_start:
+  assumes "t \<equiv> t_def"
+  assumes "(t, frgt) \<turnstile> (t_def, bs, xs)\<Rightarrow>\<^bsup>(k, T) :: HOL_TCN_Timing.trace\<^esup> v"
+  shows "(t, frgt) \<turnstile> (t, bs, xs)\<Rightarrow>\<^bsup>(k, T) :: HOL_TCN_Timing.trace\<^esup> v"
+  using assms by simp
+
+lemma hte_args_nil:
+  shows "\<forall>i<length ([] :: thol list). (t, frgt) \<turnstile> ([] ! i, bs, xs) \<Rightarrow>\<^bsup>(0, [] ! i) :: HOL_TCN_Timing.trace\<^esup> [] ! i"
+  by simp
+
+lemma hte_args_cons:
+  assumes "(t, frgt) \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup>(0, T1) :: HOL_TCN_Timing.trace\<^esup> v1"
+  assumes "\<forall>i<length ts. (t, frgt) \<turnstile> (ts ! i, bs, xs) \<Rightarrow>\<^bsup> (0, Ts ! i) :: HOL_TCN_Timing.trace\<^esup> vs ! i"
+  shows "\<forall>i<length (t1 # ts). (t, frgt) \<turnstile> ((t1 # ts) ! i, bs, xs) \<Rightarrow>\<^bsup> (0, (T1 # Ts) ! i) :: HOL_TCN_Timing.trace\<^esup> (v1 # vs) ! i"
+proof (rule, rule)
+  fix i assume *: "i < length (t1 # ts)"
+  consider (0) "i = 0" | (cons) "i > 0" by linarith
+  then show "(t, frgt) \<turnstile> ((t1 # ts) ! i, bs, xs) \<Rightarrow>\<^bsup> (0, (T1 # Ts) ! i) :: HOL_TCN_Timing.trace\<^esup> (v1 # vs) ! i"
+  proof cases
+    case 0 with assms(1) show ?thesis by simp
+  next
+    case cons
+    with * assms(2) have "(t, frgt) \<turnstile> (ts ! (i - 1), bs, xs) \<Rightarrow>\<^bsup> (0, Ts ! (i - 1)) :: HOL_TCN_Timing.trace\<^esup> vs ! (i - 1)" by simp
+    with cons show ?thesis by simp
+  qed
+qed
+
+method exec_hte_inference =
+    rule
+      htrace_to_end.hLet htrace_to_end_hIf'
+      htrace_to_end_hLetBound' htrace_to_end_hArg' htrace_to_end_hNumber'
+      htrace_to_end.hCall htrace_to_end.hTail
+
+method exec_hte_arglist = rule hte_args_cons hte_args_nil
+
+method exec_hte1_start uses hol_tcn_def =
+  rule hte_bigstep_start[OF hol_tcn_def]
+
+method exec_hte1 = repeat \<open>exec_hte_arglist\<close> | exec_hte_inference
+method exec_hte_bigstep = repeat \<open>exec_hte1\<close>; (rule refl)?
+(* ; (rule refl)? (* todo: align other method *) *)
+
+
+(* lemma sqrt_aux_frgt:
+    "sqrt_aux_frgt ''<='' = mk_frgt1 le_f le_T_f"
+    "sqrt_aux_frgt ''^2'' = mk_frgt1 square_f square_T_f"
+    "sqrt_aux_frgt ''-'' = mk_frgt1 minus_f minus_T_f"
+  by auto *)
+
+
+
+lemma hte_bigstep_simps_to_start:
+  assumes "PROP SIMPS_TO k' k"
+  assumes "PROP SIMPS_TO T' T"
+  assumes "PROP SIMPS_TO v' v"
+  assumes "(t, frgt) \<turnstile> (t, bs, xs)\<Rightarrow>\<^bsup>(k', T') :: HOL_TCN_Timing.trace\<^esup> v'"
+  shows "(t, frgt) \<turnstile> (t, bs, xs)\<Rightarrow>\<^bsup>(k, T) :: HOL_TCN_Timing.trace\<^esup> v"
+  using assms by (simp add: SIMPS_TO_eq)
+
+lemma hte_bigstep_simps_to_step:
+  assumes "PROP SIMPS_TO bs bs'"
+  assumes "PROP SIMPS_TO xs xs'"
+  assumes "(t, frgt) \<turnstile> (t, bs', xs')\<Rightarrow>\<^bsup>(k, T) :: HOL_TCN_Timing.trace\<^esup> v"
+  shows "(t, frgt) \<turnstile> (t, bs, xs)\<Rightarrow>\<^bsup>(k, T) :: HOL_TCN_Timing.trace\<^esup> v"
+  using assms by (simp add: SIMPS_TO_eq)
+
+schematic_goal "(sqrt_aux_hol_tcn, sqrt_aux_frgt) \<turnstile> (sqrt_aux_hol_tcn, [], [3, 4]) \<Rightarrow>\<^bsup>(?k, ?T) :: HOL_TCN_Timing.trace \<^esup> ?v"
+  apply (rule hte_bigstep_simps_to_start) prefer 4
+     apply (exec_hte1_start hol_tcn_def: sqrt_aux_hol_tcn_def, exec_hte_bigstep)
+                  apply simp_all[13]
+     apply (rule hte_bigstep_simps_to_step)
+       apply (simp_all?)[2]
+       apply (rule SIMPS_TOI, rule SIMPS_TOI)
+     apply (exec_hte1_start hol_tcn_def: sqrt_aux_hol_tcn_def, exec_hte_bigstep)
+                  apply simp_all[13]
+(*      apply (rule hte_bigstep_simps_to_step)
+       apply (simp_all?)[2]
+       apply (rule SIMPS_TOI, rule SIMPS_TOI)
+     apply (exec_hte1_start hol_tcn_def: sqrt_aux_hol_tcn_def, exec_hte_bigstep)
+                  apply simp_all[13] *)
+     apply simp (* clear out the tail call *)
+    apply (simp_all?)[3]
+    apply (rule SIMPS_TOI, rule SIMPS_TOI, rule SIMPS_TOI)
+  done
 
 end

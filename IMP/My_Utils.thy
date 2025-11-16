@@ -1,9 +1,11 @@
 theory My_Utils
-  imports Main
+  imports Main "HOL-Eisbach.Eisbach"
 begin
 
 (* TODO: move these utils into some better place *)
 
+method repeat0 methods m = (m; repeat0 \<open>m\<close>)?
+method repeat methods m = m; repeat0 \<open>m\<close>
 
 definition "null = (\<lambda>_. undefined)"
 

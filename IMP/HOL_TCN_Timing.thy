@@ -1,5 +1,6 @@
 theory HOL_TCN_Timing
   imports Com My_Utils
+    ML_Unification.Unify_Resolve_Tactics
 begin
 
 unbundle no com_syntax
@@ -107,6 +108,53 @@ inductive_cases hIf_case [elim!]: "env \<turnstile> (hIf t1 t2 t3,bs,xs) \<Right
 inductive_cases hCall_case [elim!]: "(f,frgt) \<turnstile> (hCall g ts,bs,xs) \<Rightarrow>\<^bsup>z\<^esup> v"
 inductive_cases hTAIL_case [elim!]: "(f,frgt) \<turnstile> (hTAIL ts,bs,xs) \<Rightarrow>\<^bsup>z\<^esup> v"
 (* TODO: could use better names *)
+
+
+lemma hbig_step_t_hLetBound':
+  assumes "z = 0"
+  assumes "v = (bs ! n)"
+  assumes "n < length bs"
+  shows "(f, frgt) \<turnstile> (hLetBound n, bs, xs) \<Rightarrow>\<^bsup>z :: nat\<^esup> v"
+  using assms by blast
+
+(* todo: move close to hol-tcn semantics *)
+lemma hbig_step_t_hArg':
+  assumes "z = 0"
+  assumes "v = (xs ! n)"
+  assumes "n < length xs"
+  shows "(f, frgt) \<turnstile> (hArg n, bs, xs) \<Rightarrow>\<^bsup>z :: nat\<^esup> v"
+  using assms by blast
+
+lemma hbig_step_t_hNumber':
+  assumes "z = 0"
+  assumes "v = n"
+  shows "(f, frgt) \<turnstile> (hNumber n, bs, xs) \<Rightarrow>\<^bsup>z :: nat\<^esup> v"
+  using assms by blast
+
+lemma hbig_step_t_hIf':
+  assumes "(f, frgt) \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup>x :: nat\<^esup> v1"
+  assumes "v1 \<noteq> 0 \<Longrightarrow> (f, frgt) \<turnstile>(t2, bs, xs) \<Rightarrow>\<^bsup>y1 :: nat\<^esup> v"
+  assumes "v1 = 0 \<Longrightarrow> (f, frgt) \<turnstile>(t3, bs, xs) \<Rightarrow>\<^bsup>y2 :: nat\<^esup> v"
+  assumes "v1 \<noteq> 0 \<Longrightarrow> z = x + y1"
+  assumes "v1 = 0 \<Longrightarrow> z = x + y2"
+  shows "(f, frgt) \<turnstile> (IF t1\<noteq>0 THEN t2 ELSE t3, bs, xs) \<Rightarrow>\<^bsup>z :: nat\<^esup> v"
+proof (cases "v1 = 0")
+  case False
+  show ?thesis
+  proof (rule hbig_step_t.hIfTrue)
+    show "(f, frgt) \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup>x\<^esup> v1" using assms(1) .
+    show "(f, frgt) \<turnstile> (t2, bs, xs) \<Rightarrow>\<^bsup>y1\<^esup>  v" using False assms(2) by blast
+  qed (simp_all add: False assms(4))
+next
+  case True
+  show ?thesis
+  proof (rule hbig_step_t.hIfFalse)
+    show "(f, frgt) \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup>x\<^esup> v1" using assms(1) .
+    show "(f, frgt) \<turnstile> (t3, bs, xs) \<Rightarrow>\<^bsup>y2\<^esup>  v" using True assms(3) by blast
+  qed (simp_all add: True assms(5))
+qed
+
+
 
 lemma determ:
   fixes t :: thol
@@ -564,6 +612,8 @@ next
   ultimately show ?case by (metis (lifting))
 qed
 
+corollary bigstep_trace_end_v: True by blast
+
 
 (* relating partial and full traces *)
 
@@ -604,7 +654,7 @@ lemma trace_end_trace_leaf:
   shows "\<exists>T1 l.
     frgt \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>T1\<^esup> l
     \<and> (case l of Tail ts \<Rightarrow> (\<exists>T2. (f, frgt) \<turnstile> (f, [], ts) \<Rightarrow>\<^bsup>(k - 1, T2)\<^esup> v \<and> T = T1 @ T2)
-               | Value v1 \<Rightarrow> k = 0 \<and> T1 = T \<and> v1 = v)" (* TODO: check if IMP-TC equiv. lemma can be expanded *)
+               | Value v1 \<Rightarrow> k = 0 \<and> T1 = T \<and> v1 = v)"
 using assms proof (induction arbitrary: rule: htrace_to_end_induct)
   case (hLet f frgt t1 bs xs T1 v1 t2 k T2 v2 T)
   from hLet trace_end_nontail_trace_leaf have 1: "frgt \<turnstile> (t1, bs, xs) \<Rightarrow>\<^bsup>T1\<^esup> Value v1" by simp
@@ -679,6 +729,60 @@ next
 
   ultimately show ?case using hTail.hyps(4) leaf_state.simps(6) by blast
 qed
+
+(* the other form is nicer to present in the thesis *)
+lemma trace_end_trace_leaf_equiv:
+  assumes "(f, frgt) \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>(k, T)\<^esup> v"
+  assumes "invar t"
+  shows
+    "((frgt \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>T\<^esup> Value v \<and> k = 0) \<or>
+      (\<exists>T1 vs T2. (frgt \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>T1\<^esup> Tail vs) \<and> ((f, frgt) \<turnstile> (f, [], vs) \<Rightarrow>\<^bsup>(k - 1, T2)\<^esup> v) \<and> T = T1 @ T2))
+     =
+     (\<exists>T1 l.
+         (frgt \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>T1\<^esup> l) \<and>
+         (case l of Tail ts \<Rightarrow> (\<exists>T2. ((f, frgt) \<turnstile> (f, [], ts) \<Rightarrow>\<^bsup>(k - 1, T2)\<^esup> v) \<and> T = T1 @ T2)
+          | Value v1 \<Rightarrow> k = 0 \<and> T1 = T \<and> v1 = v))"
+proof (rule, goal_cases)
+  case 1
+  then obtain T1 vs T2 where *:
+    "((frgt \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>T\<^esup> Value v) \<and> k = 0) \<or>
+     ((frgt \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>T1\<^esup> Tail vs) \<and> ((f, frgt) \<turnstile> (f, [], vs) \<Rightarrow>\<^bsup>(k - 1, T2)\<^esup> v) \<and> T = T1 @ T2)"
+    by blast
+  then consider
+    "frgt \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>T\<^esup> Value v" "k = 0" |
+    "frgt \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>T1\<^esup> Tail vs" "(f, frgt) \<turnstile> (f, [], vs) \<Rightarrow>\<^bsup>(k - 1, T2)\<^esup> v" "T = T1 @ T2" by blast
+  then show ?case
+  proof cases
+    case 1
+    show ?thesis
+    proof (rule exI, rule exI, rule conjI)
+      from 1(1) show "(frgt \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>T\<^esup> Value v)" .
+    qed (simp add: 1(2))
+  next
+    case 2
+    show ?thesis
+    proof (rule exI, rule exI, rule conjI)
+      from 2(1) show "frgt \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>T1\<^esup> Tail vs" .
+    qed (auto simp add: 2(2-) simp del: One_nat_def)
+  qed
+next
+  case 2
+  then obtain T1 l where *:
+    "frgt \<turnstile> (t, bs, xs) \<Rightarrow>\<^bsup>T1\<^esup> l"
+    "(case l of Value v1 \<Rightarrow> k = 0 \<and> T1 = T \<and> v1 = v
+      | Tail ts \<Rightarrow> \<exists>T2. (f, frgt) \<turnstile> (f, [], ts) \<Rightarrow>\<^bsup>(k - 1, T2)\<^esup>  v \<and> T = T1 @ T2)" by blast
+  show ?case
+  proof (cases l)
+    case (Value v)
+    with * show ?thesis by simp
+  next
+    case (Tail vs)
+    with *(2) obtain T2 where "(f, frgt) \<turnstile> (f, [], vs) \<Rightarrow>\<^bsup>(k - 1, T2)\<^esup>  v \<and> T = T1 @ T2" by auto
+    with Tail *(1) show ?thesis by blast
+  qed
+qed
+
+
 
 
 end

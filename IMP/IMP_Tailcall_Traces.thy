@@ -381,12 +381,12 @@ next
 qed
 
 lemma trace_end_trace_leaf:
-  assumes "f \<turnstile> (c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> t"
+  assumes "f \<turnstile> (c,s) \<Rightarrow>\<^bsup>(k, T)\<^esup> s'"
   assumes "invar c"
-  shows "\<exists>k1 T1 t1 l.
-    (c,s) \<Rightarrow>\<^bsup>(k1, T1)\<^esup> (t1, l)
-    \<and> (if l then (\<exists>k2 T2. f \<turnstile> (f,t1) \<Rightarrow>\<^bsup>(k2, T2)\<^esup> t)
-            else k1 = k \<and> T1 = T \<and> t1 = t)"
+  shows "\<exists>k1 T1 s2 l.
+    (c,s) \<Rightarrow>\<^bsup>(k1, T1)\<^esup> (s2, l)
+    \<and> (if l then (\<exists>k2 T2. f \<turnstile> (f,s2) \<Rightarrow>\<^bsup>(k2, T2)\<^esup> s' \<and> k = k1 + k2 \<and> k1 \<ge> 5 \<and> T = T1 @ T2)
+            else k1 = k \<and> T1 = T \<and> s2 = s')"
 using assms proof (induction rule: ttrace_to_end_induct)
   case tSkip
   show ?case by fastforce
@@ -394,56 +394,78 @@ next
   case tAssign
   show ?case by fastforce
 next
-  case (tSeq c c1 s1 k1 T1 s2 c2 k2 T2 s3 k T)
-  from tSeq trace_end_nontail_trace_leaf have 1: "(c1, s1) \<Rightarrow>\<^bsup>(k1, T1)\<^esup>  (s2, False)" by simp
-  from tSeq obtain k2' T2' t2' l'
-      where 2: "(c2, s2) \<Rightarrow>\<^bsup>(k2', T2')\<^esup>  (t2', l')"
-        and *: "if l' then \<exists>k3 T3. c \<turnstile>(c, t2') \<Rightarrow>\<^bsup>(k3, T3)\<^esup>  s3
-                else k2' = k2 \<and> T2' = T2 \<and> t2' = s3"
-    by auto
-  from 1 2 have "(c1;; c2, s1) \<Rightarrow>\<^bsup>(k1 + k2', T1 @ T2')\<^esup> (t2', l')" by blast
+  case (tSeq c c1 s1 k1 T1 s2 c2 k2 T2 s' k T)
+  from tSeq trace_end_nontail_trace_leaf have 1: "(c1, s1) \<Rightarrow>\<^bsup>(k1, T1)\<^esup> (s2, False)" by simp
+  with tSeq.prems tSeq.IH(2) obtain k2a k2b T2a T2b s3a l
+      where 2: "(c2, s2) \<Rightarrow>\<^bsup>(k2a, T2a)\<^esup> (s3a, l)"
+        and *:
+          "if l then c \<turnstile>(c, s3a) \<Rightarrow>\<^bsup>(k2b, T2b)\<^esup> s' \<and> k2 = k2a + k2b \<and> k2a \<ge> 5 \<and> T2 = T2a @ T2b
+           else k2a = k2 \<and> T2a = T2 \<and> s3a = s'"
+    by fastforce
 
-  with * tSeq show ?case by metis
+  show ?case
+  proof (rule exI conjI)+
+    from 1 2 show "(c1;; c2, s1) \<Rightarrow>\<^bsup>(k1 + k2a, T1 @ T2a)\<^esup>  (s3a, l)" by blast
+  next
+    have "l \<Longrightarrow> c \<turnstile>(c, s3a) \<Rightarrow>\<^bsup>(k2b, T2b)\<^esup> s' \<and> k = k1 + k2a + k2b \<and> k1 + k2a \<ge> 5 \<and> T = (T1 @ T2a) @ T2b"
+      using * tSeq.hyps by fastforce
+    then show
+      "if l then \<exists>k2 T2. c \<turnstile>(c, s3a) \<Rightarrow>\<^bsup>(k2, T2)\<^esup>  s' \<and> k = k1 + k2a + k2 \<and> k1 + k2a \<ge> 5 \<and> T = (T1 @ T2a) @ T2
+       else k1 + k2a = k \<and> T1 @ T2a = T \<and> s3a = s'"
+      using * tSeq.hyps by simp
+  qed
 next
-  case (tIfTrue s b c c1 k T t k' c2)
-  then obtain k1 T1 t1 l
-    where *: "(c1, s) \<Rightarrow>\<^bsup>(k1, T1)\<^esup>  (t1, l)"
-      and **: "if l then \<exists>k2 T2. c \<turnstile>(c, t1) \<Rightarrow>\<^bsup>(k2, T2)\<^esup>  t
-                 else k1 = k \<and> T1 = T \<and> t1 = t"
-    by auto
+  case (tIfTrue s b c c1 k T s' k' c2)
+  then obtain k1 T1 s2 l k2 T2
+    where 1: "(c1, s) \<Rightarrow>\<^bsup>(k1, T1)\<^esup> (s2, l)"
+      and *: "if l then c \<turnstile>(c, s2) \<Rightarrow>\<^bsup>(k2, T2)\<^esup> s' \<and> k = k1 + k2 \<and> k1 \<ge> 5 \<and> T = T1 @ T2
+               else k1 = k \<and> T1 = T \<and> s2 = s'"
+    by fastforce
 
-  from * tIfTrue have "(IF b\<noteq>0 THEN c1 ELSE c2, s) \<Rightarrow>\<^bsup>(k1 + 1, T1)\<^esup>  (t1, l)"
-    by blast
-  moreover from ** tIfTrue have
-    "if l then \<exists>k2 T2. c \<turnstile>(c, t1) \<Rightarrow>\<^bsup>(k2, T2)\<^esup> t
-     else k1 + 1 = k' \<and> T1 = T \<and> t1 = t"
-    by simp
-
-  ultimately show ?case by metis
+  show ?case
+  proof (rule exI conjI)+
+    from 1 tIfTrue show "(IF b\<noteq>0 THEN c1 ELSE c2, s) \<Rightarrow>\<^bsup>(k1 + 1, T1)\<^esup>  (s2, l)" by blast
+  next
+    have "l \<Longrightarrow> c \<turnstile>(c, s2) \<Rightarrow>\<^bsup>(k2, T2)\<^esup>  s' \<and> k' = k1 + 1 + k2 \<and> k1 + 1 \<ge> 5 \<and> T = T1 @ T2"
+      using * tIfTrue by simp
+    then show
+      "if l then \<exists>k2 T2. c \<turnstile>(c, s2) \<Rightarrow>\<^bsup>(k2, T2)\<^esup>  s' \<and> k' = k1 + 1 + k2 \<and> k1 + 1 \<ge> 5 \<and> T = T1 @ T2
+       else k1 + 1 = k' \<and> T1 = T \<and> s2 = s'"
+      using * tIfTrue by force
+  qed
 next
-  case (tIfFalse s b c c2 k T t k' c1)
-  then obtain k1 T1 t1 l
-    where *: "(c2, s) \<Rightarrow>\<^bsup>(k1, T1)\<^esup>  (t1, l)"
-      and **: "if l then \<exists>k2 T2. c \<turnstile>(c, t1) \<Rightarrow>\<^bsup>(k2, T2)\<^esup>  t
-                 else k1 = k \<and> T1 = T \<and> t1 = t"
-    by auto
+  case (tIfFalse s b c c2 k T s' k' c1)
+  then obtain k1 T1 s2 l k2 T2
+    where 1: "(c2, s) \<Rightarrow>\<^bsup>(k1, T1)\<^esup> (s2, l)"
+      and *: "if l then c \<turnstile>(c, s2) \<Rightarrow>\<^bsup>(k2, T2)\<^esup> s' \<and> k = k1 + k2 \<and> k1 \<ge> 5 \<and> T = T1 @ T2
+               else k1 = k \<and> T1 = T \<and> s2 = s'"
+    by fastforce
 
-  from * tIfFalse have "(IF b\<noteq>0 THEN c1 ELSE c2, s) \<Rightarrow>\<^bsup>(k1 + 1, T1)\<^esup>  (t1, l)"
-    by blast
-  moreover from ** tIfFalse have
-    "if l then \<exists>k2 T2. c \<turnstile>(c, t1) \<Rightarrow>\<^bsup>(k2, T2)\<^esup> t
-     else k1 + 1 = k' \<and> T1 = T \<and> t1 = t"
-    by simp
-
-  ultimately show ?case by metis
+  show ?case
+  proof (rule exI conjI)+
+    from 1 tIfFalse show "(IF b\<noteq>0 THEN c1 ELSE c2, s) \<Rightarrow>\<^bsup>(k1 + 1, T1)\<^esup>  (s2, l)" by blast
+  next
+    have "l \<Longrightarrow> c \<turnstile>(c, s2) \<Rightarrow>\<^bsup>(k2, T2)\<^esup>  s' \<and> k' = k1 + 1 + k2 \<and> k1 + 1 \<ge> 5 \<and> T = T1 @ T2"
+      using * tIfFalse by simp
+    then show
+      "if l then \<exists>k2 T2. c \<turnstile>(c, s2) \<Rightarrow>\<^bsup>(k2, T2)\<^esup>  s' \<and> k' = k1 + 1 + k2 \<and> k1 + 1 \<ge> 5 \<and> T = T1 @ T2
+       else k1 + 1 = k' \<and> T1 = T \<and> s2 = s'"
+      using * tIfFalse by force
+  qed
 next
   case (tCall C s z t c r)
   then have "(CALL C RETURN r, s) \<Rightarrow>\<^bsup>(0, [(C, s)])\<^esup>  (s(r := t r), False)" by blast
   then show ?case by metis
 next
-  case (tTail c s k T t k')
-  then have "(tTAIL, s) \<Rightarrow>\<^bsup>(5, [])\<^esup>  (s, True)" by blast
-  with tTail show ?case by metis
+  case (tTail c s k T s' k')
+
+  show ?case proof (rule exI conjI)+
+    show "(tTAIL, s) \<Rightarrow>\<^bsup>(5, [])\<^esup> (s, True)" by blast
+  next
+    from tTail.hyps show
+      "if True then \<exists>k2 T2. c \<turnstile>(c, s) \<Rightarrow>\<^bsup>(k2, T2)\<^esup>  s' \<and> k' = 5 + k2 \<and> (5 :: nat) \<le> 5 \<and> T = [] @ T2
+       else 5 = k' \<and> [] = T \<and> s = s'" by simp
+  qed
 qed
 
 end
