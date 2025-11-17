@@ -770,491 +770,6 @@ lemma pick:
   assumes "t \<le> u"
   shows "t \<le> u"
   using assms .
-
-
-fun bar :: "nat \<Rightarrow> nat" where
-  "bar 0 = 0" |
-  "bar (Suc n) = bar n"
-time_fun bar
-declare bar.simps[simp del]
-declare T_bar.simps[simp del]
-
-lemma T_bar: "T_bar n = n + 1" using T_bar.simps by (induction n) auto
-
-case_of_simps bar_eq_case : bar.simps
-lemmas bar_eq = bar_eq_case[unfolded case_nat_eq_if]
-compile_nat bar_eq
-
-lemma bar_IMP_Tailcall_ih:
-  assumes "(\<And>s. y = s ''bar.arg.xa'' \<Longrightarrow>
-                terminates_with_res_time_IMP_Tailcall bar_IMP_tailcall bar_IMP_tailcall s ''bar.ret'' (bar (s ''bar.arg.xa''))
-                 (c * T_bar (s ''bar.arg.xa'')))"
-  shows "y = (v(''eq.arg.x'' := Suc y, ''eq.arg.y'' := 0, ''eq.ret'' := 0, ''sub.arg.x'' := Suc y, ''sub.arg.y'' := 1, ''sub.ret'' := y, ''bar.arg.xa'' := y)) ''bar.arg.xa'' \<Longrightarrow>
-                terminates_with_res_time_IMP_Tailcall bar_IMP_tailcall bar_IMP_tailcall (v(''eq.arg.x'' := Suc y, ''eq.arg.y'' := 0, ''eq.ret'' := 0, ''sub.arg.x'' := Suc y, ''sub.arg.y'' := 1, ''sub.ret'' := y, ''bar.arg.xa'' := y)) ''bar.ret'' (bar ((v(''eq.arg.x'' := Suc y, ''eq.arg.y'' := 0, ''eq.ret'' := 0, ''sub.arg.x'' := Suc y, ''sub.arg.y'' := 1, ''sub.ret'' := y, ''bar.arg.xa'' := y)) ''bar.arg.xa''))
-                 (c * T_bar ((v(''eq.arg.x'' := Suc y, ''eq.arg.y'' := 0, ''eq.ret'' := 0, ''sub.arg.x'' := Suc y, ''sub.arg.y'' := 1, ''sub.ret'' := y, ''bar.arg.xa'' := y)) ''bar.arg.xa''))"
-  using assms by blast
-
-schematic_goal bar_IMP_Tailcall_twrt: "
-    terminates_with_res_time_IMP_Tailcall bar_IMP_tailcall bar_IMP_tailcall s
-      ''bar.ret'' (bar (s ''bar.arg.xa'')) (?c * T_bar (s ''bar.arg.xa''))"
-
-  apply (induction "s ''bar.arg.xa''" arbitrary: s rule: bar.induct) (* what is the induction rule??? *)
-
-  (* base case *)
-
-  apply (start_case IMP_def: bar_IMP_tailcall_def)
-
-    apply terminates_with_res_time_seq_assign
-    apply terminates_with_res_time_seq_assign
-    apply (terminates_with_res_time_seq_call f_thm: eq_IMP_twrbt)
-
-    apply terminates_with_res_time_if
-        apply (rule terminates_with_res_time_treturnI) defer
-
-        apply terminates_with_res_time_seq_assign
-        apply terminates_with_res_time_seq_assign
-        apply (terminates_with_res_time_seq_call f_thm: sub_IMP_twrbt)
-        apply terminates_with_res_time_seq_assign
-
-        apply (rule terminates_with_res_time_tTailI)
-
-        (* simplify condition *)
-        prefer 4 apply (rule simps_to_eq_r) apply (simp (no_asm_simp) add: HTHN.eq_nat_def True_nat_def) apply (urule SIMPS_TOI) apply (urule refl)
-       (* dismiss opposite conditional branch, this only works when condition is case analysis of function definition *)
-       prefer 3 apply cond_false
-      prefer 1 apply cond_false
-
-     prefer 4
-     apply (simp (no_asm_simp) only:) (* substitute "s r = x" assumptions *)
-     apply (simp (no_asm_simp) add: bar.simps) (* solve the equality outright (hopefully) *)
-
-(* induction step *)
-
-    prefer 3
-    apply (start_case IMP_def: bar_IMP_tailcall_def)
-
-     apply terminates_with_res_time_seq_assign
-     apply terminates_with_res_time_seq_assign
-     apply (terminates_with_res_time_seq_call f_thm: eq_IMP_twrbt)
-
-     apply terminates_with_res_time_if
-         apply (rule terminates_with_res_time_treturnI) defer
-
-         apply terminates_with_res_time_seq_assign
-         apply terminates_with_res_time_seq_assign
-         apply (terminates_with_res_time_seq_call f_thm: sub_IMP_twrbt)
-         apply terminates_with_res_time_seq_assign
-
-         apply (rule terminates_with_res_time_tTailI)
-
-         (* simplify condition *)
-         prefer 4 apply (rule simps_to_eq_r) apply (simp (no_asm_simp) add: HTHN.eq_nat_def False_nat_def) apply (urule SIMPS_TOI) apply (urule refl)
-        (* dismiss opposite conditional branch, this only works when condition is case analysis of function definition *)
-        prefer 7 apply cond_false
-       prefer 2 apply cond_false
-
-      apply (rule simps_to_case_end)
-
-        (* simplify state *)
-        apply (simp add: HTHN.eq_nat_def False_nat_def)
-        apply (urule SIMPS_TOI)
-
-        (* "run" function *)
-        apply (simp (no_asm_simp) only:) (* substitute "s r = x" assumptions *)
-       apply (simp (no_asm_simp) add: bar.simps)
-       apply (urule SIMPS_TOI)
-
-      apply (drule bar_IMP_Tailcall_ih) (* instantiate IH *)
-       apply simp (* solve IH assumption *)
-      apply simp (* apply IH *)
-
-  (* now we have two timing constraints per case: one each "up to" the condition, and each "inside" the condition *)
-
-     prefer 3 apply (urule le_refl)
-    prefer 1 apply (urule le_refl)
-   apply (simp_all add: constant_time1 T_bar.simps)
-
-  (* what we have here is really just the constraint system:
-      16 + C_eq + C_sub + c * T_bar x \<le> c * (T_bar x + 1)
-      7  + C_eq \<le> c
-     which has a solution c := max (7 + C_eq) (16 + C_eq + C_sub) *)
-   prefer 2 apply (rule pick[where u =
-        "max
-          (7 + least_constant_IMP eq_IMP constant_time)
-          (16
-            + least_constant_IMP eq_IMP constant_time
-            + least_constant_IMP sub_IMP constant_time)"
-        ])
-(* can isabelle solve this automatically? *)
-   apply (auto simp add: algebra_simps)
-  done
-
-lemma bar_IMP_Tailcall_twrbt:
-  "terminates_with_res_time_order_IMP_Tailcall bar_IMP_tailcall bar_IMP_tailcall
-      ''bar.ret'' (\<lambda>s. bar (s ''bar.arg.xa'')) (\<lambda>s. T_bar (s ''bar.arg.xa''))"
-  apply (rule terminates_with_res_time_order_IMP_TailcallI)
-  apply (rule exI)
-  apply (rule allI)
-  apply (rule bar_IMP_Tailcall_twrt)
-  done
-
-lemma bar_IMP_twrbt:
-  "terminates_with_res_time_order_IMP (tailcall_to_IMP bar_IMP_tailcall)
-      ''bar.ret'' (\<lambda>s. bar (s ''bar.arg.xa'')) (\<lambda>s. T_bar (s ''bar.arg.xa''))"
-  apply (rule tailcall_to_IMP_order_preserving[OF _ _ bar_IMP_Tailcall_twrbt])
-  unfolding bar_IMP_tailcall_def apply simp_all
-  done
-
-HOL_To_IMP_correct bar (* by cook *) sorry
-
-
-fun baz where
-  "baz x y = (if x = y then bar y else bar 0)"
-time_fun baz
-declare baz.simps[simp del] T_baz.simps[simp del]
-
-compile_nat baz.simps
-
-(*
-lemma eq_nat_eq: "HTHN.eq_nat x y \<equiv> natify (x = y)"
-  by (smt (verit) HOL_To_HOL_Nat.eq_nat_def HOL_To_HOL_Nat.eq_nat_eq_False_nat_iff natify_bool_def) *)
-
-lemma eq_nat_non_zero_eq: "HTHN.eq_nat x y \<noteq> 0 \<equiv> x = y"
-  using False_nat_eq_zero HOL_To_HOL_Nat.eq_nat_eq_False_nat_iff by presburger
-(* kommt man ohne aus? *)
-
-
-
-lemma start_case_r:
-  assumes "p \<equiv> e"
-  assumes "terminates_with_res_time_IMP_Tailcall p e s r val (running 0 t)"
-  shows "terminates_with_res_time_IMP_Tailcall p p s r val t"
-  using assms terminates_with_res_time_IMP_Tailcall_mono unfolding running_def by fastforce
-
-method start_case_r uses IMP_def =
-   (drule flip_xsrD)?,
-   rule start_case_r[OF IMP_def]
-
-method terminates_with_res_time_seq_assign_r =
-  rule terminates_with_res_time_tSeqI_r, rule terminates_with_time_tAssignI[OF refl]
-
-method terminates_with_res_time_seq_call_r uses f_thm =
-  rule terminates_with_res_time_tSeqI_r,
-  rule terminates_with_time_tCallI[OF refl],
-  rule terminates_with_res_time_IMPI_bound,
-  rule f_thm
-
-method terminates_with_res_time_if_r = rule terminates_with_res_time_tIfI_r[OF refl _ refl _]
-
-lemma set_max_as_upper_bound:
-  fixes a b :: nat
-  shows "a \<le> max a b"
-  by simp
-
-lemma unfold_max_as_upper_bound:
-  fixes a b c :: nat
-  assumes "a \<le> c"
-  shows "a \<le> max b c"
-  using assms by simp
-
-method find_upper_bound' methods unfold =
-  unfold, rule set_max_as_upper_bound,
-  (find_upper_bound' \<open>rule unfold_max_as_upper_bound, unfold\<close>)?
-
-method find_upper_bound = find_upper_bound' succeed
-(* for whatever reason, this produces too many schematics, but works; fine, it's just for show *)
-
-schematic_goal find_upper_bound_example: fixes a b c d :: nat
-  shows "a \<le> ?e \<and> b \<le> ?e \<and> c \<le> ?e \<and> d \<le> ?e"
-  apply (repeat \<open>rule conjI\<close>)
-     apply find_upper_bound
-  done
-
-(* conceptually, (cs + ds) * fs, i.e. the collected standalone-constants (cs) plus the
-    collected factors (fs), times the collected function running times (fs)
-   - given that fs is the running time of the HOL function (sum of running times of called functions),
-      then cs + ds is a suitable constant factor to use
-   - note that we need to account for fs = 0 here, but would rather not (TODO: new of_order def!) *)
-definition gather :: "nat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> nat" where
-  "gather cs ds fs \<equiv> cs * max fs 1 + ds * fs"
-
-lemma gather_start:
-  assumes "a + gather 0 0 0 \<le> b"
-  shows "a \<le> b"
-  using assms by simp
-
-lemma gather_finish:
-  assumes "max fs 1 \<le> f"
-  assumes "cs + ds \<le> c"
-  shows "0 + gather cs ds fs \<le> c * f"
-proof -
-  have "gather cs ds fs \<le> cs * max fs 1 + ds * max fs 1" unfolding gather_def by simp
-  also have "... = (cs + ds) * max fs 1" by algebra
-  also from assms have "... \<le> c * f" using mult_le_mono by simp
-  finally show ?thesis by simp
-qed
-
-lemma gather_constant:
-  assumes "a + gather (cs + k) ds fs \<le> b"
-  shows "(a + k) + gather cs ds fs \<le> b"
-proof -
-  have "(a + k) + gather cs ds fs \<le> (a + k * max fs 1) + gather cs ds fs" by fastforce
-  also have "... = a + gather (cs + k) ds fs" unfolding gather_def by algebra
-  finally show ?thesis using assms by simp
-qed
-
-lemma gather_constant_time:
-  assumes "a + gather (cs + least_constant_IMP p constant_time) ds fs \<le> b"
-  shows "(a + least_constant_IMP p constant_time * constant_time s) + gather cs ds fs \<le> b"
-  using assms gather_constant constant_time1 by fastforce
-
-lemma gather_function_call:
-  assumes "a + gather cs (max ds d_f) (fs + T_f s) \<le> b"
-  shows "(a + d_f * T_f s) + gather cs ds fs \<le> b"
-proof -
-  let ?d = "d_f"
-  have "(a + ?d * T_f s) + gather cs ds fs \<le> (a + (max ds ?d) * T_f s) + gather cs ds fs" by simp
-  also have "... \<le> (a + (max ds ?d) * T_f s) + gather cs (max ds ?d) fs" unfolding gather_def by simp
-  also have "... \<le> a + gather cs (max ds ?d) (fs + T_f s)"
-    unfolding gather_def by (auto simp add: algebra_simps)
-  finally show ?thesis using assms by fastforce
-qed
-
-lemma gather_f:
-  assumes "a + gather cs (max ds (least_constant_IMP p T_f)) (fs + T_f s) \<le> b"
-  shows "(a + least_constant_IMP p T_f * T_f s) + gather cs ds fs \<le> b"
-  using assms gather_function_call by fastforce
-
-lemma gather_tail:
-  assumes "a + gather cs ds fs \<le> c * T_f s - c_f * T_f s'"
-  assumes "T_f s \<ge> T_f s'"
-  assumes "c \<ge> c_f"
-  shows "(a + c_f * T_f s') + gather cs ds fs \<le> c * T_f s"
-  using assms
-  by (simp add: Nat.le_diff_conv2 mult_le_mono)
-
-
-lemma gather_tail2:
-  assumes "a + gather cs ds fs \<le> c * (T_f s - T_f s')"
-  assumes "T_f s \<ge> T_f s'"
-  assumes "c = c_f"
-  shows "(a + c_f * T_f s') + gather cs ds fs \<le> c * T_f s"
-  using assms
-  by (smt (verit, ccfv_threshold) add.assoc add.commute add_mult_distrib2 antisym diff_mult_distrib2 le_diff_conv linorder_linear
-      ordered_cancel_comm_monoid_diff_class.add_diff_inverse)
-
-(* urule gather_tail is slow, but necessary ... *)
-method gather1 = urule gather_tail | rule gather_constant_time | rule gather_f | rule gather_constant
-
-method gather0 = rule gather_constant_time | rule gather_f | rule gather_constant
-
-method gather =
-  rule gather_start,
-  gather0+,
-  rule gather_finish
-
-
-schematic_goal baz_IMP_Tailcall_twrt: "
-    terminates_with_res_time_IMP_Tailcall baz_IMP_tailcall baz_IMP_tailcall s
-      ''baz.ret'' (baz (s ''baz.arg.x'') (s ''baz.arg.y'')) (?c * T_baz (s ''baz.arg.x'') (s ''baz.arg.y''))"
-
-  apply (start_case_r IMP_def: baz_IMP_tailcall_def)
-
-   apply terminates_with_res_time_seq_assign_r
-   apply terminates_with_res_time_seq_assign_r
-   apply (terminates_with_res_time_seq_call_r f_thm: eq_IMP_twrbt)
-   apply terminates_with_res_time_if_r
-    apply terminates_with_res_time_seq_assign_r
-    apply (terminates_with_res_time_seq_call_r f_thm: bar_IMP_twrbt)
-    apply (rule terminates_with_res_time_treturnI_r) defer defer
-
-     apply terminates_with_res_time_seq_assign_r
-     apply (terminates_with_res_time_seq_call_r f_thm: bar_IMP_twrbt)
-     apply (rule terminates_with_res_time_treturnI_r) defer defer
-
-      (* simplify condition *)
-      prefer 1 apply (rule simps_to_eq_r) apply (simp (no_asm_simp) add: eq_nat_non_zero_eq) apply (urule SIMPS_TOI) apply (urule refl)
-     (* prove correctness *)
-     prefer 3 apply (simp add: baz.simps)
-    prefer 1 apply (simp add: baz.simps)
-
-   (* now we have the constraint system consisting of the goals (i, ii):
-        cond  \<Longrightarrow> C_eq + C_bar * T_bar y + 9 \<le> ?c * T_baz x y   (i)
-        ~cond \<Longrightarrow> C_eq + C_bar * T_bar 0 + 9 \<le> ?c * T_baz x y   (ii) *)
-
-   apply (rule gather_start)
-   apply gather0+
-   apply (rule gather_finish)
-    apply (subst T_baz.simps)
-    apply (simp add: T_bar T_baz.simps)
-   defer
-
-   apply (rule gather_start)
-   apply gather0+
-   apply (rule gather_finish)
-    apply (simp add: T_bar T_baz.simps)
-   defer
-
-   (* now we have "gathered" the summands on the LHS of the inequality,
-      by approximating with an upper bound, conceptually giving us the theorems (ia, iia):
-        C_eq + C_bar * T_bar y + C_b * T_b x + 9 \<le> (C_eq + max C_bar C_b + 9) * (T_bar y + T_b x)   (ia)
-        C_eq + C_bar + 9           \<le> (C_eq + C_bar + 9) * T_bar 0   (iia)
-
-      by "running" the timing function baz, we show that the right-hand factor on the RHS
-      is just the running time of the HOL function:
-        C_eq + C_bar * T_bar y + 9 \<le> (C_eq + C_bar + 9) * T_baz x y   (ib)
-        C_eq + C_bar + 9           \<le> (C_eq + C_bar + 9) * T_baz x y   (iib)
-
-      now if we can show ?c \<ge> C_eq + C_bar + 9 and ?c \<ge> C_eq + C_bar + 9 (note in general those won't be the same),
-      we are done, which we do by choosing max (C_eq + C_bar + 9) (C_eq + C_bar + 9) as a suitable c
-   *)
-
-   (* here we would have a problem if the running time function T_bar were ever zero,
-      this would be helped by a different definition of running time order (special casing zero-functions)
-      - note that gathering just makes this problem obvious, we wouldn't be able to find a suitable c any other way *)
-
-  (* the remaining goals are only identical by coincidence! *)
-
-  apply find_upper_bound
-  done (* :3c *)
-
-   (* we should obtain something of this form in general
-      it seems non-trivial for a SAT-solver to handle this (it would need to find a function c, that depends on all the given constants),
-      but very easy to just rewrite and take the maximum (as above) as a suitable c *)
-
-(*
-lemma "\<forall>c1\<ge>(0 :: int). \<forall>c2\<ge>0. (\<exists>c. \<forall>f2\<ge>0. c1 + c2 * f2 + 9 \<le> c * f2)
-  \<equiv> \<exists>c. \<forall>c1\<ge>(0 :: int). \<forall>c2\<ge>0. (\<forall>f2\<ge>0. c1 + c2 * f2 + 9 \<le> c c1 c2 * f2)"
-  apply (rule eq_reflection, rule iffI)
-  using choice apply force
-  apply blast
-  done
-*)
-
-ML\<open>
-val get_s = Term.strip_comb #> snd #> (fn xs => nth xs 2)
-  fun foc_fun focus =
-    let
-      val s = #concl focus |> Thm.term_of |> HOLogic.dest_Trueprop |> @{print} |> get_s
-      val instantiations = s $ @{term "''bar.arg.xa''"}
-        |> (fn t => SOME (NONE, (t, false)))
-      val arbitrary = [dest_Free s]
-      val inducts = SOME [@{thm bar.induct}]
-    in Induction.induction_tac (#context focus) true [[instantiations]] [arbitrary] [] inducts [] 1 end
-  val a = Subgoal.FOCUS_PARAMS foc_fun
-
-\<close>
-
-thm bar_IMP_Tailcall_twrt
-(* same as above, but with the nicer proof, this time showcasing recursion *)
-schematic_goal bar_IMP_Tailcall_twrt_r: "\<exists>c. \<forall> s.
-    terminates_with_res_time_IMP_Tailcall bar_IMP_tailcall bar_IMP_tailcall s
-      ''bar.ret'' (bar (s ''bar.arg.xa'')) (c * T_bar (s ''bar.arg.xa''))"
-
-  apply (rule exI)
-  apply (rule allI)
-  apply (tactic \<open>a @{context} 1\<close>)
-  (* apply (induction "s ''bar.arg.xa''" for s rule: bar.induct) *)
-
-  (* base case *)
-
-  apply (start_case_r IMP_def: bar_IMP_tailcall_def)
-
-   apply terminates_with_res_time_seq_assign_r
-   apply terminates_with_res_time_seq_assign_r
-   apply (terminates_with_res_time_seq_call_r f_thm: eq_IMP_twrbt)
-   apply terminates_with_res_time_if_r
-     apply (rule terminates_with_res_time_treturnI_r) defer defer
-
-      apply terminates_with_res_time_seq_assign_r
-      apply terminates_with_res_time_seq_assign_r
-      apply (terminates_with_res_time_seq_call_r f_thm: sub_IMP_twrbt)
-      apply terminates_with_res_time_seq_assign_r
-      apply (rule terminates_with_res_time_tTailI_r) defer defer
-
-       (* move the recursion out of the way for now *)
-       prefer 2 defer
-       (* simplify condition *)
-       apply (rule simps_to_eq_r) apply (simp (no_asm_simp) add: eq_nat_non_zero_eq) apply (urule SIMPS_TOI) apply (urule refl)
-      (* prove correctness *)
-      apply (simp add: bar.simps)
-
-     prefer 3 apply cond_false
-    prefer 2 apply cond_false
-
-   apply gather
-    prefer 1 apply (simp add: T_bar.simps)
-   (* now we have the first constraint, defer. *)
-   defer
-
-  (* inductive case *)
-
-   apply (start_case_r IMP_def: bar_IMP_tailcall_def)
-
-   apply terminates_with_res_time_seq_assign_r
-   apply terminates_with_res_time_seq_assign_r
-   apply (terminates_with_res_time_seq_call_r f_thm: eq_IMP_twrbt)
-   apply terminates_with_res_time_if_r
-     apply (rule terminates_with_res_time_treturnI_r) defer defer
-
-      apply terminates_with_res_time_seq_assign_r
-      apply terminates_with_res_time_seq_assign_r
-      apply (terminates_with_res_time_seq_call_r f_thm: sub_IMP_twrbt)
-      apply terminates_with_res_time_seq_assign_r
-      apply (rule terminates_with_res_time_tTailI_r) defer defer
-
-       (* move base case constraint out of the way *)
-       prefer 2 defer
-
-       (* simplify condition *)
-       apply (rule simps_to_eq_r) apply (simp (no_asm_simp) add: eq_nat_non_zero_eq) apply (urule SIMPS_TOI) apply (urule refl)
-      apply cond_false
-     apply cond_false
-
-    prefer 2
-    apply (rule simps_to_case_end)
-
-      (* simplify state *)
-      apply (simp add: HTHN.eq_nat_def False_nat_def)
-      apply (urule SIMPS_TOI)
-
-     (* "run" function *)
-     apply (simp (no_asm_simp) only:) (* substitute "s r = x" assumptions *)
-     apply (simp (no_asm_simp) add: bar.simps)
-     apply (urule SIMPS_TOI)
-
-    apply (drule bar_IMP_Tailcall_ih) (* instantiate IH *)
-     apply simp (* solve IH assumption *)
-    apply simp (* apply IH *)
-
-   apply (rule gather_start)
-   apply gather0
-   apply (urule gather_tail2) (* why is this necessary ? *)
-     prefer 3 apply (rule refl)
-     apply gather0
-     apply gather0
-     apply gather0
-     apply gather0
-     apply gather0
-     apply gather0
-     apply gather0
-     apply gather0
-     apply (rule gather_finish)
-      apply (simp only: T_bar.simps)
-      defer
-     apply (simp only: T_bar.simps)
-    defer
-
-    apply find_upper_bound
-  done
-
-lemma "terminates_with_res_time_order_IMP_Tailcall bar_IMP_tailcall bar_IMP_tailcall
-      ''bar.ret'' (\<lambda>s. bar (s ''bar.arg.xa'')) (\<lambda>s. T_bar (s ''bar.arg.xa''))"
-  apply (rule terminates_with_res_time_order_IMP_TailcallI)
-  apply (fact bar_IMP_Tailcall_twrt_r)
-  done
-
-
 end
 
 
@@ -1295,7 +810,7 @@ and Rel_nat_selector_Suc[Rel_nat]
 
 lemmas mul_acc_nat_nat_eq = HTHN.mul_acc_nat_nat_eq_unfolded[unfolded case_nat_eq_if]
 compile_nat mul_acc_nat_nat_eq
-HOL_To_IMP_correct HTHN.mul_acc_nat_nat (* by cook *) sorry
+HOL_To_IMP_correct HTHN.mul_acc_nat_nat by cook
 
 
 
@@ -1303,7 +818,7 @@ HOL_To_IMP_correct HTHN.mul_acc_nat_nat (* by cook *) sorry
 
 
 compile_nat HTHN.times_nat_eq_unfolded
-HOL_To_IMP_correct HTHN.times_nat (* by cook *) sorry
+HOL_To_IMP_correct HTHN.times_nat by cook
 
 end
 
@@ -1313,10 +828,10 @@ context HOL_Nat_To_IMP
 begin
 
 compile_nat True_nat_def
-HOL_To_IMP_correct True_nat (* by cook *) sorry
+HOL_To_IMP_correct True_nat by cook
 
 compile_nat False_nat_def
-HOL_To_IMP_correct False_nat (* by cook *) sorry
+HOL_To_IMP_correct False_nat by cook
 
 end
 
@@ -1333,7 +848,7 @@ context HOL_Nat_To_IMP
 begin
 
 compile_nat HTHN.Not_nat_eq_unfolded
-HOL_To_IMP_correct HTHN.Not_nat (* by cook *) sorry
+HOL_To_IMP_correct HTHN.Not_nat by cook
 
 end
 
@@ -1358,10 +873,10 @@ context HOL_Nat_To_IMP
 begin
 
 compile_nat HTHN.max_nat_eq_unfolded
-HOL_To_IMP_correct HTHN.max_nat (* by cook *) sorry
+HOL_To_IMP_correct HTHN.max_nat by cook
 
 compile_nat HTHN.min_nat_eq_unfolded basename min
-HOL_To_IMP_correct HTHN.min_nat (* by cook *) sorry
+HOL_To_IMP_correct HTHN.min_nat by cook
 
 end
 
@@ -1386,10 +901,10 @@ context HOL_Nat_To_IMP
 begin
 
 compile_nat HTHN.conj_nat_eq_unfolded
-HOL_To_IMP_correct HTHN.conj_nat (* by cook *) sorry
+HOL_To_IMP_correct HTHN.conj_nat by cook
 
 compile_nat HTHN.disj_nat_eq_unfolded
-HOL_To_IMP_correct HTHN.disj_nat (* by cook *) sorry
+HOL_To_IMP_correct HTHN.disj_nat by cook
 
 end
 
@@ -1412,10 +927,10 @@ context HOL_Nat_To_IMP
 begin
 
 compile_nat HTHN.less_eq_nat_eq_unfolded
-HOL_To_IMP_correct HTHN.less_eq_nat (* by cook *) sorry
+HOL_To_IMP_correct HTHN.less_eq_nat by cook
 
 compile_nat HTHN.less_nat_eq_unfolded
-HOL_To_IMP_correct HTHN.less_nat (* by cook *) sorry
+HOL_To_IMP_correct HTHN.less_nat by cook
 
 end
 
@@ -1444,10 +959,10 @@ context HOL_Nat_To_IMP
 begin
 
 compile_nat HTHN.div_acc_nat_nat_eq_unfolded
-HOL_To_IMP_correct HTHN.div_acc_nat_nat (* by cook *) sorry
+HOL_To_IMP_correct HTHN.div_acc_nat_nat by cook
 
 compile_nat HTHN.divide_nat_eq_unfolded
-HOL_To_IMP_correct HTHN.divide_nat (* by cook *) sorry
+HOL_To_IMP_correct HTHN.divide_nat by cook
 
 end
 
@@ -1500,10 +1015,10 @@ context HOL_Nat_To_IMP
 begin
 
 compile_nat HTHN.triangle_nat_eq_unfolded
-HOL_To_IMP_correct HTHN.triangle_nat (* by cook *) sorry
+HOL_To_IMP_correct HTHN.triangle_nat by cook
 
 compile_nat HTHN.pair_nat_eq_triangle_nat
-HOL_To_IMP_correct pair_nat (* by cook *) sorry
+HOL_To_IMP_correct pair_nat by cook
 
 end
 
@@ -1564,16 +1079,16 @@ context HOL_Nat_To_IMP
 begin
 
 compile_nat HTHN.fst_acc_nat_nat_eq_unfolded
-HOL_To_IMP_correct HTHN.fst_acc_nat_nat (* by cook *) sorry
+HOL_To_IMP_correct HTHN.fst_acc_nat_nat by cook
 
 compile_nat HTHN.snd_acc_nat_nat_eq_unfolded
-HOL_To_IMP_correct HTHN.snd_acc_nat_nat (* by cook *) sorry
+HOL_To_IMP_correct HTHN.snd_acc_nat_nat by cook
 
 compile_nat HTHN.fst_nat_eq_fst_acc_nat_nat
-HOL_To_IMP_correct fst_nat (* by cook *) sorry
+HOL_To_IMP_correct fst_nat by cook
 
 compile_nat HTHN.snd_nat_nat_eq_unfolded
-HOL_To_IMP_correct HTHN.snd_nat_nat (* by cook *) sorry
+HOL_To_IMP_correct HTHN.snd_nat_nat by cook
 
 end
 
@@ -1619,11 +1134,10 @@ compile_nat fun_pow_snd_nat_eq
 HOL_To_IMP_correct HTHN.fun_pow_snd_nat_nat
   supply Rel_nat_selector_Suc[Rel_nat]
   apply (tactic \<open>HM.correct_if_IMP_tailcall_correct_tac HT.get_IMP_def @{context} 1\<close>)
-  (* by (induction y arbitrary: ya s rule: nat.induct) (cook mode = run_finish) *)
-  sorry
+  by (induction y arbitrary: ya s rule: nat.induct) (cook mode = run_finish)
 
 compile_nat HTHN.nat_selector_eq_nat
-HOL_To_IMP_correct nat_selector (* by cook *) sorry
+HOL_To_IMP_correct nat_selector by cook
 
 end
 
